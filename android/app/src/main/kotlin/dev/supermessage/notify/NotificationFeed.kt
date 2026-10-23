@@ -12,6 +12,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -69,6 +70,13 @@ internal class NotificationFeed(
     private val turns = TurnNotifications(nameOf = { room, agentId ->
         agentDisplayName(agentId, casts[room]) ?: session.rooms.row(room)?.identity?.name ?: "Agent"
     })
+
+    /** Bumped by every sign-out, under [turnLock]: a turn update begun before it is the last account's. */
+    private var signOuts = 0L
+
+    /** The turn update being handled, if any: a sign-out cancels it. */
+    @Volatile
+    private var turnWork: Job? = null
     private val jobs = mutableListOf<Job>()
     private var removeHook: (() -> Unit)? = null
 
@@ -78,10 +86,13 @@ internal class NotificationFeed(
             coordinator.signedOut()
             poster.accountId = null
             synchronized(turnLock) {
+                signOuts++
                 turns.forget()
                 casts.clear()
                 turnNotifier.cancelAll()
             }
+            // A first update of a turn may be waiting on the room's cast: it posts nothing now.
+            turnWork?.cancel()
             // Before the withdrawal, so no push queued or under way posts after it.
             pushSignedOut()
             NotificationManagerCompat.from(context).cancelAll()
@@ -92,7 +103,10 @@ internal class NotificationFeed(
         }.launchIn(scope)
         jobs += session.rooms.selectedId.onEach(coordinator::openRoomChanged).launchIn(scope)
         coordinator.onPresenceChanged = { scope.launch { showTurns() } }
-        jobs += session.turnUpdates.onEach(::turnUpdated).launchIn(scope)
+        jobs += session.turnUpdates.onEach { update ->
+            // One at a time, in order, each its own job so a sign-out can cancel the one under way.
+            coroutineScope { turnWork = launch { turnUpdated(update) } }
+        }.launchIn(scope)
         jobs += session.rooms.rooms
             .sample(FEED_THROTTLE_MS)
             .onEach { rows ->
@@ -110,12 +124,16 @@ internal class NotificationFeed(
     }
 
     private suspend fun turnUpdated(update: uniffi.supermessage_core.TurnUpdate) {
+        val begun = synchronized(turnLock) { signOuts }
         if (session.phase.value != Session.Phase.SIGNED_IN) return
         val summary = update.summary
         // The cast names the agent doing the turn; asked once per room while its turn runs.
         val needsCast = summary.inProgress && synchronized(turnLock) { summary.roomId !in casts }
         val cast = if (needsCast) session.roomCast(summary.roomId) else null
         synchronized(turnLock) {
+            // Signed out while the cast was asked (and perhaps in again, as another account):
+            // this update was the last account's, and its card must not go up after the sign-out.
+            if (signOuts != begun || session.phase.value != Session.Phase.SIGNED_IN) return
             if (needsCast) casts[summary.roomId] = cast
             if (!summary.inProgress) casts.remove(summary.roomId)
             when (val change = turns.apply(update)) {
@@ -147,5 +165,6 @@ internal class NotificationFeed(
         removeHook?.invoke()
         jobs.forEach { it.cancel() }
         jobs.clear()
+        turnWork?.cancel()
     }
 }

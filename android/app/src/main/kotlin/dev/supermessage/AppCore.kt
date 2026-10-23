@@ -180,9 +180,13 @@ object AppCore {
         lifecycle.addObserver(ScenePhaseObserver(publisher::activeChanged))
     }
 
-    /** A push the core decided: merged into the snapshot, and the widgets drawn if it is worth it. */
-    internal suspend fun widgetsDecided(context: Context, note: NotificationDto) {
-        val reload = widgetWriter(context).apply(note)
+    /**
+     * A push the core decided: merged into the snapshot, and the widgets drawn if it is worth it.
+     * [stillFor] is asked under the snapshot's lock, just before the merge: false (the push's
+     * account signed out, or another signed in) drops the write.
+     */
+    internal suspend fun widgetsDecided(context: Context, note: NotificationDto, stillFor: suspend () -> Boolean = { true }) {
+        val reload = widgetWriter(context).apply(note, stillFor)
         widgetRedraw(context).after(reload)
     }
 

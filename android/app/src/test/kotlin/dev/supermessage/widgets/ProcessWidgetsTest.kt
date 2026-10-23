@@ -33,7 +33,7 @@ class ProcessWidgetsTest {
 
     private class Recording : WidgetWriting {
         val calls: MutableList<String> = Collections.synchronizedList(mutableListOf())
-        override suspend fun apply(note: NotificationDto) = false
+        override suspend fun apply(note: NotificationDto, stillFor: suspend () -> Boolean) = false
         override suspend fun apply(rows: List<RoomRow>, live: List<WidgetLiveTurn>, asOfMs: Long) = false
         override suspend fun apply(roomId: String, rows: List<TimelineRow>) = false
         override suspend fun markAnswered(roomId: String, eventId: String, optionId: String) = false

@@ -31,7 +31,7 @@ class WidgetPublisherTest {
         val decisionRooms = mutableSetOf<String>()
         var reload = false
 
-        override suspend fun apply(note: NotificationDto): Boolean = false.also { calls += "note" }
+        override suspend fun apply(note: NotificationDto, stillFor: suspend () -> Boolean): Boolean = false.also { calls += "note" }
 
         override suspend fun apply(rows: List<RoomRow>, live: List<WidgetLiveTurn>, asOfMs: Long): Boolean {
             calls += "roster ${live.joinToString { "${it.roomId}:${it.step}" }}"

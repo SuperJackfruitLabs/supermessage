@@ -74,8 +74,9 @@ class SupermessagePushServiceTest {
     /** What the widgets' writer was asked to merge; the real one writes a file. */
     private class Widgets(val fails: Boolean = false) : dev.supermessage.kit.widgets.WidgetWriting {
         val notes: MutableList<NotificationDto> = Collections.synchronizedList(mutableListOf())
-        override suspend fun apply(note: NotificationDto): Boolean {
+        override suspend fun apply(note: NotificationDto, stillFor: suspend () -> Boolean): Boolean {
             if (fails) throw java.io.IOException("disk full")
+            if (!stillFor()) return false
             notes += note
             return true
         }
@@ -99,12 +100,12 @@ class SupermessagePushServiceTest {
         return redraws
     }
 
-    private val decidedSeen = Collections.synchronizedList(mutableListOf<NotificationDto>())
+    /** What every push decided was merged into: no test writes the real snapshot file unless it means to. */
+    private val merged = Widgets()
 
-    /** No test writes the real snapshot file unless it means to. */
     @Before
     fun noRealWidgets() {
-        installWidgets(Widgets())
+        installWidgets(merged)
     }
 
     /** The pusher's account, on disk, as the registrar stamps it: what each push is checked against. */
@@ -120,7 +121,6 @@ class SupermessagePushServiceTest {
         AppCore.installForTest(null)
         AppCore.installWidgetsForTest(null)
         AppCore.coordinator = null
-        SupermessagePushService.onDecided = {}
         owner.account = null
         manager.cancelAll()
     }
@@ -151,7 +151,6 @@ class SupermessagePushServiceTest {
      */
     private fun deliver(core: Recording, push: MatrixPush = parsed(), stampedFor: String? = ME) {
         AppCore.installForTest(core)
-        SupermessagePushService.onDecided = { decidedSeen += it }
         val worker = TestListenableWorkerBuilder<PushWorker>(app)
             .setInputData(PushWorker.input(push, stampedFor))
             .build()
@@ -248,7 +247,7 @@ class SupermessagePushServiceTest {
         assertEquals("ship it", text(note, Notification.EXTRA_TEXT))
         assertEquals("Ops", text(note, Notification.EXTRA_SUB_TEXT))
         assertEquals(1, shadowOf(manager).allNotifications.size)
-        assertEquals("the hook sees what the core decided", listOf(decided()), decidedSeen.toList())
+        assertEquals("the widgets merge what the core decided", listOf(decided()), merged.notes.toList())
     }
 
     /** `NotificationService.swift:118-125`: each decided push is merged, and the core's `reload` decides the redraw. */
@@ -291,7 +290,7 @@ class SupermessagePushServiceTest {
     fun aSuppressedPushPostsNothing() {
         deliver(Recording(decided(suppress = NotificationSuppression.REACTION)))
         assertEquals(emptyList<Notification>(), shadowOf(manager).allNotifications)
-        assertEquals("still decided, for the widgets", 1, decidedSeen.size)
+        assertEquals("still decided, for the widgets", 1, merged.notes.size)
     }
 
     /** `AppDelegate.swift:95-108`: not for the room on screen in the foreground. */
@@ -367,7 +366,7 @@ class SupermessagePushServiceTest {
         deliver(asB, stampedFor = "@a:x")
         assertEquals("A's push is not fetched as B", listOf("restore"), asB.calls.toList())
         assertEquals(emptyList<Notification>(), shadowOf(manager).allNotifications)
-        assertEquals("nor handed to the widgets", 0, decidedSeen.size)
+        assertEquals("nor handed to the widgets", 0, merged.notes.size)
 
         // Nor when what was asked for cannot be had: that was B's generic note before.
         val asBUnfetchable = Recording(decided = null, userId = "@b:x")
@@ -407,6 +406,114 @@ class SupermessagePushServiceTest {
         } finally {
             gate.countDown()
         }
+    }
+
+    /**
+     * Holds `notificationFor` until [release]d, so a sign-out can land while the push is fetched;
+     * [who] is the session's account as the core reports it, which a sign-out ends.
+     */
+    private class Held(decided: NotificationDto) : Recording(decided) {
+        val asking = CountDownLatch(1)
+        private val gate = CountDownLatch(1)
+        @Volatile var who: String? = ME
+        override fun account(): AccountDto = who?.let { AccountDto(userId = it, homeserver = "https://x") }
+            ?: throw IllegalStateException("signed out")
+        override fun notificationFor(roomId: String, eventId: String): NotificationDto {
+            asking.countDown()
+            gate.await()
+            return super.notificationFor(roomId, eventId)
+        }
+        fun release() = gate.countDown()
+    }
+
+    /** The real feed over memory, so the snapshot itself is what is checked. */
+    private fun realWidgets(): dev.supermessage.kit.widgets.WidgetFeed {
+        val feed = dev.supermessage.kit.widgets.WidgetFeed(dev.supermessage.kit.widgets.WidgetFixtures.Memory())
+        AppCore.installWidgetsForTest(
+            feed,
+            object : dev.supermessage.widgets.WidgetRedraw(app, nextChangeMs = { null }, widgets = { emptyList() }) {
+                override suspend fun after(reload: Boolean) {}
+            },
+        )
+        return feed
+    }
+
+    /**
+     * I2: signed out while the push was fetched. The sign-out reset the snapshot; the push's
+     * merge (which marks the snapshot signed in) must not put the last account's decision back.
+     */
+    @Test(timeout = 15_000)
+    fun aPushDecidedAcrossASignOutLeavesTheResetSnapshotAlone() {
+        val feed = realWidgets()
+        val core = Held(dev.supermessage.kit.widgets.WidgetFixtures.gate())
+        AppCore.installForTest(core)
+        try {
+            val job = deliverPush(app, parsed(), owner = ME)
+            assertTrue("the core was asked", core.asking.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            // The sign-out: the session ends, its hook clears the owner, the publisher resets the snapshot.
+            core.who = null
+            owner.account = null
+            runBlocking { feed.signedOut() }
+            core.release()
+            runBlocking { job.join() }
+            assertEquals(uniffi.supermessage_core.WidgetContent.SIGNED_OUT, feed.view().content)
+            assertTrue("no decision of the last account's", feed.view().decisions.isEmpty())
+        } finally {
+            core.release()
+        }
+    }
+
+    /** I2: the next account signed in meanwhile: A's decision is not merged into B's snapshot. */
+    @Test(timeout = 15_000)
+    fun aPushDecidedWhileTheNextAccountSignedInIsNotMerged() {
+        val feed = realWidgets()
+        val core = Held(dev.supermessage.kit.widgets.WidgetFixtures.gate())
+        AppCore.installForTest(core)
+        try {
+            val job = deliverPush(app, parsed(), owner = ME)
+            assertTrue(core.asking.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            core.who = "@b:x"
+            owner.account = "@b:x"
+            runBlocking { feed.signedOut() }
+            core.release()
+            runBlocking { job.join() }
+            assertTrue(feed.view().decisions.isEmpty())
+        } finally {
+            core.release()
+        }
+    }
+
+    /**
+     * I2: the session ended before its hook cleared the owner (the phase changes first, the
+     * hook runs after it): the session itself is asked too, under the same lock.
+     */
+    @Test(timeout = 15_000)
+    fun aPushWhoseSessionEndedBeforeTheOwnerWasClearedIsNotMerged() {
+        val feed = realWidgets()
+        val core = Held(dev.supermessage.kit.widgets.WidgetFixtures.gate())
+        AppCore.installForTest(core)
+        try {
+            val job = deliverPush(app, parsed(), owner = ME)
+            assertTrue(core.asking.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            core.who = null // logged out; the owner is still stamped
+            runBlocking { feed.signedOut() }
+            core.release()
+            runBlocking { job.join() }
+            assertEquals(uniffi.supermessage_core.WidgetContent.SIGNED_OUT, feed.view().content)
+        } finally {
+            core.release()
+        }
+    }
+
+    /** Still signed in as the push's account: the decision is merged, as before. */
+    @Test(timeout = 15_000)
+    fun aPushForTheAccountStillSignedInIsMerged() {
+        val feed = realWidgets()
+        val core = Held(dev.supermessage.kit.widgets.WidgetFixtures.gate())
+        AppCore.installForTest(core)
+        core.release()
+        runBlocking { deliverPush(app, parsed(), owner = ME).join() }
+        assertEquals(1, feed.view().decisions.size)
     }
 
     @Test(timeout = 15_000)

@@ -197,6 +197,112 @@ class NotificationFeedTest {
         }
     }
 
+    /** Signs in and out like [SignsOut]; the room's cast is held until [castGiven], so a sign-out can land meanwhile. */
+    private class SlowCast : StubCore() {
+        @Volatile var sink: EventSink? = null
+        val asked = java.util.concurrent.CountDownLatch(1)
+        private val castGiven = java.util.concurrent.CountDownLatch(1)
+        fun giveCast() = castGiven.countDown()
+        override fun setHiddenEvents(eventIds: List<String>) {}
+        override fun restoreSession(sink: EventSink): Boolean = true.also { this.sink = sink }
+        override fun roomsSnapshot(): RoomsSnapshot = RoomsSnapshot(seq = 1uL, rooms = emptyList())
+        override fun spacesList() = emptyList<SpaceSummary>()
+        override fun account() = AccountDto(userId = "@me:example.org", homeserver = "https://example.org")
+        override fun knownPeople(): List<PersonDto> = emptyList()
+        override fun roomInfo(roomId: String) = throw IllegalStateException("offline")
+        override fun logout() {}
+        override fun restoreSessionQuietly(): Boolean = false
+        override fun unregisterPusher() {}
+        override fun roomCast(roomId: String): uniffi.supermessage_core.RoomCast {
+            asked.countDown()
+            castGiven.await()
+            return uniffi.supermessage_core.RoomCast(
+                roomId = roomId,
+                people = listOf(PersonDto("@lyra:x", "Lyra", "L", null, null)),
+                counterpart = null,
+                agentIds = listOf("@lyra:x"),
+                addressee = null,
+                mentionables = emptyList(),
+            )
+        }
+    }
+
+    private fun running(room: String = "!a:x") = uniffi.supermessage_core.TurnUpdate(
+        uniffi.supermessage_core.TurnSummary(
+            roomId = room, turnId = 1uL, revision = 1uL, inProgress = true, endedBy = null,
+            startedAtMs = (System.currentTimeMillis() - 60_000).toULong(), endedAtMs = null,
+            lastActivityMs = System.currentTimeMillis().toULong(), answering = false, hasThought = false,
+            totalSteps = 4u, completedSteps = 2u, failedStep = null, currentStepTitle = "Reading the logs",
+            stepIsTool = false, recordLabel = null, agentId = "@lyra:x",
+        ),
+        null,
+    )
+
+    private fun turnCards() = manager.activeNotifications.filter { it.tag?.startsWith("turn:") == true }
+
+    /**
+     * I3: the first update of a turn waits on the room's cast; a sign-out in that gap withdrew
+     * everything, and the resumed update must not put the last account's running card back.
+     */
+    @Test(timeout = 30_000)
+    fun aTurnUpdateUnderWayAtSignOutPostsNoCardAfterIt() {
+        val core = SlowCast()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val session = SessionViewModel.forTest(core, scope).session
+        val poster = AndroidPoster(app)
+        val feed = NotificationFeed(
+            session, NotificationCoordinator(poster, { null }, System::currentTimeMillis), poster, app, scope,
+            pushSignedOut = {},
+        )
+        try {
+            runBlocking { session.start() }
+            feed.start()
+            // The feed subscribes on another thread and the flow does not replay: send until it is heard.
+            val deadline = System.currentTimeMillis() + 15_000
+            while (!core.asked.await(50, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                check(System.currentTimeMillis() < deadline) { "the feed never asked for the cast" }
+                core.sink!!.onEvent(uniffi.supermessage_ffi.FfiEvent.Turn(running()))
+            }
+            runBlocking { session.signOut() }
+            core.giveCast()
+            Thread.sleep(500)
+            assertEquals("no running card for the account that left", emptyList<String>(), turnCards().map { it.tag })
+        } finally {
+            core.giveCast()
+            feed.stop()
+            scope.cancel()
+        }
+    }
+
+    /** The same turn with no sign-out does put its card up (the test above is not passing for want of one). */
+    @Test(timeout = 30_000)
+    fun aTurnUpdateWithNoSignOutPostsItsCard() {
+        val core = SlowCast()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val session = SessionViewModel.forTest(core, scope).session
+        val poster = AndroidPoster(app)
+        val feed = NotificationFeed(
+            session, NotificationCoordinator(poster, { null }, System::currentTimeMillis), poster, app, scope,
+            pushSignedOut = {},
+        )
+        try {
+            runBlocking { session.start() }
+            feed.start()
+            val deadline = System.currentTimeMillis() + 15_000
+            while (!core.asked.await(50, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                check(System.currentTimeMillis() < deadline) { "the feed never asked for the cast" }
+                core.sink!!.onEvent(uniffi.supermessage_ffi.FfiEvent.Turn(running()))
+            }
+            core.giveCast()
+            waitUntil("the running card") { turnCards().size == 1 }
+        } finally {
+            core.giveCast()
+            feed.stop()
+            scope.cancel()
+            manager.cancelAll()
+        }
+    }
+
     private fun room(unread: Long, text: String) = RoomRow(
         room = RoomSummary(
             id = "!a:x", name = "Atlas", avatarUrl = null, unread = unread.toULong(), lastMessage = text,

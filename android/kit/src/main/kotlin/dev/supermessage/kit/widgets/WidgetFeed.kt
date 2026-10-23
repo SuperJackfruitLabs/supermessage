@@ -37,8 +37,13 @@ interface SnapshotStore {
  * Each returns whether the widgets are worth redrawing now (the core's `reload`).
  */
 interface WidgetWriting {
-    /** A push the core decided. */
-    suspend fun apply(note: NotificationDto): Boolean
+    /**
+     * A push the core decided, merged only if [stillFor] still holds once the writer's lock is
+     * held: the push's account is still the one signed in. `widget::apply_notification` marks
+     * the snapshot signed in, so a push decided across a sign-out would otherwise put the last
+     * account's decision back into the reset snapshot.
+     */
+    suspend fun apply(note: NotificationDto, stillFor: suspend () -> Boolean = { true }): Boolean
 
     /** The roster, read at [asOfMs], with the turns the app is watching. */
     suspend fun apply(rows: List<RoomRow>, live: List<WidgetLiveTurn>, asOfMs: Long): Boolean
@@ -78,15 +83,20 @@ class WidgetFeed(
     private val now: () -> Long = System::currentTimeMillis,
     private val lock: Mutex = Mutex(),
 ) : WidgetWriting {
-    private suspend fun run(merge: (stored: String?, nowMs: ULong) -> WidgetWrite): Boolean = lock.withLock {
+    private suspend fun run(
+        accept: suspend () -> Boolean = { true },
+        merge: (stored: String?, nowMs: ULong) -> WidgetWrite,
+    ): Boolean = lock.withLock {
+        // Asked under the lock, so a sign-out's reset cannot slip in between the check and the merge.
+        if (!accept()) return@withLock false
         val write = merge(store.read(), now().coerceAtLeast(0).toULong())
         // The core hands back what was stored when nothing changed; no need to rewrite it.
         if (write.changed) store.write(write.json)
         write.reload
     }
 
-    override suspend fun apply(note: NotificationDto): Boolean =
-        run { stored, at -> widgetApplyNotification(stored, note, at) }
+    override suspend fun apply(note: NotificationDto, stillFor: suspend () -> Boolean): Boolean =
+        run(stillFor) { stored, at -> widgetApplyNotification(stored, note, at) }
 
     override suspend fun apply(rows: List<RoomRow>, live: List<WidgetLiveTurn>, asOfMs: Long): Boolean =
         run { stored, at -> widgetApplyRoster(stored, rows, live, asOfMs.coerceAtLeast(0).toULong(), at) }

@@ -132,4 +132,34 @@ class WidgetFeedTest {
         assertEquals("every call changed the snapshot and was written", 50, revisions.size)
         assertEquals("each saw the one before it", (1L..50L).toList(), revisions)
     }
+
+    /** I2: a push whose account left while it was decided is not merged (it would mark the reset snapshot signed in). */
+    @Test(timeout = 60_000)
+    fun aPushWhoseAccountLeftIsNotMerged() = runBlocking {
+        feed.signedOut()
+        val before = store.json
+        assertFalse("no redraw", feed.apply(gate(), stillFor = { false }))
+        assertEquals("nothing written", before, store.json)
+        assertEquals(WidgetContent.SIGNED_OUT, feed.view().content)
+        assertTrue("still the account's: merged", feed.apply(gate(), stillFor = { true }))
+        assertEquals(1, feed.view().decisions.size)
+    }
+
+    /** I2: the account is checked under the writer's lock, so a sign-out's reset cannot slip in between check and merge. */
+    @Test(timeout = 60_000)
+    fun thePushsAccountIsCheckedUnderTheWritersLock() = runBlocking {
+        val checking = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val push = async(Dispatchers.Default) {
+            feed.apply(gate(), stillFor = { checking.complete(Unit); release.await(); true })
+        }
+        checking.await()
+        val signOut = async(Dispatchers.Default) { feed.signedOut() }
+        Thread.sleep(200)
+        assertFalse("the sign-out waits for the check and its merge", signOut.isCompleted)
+        release.complete(Unit)
+        push.await()
+        signOut.await()
+        assertEquals("the reset came after the merge", WidgetContent.SIGNED_OUT, feed.view().content)
+    }
 }
