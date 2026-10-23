@@ -83,25 +83,15 @@ fun Roster(
     fun RosterEntry(entry: RosterRow) {
         val roomId = entry.row.room.id
         SwipeActionsRow(leading = leadingSwipe(entry), trailing = trailingSwipes(entry)) { swipeSemantics ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(swipeSemantics)
-                    .clickable(onClickLabel = "Open ${entry.row.identity.name}") { onOpenRoom(roomId) }
-                    .padding(horizontal = 16.dp)
-                    .testTag("roster-row"),
-            ) {
-                RoomRow(
-                    row = entry.row,
-                    avatarUri = avatarUri(roomId),
-                    state = entry.state,
-                    `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
-                    showsState = showsState,
-                    describesAgent = entry.describesAgent,
-                    style = entry.avatar,
-                    onOpenInfo = { onOpenInfo(roomId) },
-                )
-            }
+            RosterEntryRow(
+                entry = entry,
+                now = now,
+                avatarUri = avatarUri(roomId),
+                showsState = showsState,
+                onOpenRoom = { onOpenRoom(roomId) },
+                onOpenInfo = { onOpenInfo(roomId) },
+                modifier = swipeSemantics,
+            )
         }
 
         // Mirrors RoomListView.swift's `.task { await session.avatars.load(...) }`
@@ -134,6 +124,42 @@ fun Roster(
 
             items(section.rows, key = { it.row.room.id }) { entry -> RosterEntry(entry) }
         }
+    }
+}
+
+/**
+ * One tappable roster row: the two-line [RoomRow] with the tap that opens the
+ * room. The roster, Needs you and (without the swipes) any other list of
+ * rooms draw it, so a row looks and acts the same wherever it is listed.
+ */
+@Composable
+internal fun RosterEntryRow(
+    entry: RosterRow,
+    now: Instant,
+    avatarUri: String?,
+    showsState: Boolean,
+    onOpenRoom: () -> Unit,
+    onOpenInfo: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(modifier)
+            .clickable(onClickLabel = "Open ${entry.row.identity.name}", onClick = onOpenRoom)
+            .padding(horizontal = 16.dp)
+            .testTag("roster-row"),
+    ) {
+        RoomRow(
+            row = entry.row,
+            avatarUri = avatarUri,
+            state = entry.state,
+            `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
+            showsState = showsState,
+            describesAgent = entry.describesAgent,
+            style = entry.avatar,
+            onOpenInfo = onOpenInfo,
+        )
     }
 }
 

@@ -286,4 +286,34 @@ class RosterArrangementTest {
             assertEquals("$view did not put the newest first", "new", ordered.first())
         }
     }
+
+    // --- the inbox and the directory (N2, N3) -----------------------------
+
+    /** the inbox is the core's: decisions, invitations, and the two counts */
+    @Test
+    fun theInboxIsTheCores() {
+        val rows = listOf(
+            row("owed1", pending = true),
+            row("owed2", minutesAgo = 30.0, pending = true),
+            row("invite", invited = true),
+            row("quiet", minutesAgo = 5.0),
+        )
+        val inbox = RosterArrangement.needsYouInbox(rows, now)
+        assertEquals(listOf("owed1", "owed2"), inbox.decisions.map { it.row.room.id })
+        assertEquals(listOf("invite"), inbox.invitations.map { it.row.room.id })
+        assertEquals(3u, inbox.count)
+        // An invitation alone must not light the badge.
+        assertEquals(2u, inbox.badgeCount)
+    }
+
+    /** the directory is agents only, newest first, and never an invitation */
+    @Test
+    fun theDirectoryLeavesOutPeopleAndInvitations() {
+        val rows = listOf(
+            row("people", minutesAgo = 1.0),
+            row("agent", minutesAgo = 5.0, host = "foundry"),
+            row("invitedAgent", minutesAgo = 2.0, host = "foundry", invited = true),
+        )
+        assertEquals(listOf("agent"), RosterArrangement.agentDirectory(rows, now).map { it.row.room.id })
+    }
 }
