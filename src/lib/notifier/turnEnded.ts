@@ -1,12 +1,16 @@
 // The desktop's stand-in for the iOS Live Activity (`FleetActivityController.swift:6-29`): one
-// notification when an agent's turn ends without a reply to carry the news, or ends in a failure.
+// notification when an agent's turn ends in a failed step, news no message notification carries.
 // The words are the core's (`turn_card`, from `FleetCard.swift:183-230`); this file decides only
 // when to say them. A running turn is not posted: the tray's working line shows it, and XDG has no
 // reliable in-place progress update across servers.
 //
-// Not duplicating the message notification: a turn that ends by `reply` posts nothing (the reply
-// is a message and notifies as one), unless a step failed. Then the reply and the failure are two
-// different news items with two ids.
+// Not duplicating the message notification: the core ends a turn as `done` when the agent's
+// stream closes (`turns.rs`, `TurnInput::Answer { done: true }`), which is how an ordinary
+// answered turn ends, and the answer then lands as a message that notifies as one. `reply` is
+// only ever seen for the focused timeline. So neither ending posts on its own. A "finished with
+// no reply" note needs the core to tell a check-mark-only finish apart (a CP6 follow-up). A failed
+// step posts whatever ended the turn: the reply and the failure are two different news items with
+// two ids. A timed-out turn has no card.
 
 import {
   notificationDelivers as defaultDelivers,
@@ -49,6 +53,7 @@ export function createTurnEndedNotifier(deps: TurnEndedDeps) {
       // No cast: the room's name stands in.
     }
     if (mine !== generation) return;
+    // "Agent": the last fallback, with no cast name and no room name *(no iOS copy)*.
     const card = await deps.turnCard(s, name ?? deps.roomName(s.roomId) ?? "Agent");
     if (card === null || mine !== generation) return;
     const note: PlannedNotification = {
@@ -79,8 +84,8 @@ export function createTurnEndedNotifier(deps: TurnEndedDeps) {
       const before = last.get(s.roomId);
       last.set(s.roomId, { turnId: s.turnId, inProgress: s.inProgress });
       if (s.inProgress || !before || before.turnId !== s.turnId || !before.inProgress) return;
-      // Replies without a failed step notify as messages; a timed-out turn has no card.
-      if (s.failedStep === null && s.endedBy !== "done") return;
+      // Only a failure is news the answer's own message does not carry (see the header).
+      if (s.failedStep === null) return;
       const id = `turn:${s.roomId}:${s.turnId}`;
       if (posted.has(id)) return;
       posted.add(id);

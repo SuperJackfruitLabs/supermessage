@@ -14,6 +14,9 @@ function summary(over: Partial<TurnSummary> = {}): TurnSummary {
 const running = (over: Partial<TurnSummary> = {}) =>
   summary({ inProgress: true, endedBy: null, endedAtMs: null, ...over });
 const upd = (s: TurnSummary) => ({ summary: s, step: null });
+/** A turn that ended with a failed step: the one ending this notifier posts. */
+const failed = (over: Partial<TurnSummary> = {}) =>
+  summary({ completedSteps: 2, failedStep: "git push", ...over });
 
 /** The core's words, faked: finished, failed, or nothing for a timed-out turn. */
 function fakeCard(s: TurnSummary, name: string): TurnCard | null {
@@ -50,14 +53,25 @@ async function run(n: ReturnType<typeof setup>["n"], ...ss: TurnSummary[]) {
 }
 
 describe("turn-ended notification", () => {
-  it("a turn that finishes without a reply posts finished", async () => {
+  // The core ends a turn as `done` when the agent's stream closes (`turns.rs` `TurnInput::Answer
+  // { done: true }`), which is how an ordinary answered turn ends; the answer then lands as a
+  // message and notifies as one. Only a failure is news the message does not carry.
+  it("an answered turn ending in done posts nothing; a failed one posts once", async () => {
     const { n, post } = setup();
-    await run(n, running(), summary());
+    await run(n, running({ answering: true }), summary({ answering: true }));
+    expect(post).not.toHaveBeenCalled();
+    await run(n, running({ turnId: 2 }), failed({ turnId: 2 }));
     expect(post).toHaveBeenCalledTimes(1);
     expect(post.mock.calls[0]![0]).toEqual({
-      id: `turn:${ROOM}:1`, roomId: ROOM, eventId: null, title: "Atlas finished",
-      subtitle: null, body: "Done in 1m 04s · 3 steps", category: "message", permission: null, gate: null,
+      id: `turn:${ROOM}:2`, roomId: ROOM, eventId: null, title: "Atlas failed",
+      subtitle: null, body: "At step 2 of 3 · after 1m 04s", category: "message", permission: null, gate: null,
     });
+  });
+
+  it("a thought stream's own done posts nothing", async () => {
+    const { n, post } = setup();
+    await run(n, running({ hasThought: true }), summary({ hasThought: true }));
+    expect(post).not.toHaveBeenCalled();
   });
 
   it("a turn that ends by reply posts nothing", async () => {
@@ -83,7 +97,7 @@ describe("turn-ended notification", () => {
     const { n, post } = setup();
     n.focusChanged(true);
     n.selectedChanged(ROOM);
-    await run(n, running(), summary());
+    await run(n, running(), failed());
     expect(post).not.toHaveBeenCalled();
   });
 
@@ -91,7 +105,7 @@ describe("turn-ended notification", () => {
     const { n, post } = setup();
     n.focusChanged(false);
     n.selectedChanged(ROOM);
-    await run(n, running(), summary());
+    await run(n, running(), failed());
     expect(post).toHaveBeenCalledTimes(1);
   });
 
@@ -99,46 +113,46 @@ describe("turn-ended notification", () => {
     const { n, post } = setup();
     n.focusChanged(true);
     n.selectedChanged("!other:x");
-    await run(n, running(), summary());
+    await run(n, running(), failed());
     expect(post).toHaveBeenCalledTimes(1);
   });
 
   it("a muted room posts nothing", async () => {
     const { n, post } = setup({ mode: "muted" });
-    await run(n, running(), summary());
+    await run(n, running(), failed());
     expect(post).not.toHaveBeenCalled();
   });
 
   it("a turn posts at most once", async () => {
     const { n, post } = setup();
-    await run(n, running(), summary(), summary());
+    await run(n, running(), failed(), failed());
     // A late in-progress update of the same turn, then its end again.
-    await run(n, running({ revision: 2 }), summary({ revision: 3 }));
+    await run(n, running({ revision: 2 }), failed({ revision: 3 }));
     expect(post).toHaveBeenCalledTimes(1);
   });
 
   it("a turn first seen already ended posts nothing", async () => {
     const { n, post } = setup();
-    await run(n, summary());
+    await run(n, failed());
     expect(post).not.toHaveBeenCalled();
   });
 
   it("the next turn posts on its own id", async () => {
     const { n, post } = setup();
-    await run(n, running(), summary(), running({ turnId: 2 }), summary({ turnId: 2 }));
+    await run(n, running(), failed(), running({ turnId: 2 }), failed({ turnId: 2 }));
     expect(post.mock.calls.map((c) => c[0].id)).toEqual([`turn:${ROOM}:1`, `turn:${ROOM}:2`]);
   });
 
   it("the card names the agent doing the turn", async () => {
     const { n, post, turnCard } = setup();
-    await run(n, running({ agentId: "@lyra:x" }), summary({ agentId: "@lyra:x" }));
+    await run(n, running({ agentId: "@lyra:x" }), failed({ agentId: "@lyra:x" }));
     expect(turnCard.mock.calls[0]![1]).toBe("Lyra");
-    expect(post.mock.calls[0]![0].title).toBe("Lyra finished");
+    expect(post.mock.calls[0]![0].title).toBe("Lyra failed");
   });
 
   it("with no cast the card names the room", async () => {
     const { n, turnCard } = setup({ cast: null });
-    await run(n, running(), summary());
+    await run(n, running(), failed());
     expect(turnCard.mock.calls[0]![1]).toBe("Design room");
   });
 
@@ -149,7 +163,7 @@ describe("turn-ended notification", () => {
     await run(n, running(), running({ revision: 2, completedSteps: 1 }), running({ revision: 3, completedSteps: 2 }), summary({ revision: 4, endedBy: "reply" }));
     expect(post).not.toHaveBeenCalled();
     // And the room is not stuck: its next turn still posts.
-    await run(n, running({ turnId: 2 }), summary({ turnId: 2 }));
+    await run(n, running({ turnId: 2 }), failed({ turnId: 2 }));
     expect(post).toHaveBeenCalledTimes(1);
   });
 
@@ -157,14 +171,14 @@ describe("turn-ended notification", () => {
     const { n, post } = setup();
     n.turnChanged(upd(running()));
     n.reset();
-    await run(n, summary());
+    await run(n, failed());
     expect(post).not.toHaveBeenCalled();
   });
 
   it("an end that was being worded when the reader signed out posts nothing", async () => {
     const { n, post } = setup();
     n.turnChanged(upd(running()));
-    n.turnChanged(upd(summary()));
+    n.turnChanged(upd(failed()));
     n.reset();
     await flush();
     expect(post).not.toHaveBeenCalled();
