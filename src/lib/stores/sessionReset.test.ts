@@ -107,7 +107,7 @@ describe("resetSessionState", () => {
       destinations: blankDestinations(),
       notificationClearAll: async () => {},
       notifier: { reset() {} },
-      attention: { reset() {} },
+        attention: { reset() {} },
     });
     expect(liveStore.isLive).toBe(false);
     expect(liveStore.summary).toBeNull();

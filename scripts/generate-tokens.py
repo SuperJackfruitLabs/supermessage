@@ -23,6 +23,7 @@ from scripts.tokens.emit_mark import (  # noqa: E402
     emit_android_monochrome,
     emit_logo_svg,
 )
+from scripts.tokens.emit_rust import emit_rust  # noqa: E402
 from scripts.tokens.emit_swift import emit_swift  # noqa: E402
 from scripts.tokens.model import TokenError, load  # noqa: E402
 
@@ -39,6 +40,7 @@ def main() -> int:
 
     outputs = {
         REPO / "src" / "lib" / "tokens.css": emit_app_css(tokens),
+        REPO / "src-tauri" / "src" / "tokens.rs": emit_rust(tokens),
         REPO
         / "apple"
         / "Supermessage"

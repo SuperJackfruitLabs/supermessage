@@ -24,6 +24,7 @@
   import { attention } from "$lib/stores/attention.svelte";
   import { notifier } from "$lib/notifier/notifier.svelte";
   import { openRoomFromNotification } from "$lib/notifier/openRoom";
+  import { navigateTo } from "$lib/navigate";
   import { createWindowFocus } from "$lib/stores/windowFocus.svelte";
   import {
     appVersion,
@@ -33,6 +34,7 @@
     knownPeople,
     onIgnoredUsers,
     onNotificationOpen,
+    onNavigate,
     ensureRecovery,
     notificationPermission,
     joinRoomByAlias,
@@ -83,6 +85,7 @@
   import AccountPanel from "$lib/components/AccountPanel.svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { appearanceStore } from "$lib/stores/appearance.svelte";
+  import { closeBehaviour } from "$lib/stores/closeBehaviour.svelte";
   import { resetSessionState } from "$lib/stores/sessionReset";
   import { safetyStore } from "$lib/stores/safety.svelte";
   import { unblock } from "$lib/safety";
@@ -115,10 +118,21 @@
       liveStore.roomId === roomsStore.selectedId && liveStore.inProgress,
     );
   });
-  // The window title carries the Needs you count: the inbox's own badge count, set only when it changes.
+  // The window title and the tray carry the Needs you count (the inbox's own badge count) and how
+  // many agents are working, sent only when they change. Statuses age, so a tick re-reads them.
   $effect(() => {
     if (!restored) return;
-    attention.follow(destinations.inbox);
+    void attention.follow({
+      inbox: destinations.inbox,
+      rows: untrack(() => roomsStore.rooms),
+      agents: destinations.agents,
+      openRoomId: roomsStore.selectedId,
+      turnInProgress: liveStore.roomId === roomsStore.selectedId && liveStore.inProgress,
+    });
+  });
+  $effect(() => {
+    if (!restored) return;
+    return attention.startTicking();
   });
   let signingOut = $state(false);
 
@@ -128,13 +142,19 @@
   const windowFocus = createWindowFocus();
   $effect(() => {
     if (!restored) return;
-    notifier.focusChanged(untrack(() => windowFocus.focused));
-    return windowFocus.onChange((focused) => notifier.focusChanged(focused));
+    const apply = (focused: boolean) => {
+      notifier.focusChanged(focused);
+    };
+    apply(untrack(() => windowFocus.focused));
+    return windowFocus.onChange(apply);
   });
   $effect(() => {
     if (!restored) return;
     notifier.selectedChanged(roomsStore.selectedId);
   });
+  // No turn-ended note, on purpose: iOS alerts only for needs_you and a turn's outcome rides on
+  // the answer's own push. To bring it back once the core can say "news no message carries", see
+  // core-backlog/cp6-followup-turn-finished.md.
   $effect(() => {
     if (!restored) return;
     notifier.roomsChanged(roomsStore.rooms);
@@ -795,11 +815,13 @@
   // synchronous one.
   let unlistenIgnored: (() => void) | null = null;
   let unlistenOpen: (() => void) | null = null;
+  let unlistenNavigate: (() => void) | null = null;
   let destroyed = false;
   onDestroy(() => {
     destroyed = true;
     unlistenIgnored?.();
     unlistenOpen?.();
+    unlistenNavigate?.();
   });
 
   /** A notification was clicked: the window is forward; show its room (the collapsed layout too). */
@@ -812,6 +834,8 @@
   }
 
   onMount(() => windowFocus.start());
+  // The device's "keep running in the tray" choice reaches Rust before anyone can close the window.
+  onMount(() => void closeBehaviour.install());
 
   onMount(async () => {
     onIgnoredUsers((ids) => safetyStore.apply(ids))
@@ -826,6 +850,12 @@
         else unlistenOpen = unlisten;
       })
       .catch((err: unknown) => console.error("could not listen for notification clicks", err));
+    onNavigate((to) => navigateTo(to, chooseDestination))
+      .then((unlisten) => {
+        if (destroyed) unlisten();
+        else unlistenNavigate = unlisten;
+      })
+      .catch((err: unknown) => console.error("could not listen for tray navigation", err));
     try {
       restored = await roomsStore.restoreSession();
     } catch (err) {
@@ -956,6 +986,8 @@
   async function openAccount(): Promise<void> {
     accountOpen = true;
     blockedList = null;
+    // Whether the tray can be seen may have changed since start (a panel extension turned on).
+    void closeBehaviour.refresh();
     // Only the newest opening's answer may land; a failed first load is tried again here.
     const mine = ++accountOpening;
     blockedUsers().then(
@@ -1513,6 +1545,9 @@
     {version}
     prefs={appearanceStore.prefs}
     onChange={(patch) => appearanceStore.update(patch)}
+    keepRunning={closeBehaviour.keepRunning}
+    trayAvailable={closeBehaviour.available}
+    onKeepRunning={(on) => closeBehaviour.set(on)}
     onOpenRecovery={() => {
       accountOpen = false;
       void openRecovery();

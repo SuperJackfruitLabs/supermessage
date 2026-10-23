@@ -15,6 +15,8 @@ use supermessage_core::notification_policy::{
 use supermessage_core::room_info::NotificationMode;
 use supermessage_core::session::Session;
 use supermessage_core::timeline::FocusedTimeline;
+use supermessage_core::turn_card::TurnCard;
+use supermessage_core::turns::TurnSummary;
 use tauri::{AppHandle, Runtime, State};
 use tauri_plugin_notification::{NotificationExt, PermissionState};
 
@@ -144,6 +146,13 @@ pub async fn notification_post(
         .map_err(|e| e.to_string())?
 }
 
+/// A turn in the Live Activity's words (`core::turn_card::turn_card`): the desktop's stand-in
+/// notification for a turn that ended. `None` for a turn that timed out.
+#[tauri::command]
+pub fn turn_card(summary: TurnSummary, agent_name: String) -> Option<TurnCard> {
+    supermessage_core::turn_card::turn_card(&summary, &agent_name)
+}
+
 /// The Matrix user id signed in now, if any.
 pub(crate) async fn signed_in_account(session: &Session) -> Option<String> {
     let client = session.client().await?;
@@ -234,6 +243,25 @@ mod tests {
         fn withdraw_all(&self) {
             self.0.lock().unwrap().push(std::thread::current().id());
         }
+    }
+
+    #[test]
+    fn turn_card_command_returns_the_cores_words() {
+        let summary: TurnSummary = serde_json::from_value(serde_json::json!({
+            "roomId": "!r:example.org", "turnId": 1, "revision": 4, "inProgress": false,
+            "endedBy": "done", "startedAtMs": 1000, "endedAtMs": 65000, "lastActivityMs": 65000,
+            "answering": false, "hasThought": false, "totalSteps": 3, "completedSteps": 3,
+            "failedStep": null, "currentStepTitle": "", "stepIsTool": false, "recordLabel": null
+        }))
+        .unwrap();
+        let card = turn_card(summary.clone(), "Atlas".into()).expect("a card");
+        assert_eq!(card.headline, "Atlas finished");
+        assert_eq!(card.subtitle, "Done in 1m 04s · 3 steps");
+        let timed_out = TurnSummary {
+            ended_by: Some(supermessage_core::turns::TurnEnding::TimedOut),
+            ..summary
+        };
+        assert_eq!(turn_card(timed_out, "Atlas".into()), None);
     }
 
     #[test]

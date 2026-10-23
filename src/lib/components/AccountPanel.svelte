@@ -15,6 +15,9 @@
     ACCOUNT_LINKS,
     APPEARANCE_FOOTER,
     BLOCKED_FOOTER,
+    KEEP_RUNNING_FOOTER,
+    KEEP_RUNNING_LABEL,
+    KEEP_RUNNING_UNAVAILABLE_FOOTER,
     REPORT_FOOTER,
     SIGN_OUT_FOOTER,
     blockedSectionShown,
@@ -33,6 +36,11 @@
     version: string | null;
     prefs: AppearancePrefs;
     onChange: (patch: Partial<AppearancePrefs>) => void;
+    /** Keep running in the tray when the window is closed (this device's setting). */
+    keepRunning: boolean;
+    /** Whether this desktop has a tray to come back by; without one the switch is disabled. */
+    trayAvailable: boolean;
+    onKeepRunning: (on: boolean) => void;
     onOpenRecovery: () => void;
     onSignOut: () => Promise<void>;
     onOpenLink: (url: string) => void;
@@ -59,6 +67,9 @@
     version,
     prefs,
     onChange,
+    keepRunning,
+    trayAvailable,
+    onKeepRunning,
     onOpenRecovery,
     onSignOut,
     onOpenLink,
@@ -273,6 +284,40 @@
           </button>
         {/each}
       </div>
+    </section>
+
+    <section class="flex flex-col gap-2" aria-labelledby="account-notifications">
+      <h3 id="account-notifications" class="text-meta font-medium text-content-muted">
+        Notifications
+      </h3>
+      <div class="flex items-start justify-between gap-3 px-1">
+        <span id="account-keep-running" class="min-w-0 flex-1 text-ui text-content">
+          {KEEP_RUNNING_LABEL}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-labelledby="account-keep-running"
+          aria-checked={keepRunning && trayAvailable}
+          disabled={!trayAvailable}
+          onclick={() => onKeepRunning(!keepRunning)}
+          class="relative mt-0.5 h-6 w-10 shrink-0 rounded-pill border border-border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 {keepRunning &&
+          trayAvailable
+            ? 'bg-accent'
+            : 'bg-surface-sunken'}"
+        >
+          <span
+            aria-hidden="true"
+            class="absolute left-0.5 top-0.5 size-4 rounded-full bg-content-faint transition-transform {keepRunning &&
+            trayAvailable
+              ? 'translate-x-4 !bg-surface'
+              : ''}"
+          ></span>
+        </button>
+      </div>
+      <p class="px-1 text-meta text-content-faint">
+        {trayAvailable ? KEEP_RUNNING_FOOTER : KEEP_RUNNING_UNAVAILABLE_FOOTER}
+      </p>
     </section>
 
     {#if blockedSectionShown(blocked)}

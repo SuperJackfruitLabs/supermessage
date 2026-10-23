@@ -23,6 +23,13 @@ export function versionLine(version: string | null): string | null {
 export const APPEARANCE_FOOTER =
   "Black is true black in dark mode, for OLED screens. The accent colours buttons, links and your own highlights.";
 
+/** The Notifications section's toggle. *(no iOS copy; iOS has no such setting)* */
+export const KEEP_RUNNING_LABEL = "Keep running in the tray when the window is closed";
+export const KEEP_RUNNING_FOOTER = "You'll still get notifications. Quit from the tray icon's menu.";
+/** In its place where this desktop has no tray to come back by. */
+export const KEEP_RUNNING_UNAVAILABLE_FOOTER =
+  "This desktop shows no tray icon, so closing the window quits the app.";
+
 /** The Sign out section's footer (`:148-157`). */
 export const SIGN_OUT_FOOTER = "Signing out removes this account and its messages from this device.";
 
