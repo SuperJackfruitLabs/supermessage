@@ -137,6 +137,13 @@ describe("nextFollowBottom", () => {
   it("keeps a reader who scrolled away where they are", () => {
     expect(nextFollowBottom(false, 4138, false)).toBe(false);
   });
+
+  it("does not resume following on the first frames of a smooth jump", () => {
+    // The quote-jump starts 40px from the tail: that frame is "at the tail", and
+    // counting it re-pinned the jump once the 400ms input window had lapsed.
+    expect(nextFollowBottom(false, 40, false, true)).toBe(false);
+    expect(nextFollowBottom(false, 40, false, false)).toBe(true);
+  });
 });
 
 describe("shouldRequestOlder", () => {
@@ -191,6 +198,10 @@ describe("shouldShiftNow", () => {
 // shrank to 7121. `shouldRepin` rightly ignores shrinking content, so nothing
 // carried the still-following reader back.
 describe("shouldRepinAfterScroll", () => {
+  it("leaves a gliding jump alone", () => {
+    expect(shouldRepinAfterScroll(true, 6196, false, true)).toBe(false);
+  });
+
   it("carries a following reader back after a scroll they did not make", () => {
     expect(shouldRepinAfterScroll(true, 6196, false)).toBe(true);
   });

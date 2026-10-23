@@ -314,6 +314,7 @@
     shouldRequestOlder,
     shouldSettleAtBottom,
     shouldShiftNow,
+    TAIL_THRESHOLD,
   } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import RichText from "./RichText.svelte";
@@ -462,6 +463,11 @@
     noteReaderInput();
     followBottom = false;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // virtua's first correction scroll lands inside the tail band of a short
+    // list and would switch following back on, after which the resize observer
+    // re-pins the jump. Until the glide ends, none of its scroll events may
+    // resume following or re-pin (see `endJump`).
+    if (!reducedMotion) beginJump();
     vlist?.scrollToIndex(i, { align: "center", smooth: !reducedMotion });
     highlightedKey = displayRows[i]!.key;
     clearTimeout(highlightTimer);
@@ -859,6 +865,38 @@
     lastReaderInputAt = performance.now();
   }
 
+  /** A smooth jump is gliding: its scroll events are not the reader's, nor layout's. */
+  let jumping = false;
+  let jumpTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Longest a smooth jump is trusted to run before the guard lets go. */
+  const JUMP_GUARD_MS = 1500;
+  function beginJump(): void {
+    jumping = true;
+    clearTimeout(jumpTimer);
+    jumpTimer = setTimeout(endJump, JUMP_GUARD_MS);
+  }
+  /**
+   * The glide is over: the timeout, a timer rather than `scrollend` because
+   * virtua's first, instant correction scroll fires `scrollend` before the
+   * smooth one has started.
+   */
+  function endJump(): void {
+    if (!jumping) return;
+    jumping = false;
+    clearTimeout(jumpTimer);
+    const scroller = scrollBox?.firstElementChild as HTMLElement | null | undefined;
+    // Landing back inside the tail band resumes following, as any scroll there does.
+    if (scroller && scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop < TAIL_THRESHOLD)
+      followBottom = true;
+  }
+  onDestroy(() => clearTimeout(jumpTimer));
+  /** The reader's own input: also ends a jump they interrupt. */
+  function onReaderInput(): void {
+    jumping = false;
+    clearTimeout(jumpTimer);
+    noteReaderInput();
+  }
+
   /** Puts a following reader back on the newest row; the browser clamps it. */
   function repinToTail(): void {
     const scroller = scrollBox?.firstElementChild as HTMLElement | null | undefined;
@@ -901,8 +939,8 @@
     if (!vlist) return;
     const distanceFromBottom = vlist.getScrollSize() - vlist.getViewportSize() - offset;
     const readerDriven = isReaderScroll(lastReaderInputAt, performance.now());
-    followBottom = nextFollowBottom(followBottom, distanceFromBottom, readerDriven);
-    if (shouldRepinAfterScroll(followBottom, distanceFromBottom, readerDriven)) repinToTail();
+    followBottom = nextFollowBottom(followBottom, distanceFromBottom, readerDriven, jumping);
+    if (shouldRepinAfterScroll(followBottom, distanceFromBottom, readerDriven, jumping)) repinToTail();
     maybeRequestOlder(offset, readerDriven);
   }
 
@@ -1012,7 +1050,7 @@
     };
 
     const inputs = ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"] as const;
-    for (const type of inputs) scroller.addEventListener(type, noteReaderInput, { passive: true });
+    for (const type of inputs) scroller.addEventListener(type, onReaderInput, { passive: true });
 
     reactToResize = react;
 
@@ -1027,7 +1065,7 @@
     return () => {
       reactToResize = null;
       observer.disconnect();
-      for (const type of inputs) scroller.removeEventListener(type, noteReaderInput);
+      for (const type of inputs) scroller.removeEventListener(type, onReaderInput);
     };
   });
 
