@@ -23,6 +23,8 @@
   import { setUpAfterSignIn } from "$lib/stores/signInSetup";
   import { attention } from "$lib/stores/attention.svelte";
   import { notifier } from "$lib/notifier/notifier.svelte";
+  import { turnEnded } from "$lib/notifier/turnEnded";
+  import { onTurn } from "$lib/ipc";
   import { openRoomFromNotification } from "$lib/notifier/openRoom";
   import { navigateTo } from "$lib/navigate";
   import { createWindowFocus } from "$lib/stores/windowFocus.svelte";
@@ -142,12 +144,32 @@
   const windowFocus = createWindowFocus();
   $effect(() => {
     if (!restored) return;
-    notifier.focusChanged(untrack(() => windowFocus.focused));
-    return windowFocus.onChange((focused) => notifier.focusChanged(focused));
+    const apply = (focused: boolean) => {
+      notifier.focusChanged(focused);
+      turnEnded.focusChanged(focused);
+    };
+    apply(untrack(() => windowFocus.focused));
+    return windowFocus.onChange(apply);
   });
   $effect(() => {
     if (!restored) return;
     notifier.selectedChanged(roomsStore.selectedId);
+    turnEnded.selectedChanged(roomsStore.selectedId);
+  });
+  // A turn ending with no reply to carry the news (the Live Activity's stand-in). Every room's
+  // updates, not only the open one's.
+  $effect(() => {
+    if (!restored) return;
+    let stop: (() => void) | null = null;
+    let gone = false;
+    void onTurn((update) => turnEnded.turnChanged(update)).then((un) => {
+      if (gone) un();
+      else stop = un;
+    });
+    return () => {
+      gone = true;
+      stop?.();
+    };
   });
   $effect(() => {
     if (!restored) return;

@@ -2783,6 +2783,19 @@ export async function notificationPost(note: PlannedNotification): Promise<void>
   await invoke<void>("notification_post", { note });
 }
 
+/** `core::turn_card::TurnCard`: a turn in the Live Activity's words. */
+export interface TurnCard {
+  headline: string;
+  subtitle: string;
+  inProgress: boolean;
+  failed: boolean;
+}
+
+/** A turn in the Live Activity's words (`core::turn_card::turn_card`); null for a timed-out turn. */
+export async function turnCard(summary: TurnSummary, agentName: string): Promise<TurnCard | null> {
+  return await invoke<TurnCard | null>("turn_card", { summary, agentName });
+}
+
 /** `core::safety::IGNORED_USERS_EVENT`: the blocked list, emitted by the core. */
 const IGNORED_USERS_EVENT = "sm://ignored-users";
 

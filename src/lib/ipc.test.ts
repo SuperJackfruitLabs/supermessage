@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, windowCloseBehaviour, voiceRecordingSpec, voiceWaveform, voiceLongEnough, attachmentStageRecording, attachmentMarkVoice, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen, onNavigate } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, windowCloseBehaviour, voiceRecordingSpec, voiceWaveform, voiceLongEnough, attachmentStageRecording, attachmentMarkVoice, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, turnCard, onIgnoredUsers, onNotificationOpen, onNavigate } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -350,6 +350,7 @@ describe("session commands", () => {
     ["notificationsForFocused passes camelCase args", () => notificationsForFocused("!r:x", "Atlas", 42, ["$a"], CTX), "notifications_for_focused", { roomId: "!r:x", roomName: "Atlas", sinceMs: 42, alreadyNotified: ["$a"], context: CTX }],
     ["notificationDelivers passes the mode", () => notificationDelivers(NOTE, "muted"), "notification_delivers", { note: NOTE, mode: "muted" }],
     ["notificationPost passes the note", () => notificationPost(NOTE), "notification_post", { note: NOTE }],
+    ["turnCard passes the summary and the agent's name camelCased", () => turnCard({ roomId: "!r:x" } as never, "Atlas"), "turn_card", { summary: { roomId: "!r:x" }, agentName: "Atlas" }],
   ];
 
   it.each(calls)("%s", async (_name, call, command, args) => {

@@ -52,7 +52,7 @@ use crate::commands::{
 };
 use crate::commands_notify::{
     notification_clear_all, notification_delivers, notification_permission, notification_post,
-    notifications_for_focused, notifications_for_roster, send_gate_decision_to,
+    notifications_for_focused, notifications_for_roster, send_gate_decision_to, turn_card,
 };
 use crate::commands_session::{
     account, blocked_users, direct_room_with, ignore_user, known_people, people_label,
@@ -375,6 +375,7 @@ pub fn run() {
             notifications_for_focused,
             notification_delivers,
             notification_post,
+            turn_card,
             send_gate_decision_to,
             connection_state,
             login,

@@ -19,6 +19,7 @@ function blankTurnStores() {
     destinations: blankDestinations(),
     notificationClearAll: async () => {},
     notifier: { reset() {} },
+    turnEnded: { reset() {} },
     attention: { reset() {} },
   };
 }
@@ -107,6 +108,7 @@ describe("resetSessionState", () => {
       destinations: blankDestinations(),
       notificationClearAll: async () => {},
       notifier: { reset() {} },
+      turnEnded: { reset() {} },
       attention: { reset() {} },
     });
     expect(liveStore.isLive).toBe(false);
@@ -145,6 +147,19 @@ describe("resetSessionState and notifications", () => {
       accountStore: createAccountStore(),
       ...blankTurnStores(),
       notifier: { reset: () => void (resets += 1) },
+    });
+    expect(resets).toBe(1);
+  });
+
+  it("resetSessionState resets the turn-ended notifier", () => {
+    let resets = 0;
+    resetSessionState({
+      editTargetStore: createEditTargetStore(),
+      replyTargetStore: createReplyTargetStore(),
+      safetyStore: createSafetyStore(null),
+      accountStore: createAccountStore(),
+      ...blankTurnStores(),
+      turnEnded: { reset: () => void (resets += 1) },
     });
     expect(resets).toBe(1);
   });
