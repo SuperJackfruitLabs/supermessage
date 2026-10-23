@@ -177,15 +177,15 @@ class RosterSwipeTest {
         assertEquals(listOf(HapticFeedbackType.Confirm), haptics.played)
     }
 
-    /** `false` from the core is "nothing newer to acknowledge": no receipt, no haptic. */
+    /** `false` from the core is "nothing newer to acknowledge": iOS still plays its success haptic. */
     @Test
-    fun aMarkReadThatSentNothingPlaysNoHaptic() {
+    fun aMarkReadThatSentNothingStillPlaysTheHaptic() {
         val core = FakeCore(alpha, markReadResult = { false })
         show(core)
         compose.onNodeWithTag("roster-row").performTouchInput { swipeRight() }
         compose.waitForIdle()
         assertEquals(listOf("!a:example.org"), core.markedRead)
-        assertEquals(emptyList<HapticFeedbackType>(), haptics.played)
+        assertEquals(listOf(HapticFeedbackType.Confirm), haptics.played)
     }
 
     @Test

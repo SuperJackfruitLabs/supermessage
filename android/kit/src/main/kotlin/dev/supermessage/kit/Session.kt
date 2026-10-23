@@ -194,7 +194,7 @@ class Session(
 
     val connection = ConnectionStore()
     val rooms: RoomsStore = RoomsStore(client = client, scope = scope)
-    val spaces: SpacesStore = SpacesStore(client = client, onSelecting = { rooms.supersede() })
+    val spaces: SpacesStore = SpacesStore(client = client, onSelected = { rooms.supersede(); rooms.seed() })
     val avatars: AvatarCache = AvatarCache(client = client)
 
     /** Senders' faces, keyed by `mxc:` URI — see [AvatarCache.forMembers]. */

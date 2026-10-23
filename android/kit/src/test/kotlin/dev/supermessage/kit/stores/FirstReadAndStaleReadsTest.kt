@@ -55,14 +55,23 @@ class FirstReadAndStaleReadsTest {
         val rooms: List<RoomRow> = emptyList(),
         val spaces: List<SpaceSummary> = emptyList(),
         val avatar: String? = null,
+        /** What a roster read after the first one answers (the first answers [rooms]). */
+        val laterRooms: List<RoomRow>? = null,
+        val selectFails: Boolean = false,
     ) : StubCore() {
+        private var snapshots = 0
         val entered = CountDownLatch(1)
         val release = CountDownLatch(1)
         private fun hold() {
             entered.countDown()
             release.await(5, TimeUnit.SECONDS)
         }
-        override fun roomsSnapshot(): RoomsSnapshot { hold(); return RoomsSnapshot(seq = 1uL, rooms = rooms) }
+        override fun roomsSnapshot(): RoomsSnapshot {
+            val first = snapshots++ == 0
+            hold()
+            return RoomsSnapshot(seq = 1uL, rooms = if (first) rooms else laterRooms ?: rooms)
+        }
+        override fun spaceSelect(spaceId: String?) { if (selectFails) throw IllegalStateException("refused") }
         override fun spacesList(): List<SpaceSummary> { hold(); return spaces }
         override fun roomAvatar(roomId: String): String? { hold(); return avatar }
     }
@@ -126,15 +135,59 @@ class FirstReadAndStaleReadsTest {
 
     @Test
     fun `a roster read from before a space switch does not land`() = withScope { scope ->
-        val core = HeldCore(rooms = listOf(row("!old-space:x")))
+        val core = HeldCore(rooms = listOf(row("!old-space:x")), laterRooms = listOf(row("!new-space:x")))
         val rooms = RoomsStore(client = CoreClient(core = core), scope = scope)
         val job = scope.launch { rooms.seed() }
         assertTrue(core.entered.await(5, TimeUnit.SECONDS))
         rooms.supersede()
         core.release.countDown()
         job.join()
-        assertTrue("the previous space's rooms landed", rooms.rooms.value.isEmpty())
-        assertFalse(rooms.loaded.value)
+        assertEquals(listOf("!new-space:x"), rooms.rooms.value.map { it.room.id })
+    }
+
+    /** The review's Important 1: the new space's Reset met the in-flight guard, and nothing asked again. */
+    @Test
+    fun `a space switch during a roster read still ends on the new space's rooms`() = withScope { scope ->
+        val core = HeldCore(rooms = listOf(row("!old-space:x")), laterRooms = listOf(row("!new-space:x")))
+        val rooms = RoomsStore(client = CoreClient(core = core), scope = scope)
+        val job = scope.launch { rooms.seed() }
+        assertTrue(core.entered.await(5, TimeUnit.SECONDS))
+        rooms.supersede()
+        // The core's Reset for the new space, while the old read is still out: ignored by the guard.
+        rooms.handle(
+            RoomDiffEnvelope("sm://rooms/diff", "", 1uL, listOf(RoomDiffOp.Reset(values = listOf(row("!new-space:x"))))),
+        )
+        core.release.countDown()
+        job.join()
+        assertEquals(listOf("!new-space:x"), rooms.rooms.value.map { it.room.id })
+        assertTrue("and the first read counts", rooms.loaded.value)
+    }
+
+    @Test
+    fun `selecting a space re-reads the roster once the core has taken it`() = withScope { scope ->
+        val core = HeldCore(rooms = listOf(row("!old-space:x")), laterRooms = listOf(row("!new-space:x")))
+        val rooms = RoomsStore(client = CoreClient(core = core), scope = scope)
+        val spaces = SpacesStore(CoreClient(core = core), onSelected = { rooms.supersede(); rooms.seed() })
+        val job = scope.launch { rooms.seed() }
+        assertTrue(core.entered.await(5, TimeUnit.SECONDS))
+        val selecting = scope.launch { spaces.select("!s:x") }
+        core.release.countDown()
+        selecting.join()
+        job.join()
+        assertEquals(listOf("!new-space:x"), rooms.rooms.value.map { it.room.id })
+    }
+
+    @Test
+    fun `a refused selection leaves the roster read in flight alone`() = withScope { scope ->
+        val core = HeldCore(rooms = listOf(row("!a:x")), laterRooms = listOf(row("!b:x")), selectFails = true)
+        val rooms = RoomsStore(client = CoreClient(core = core), scope = scope)
+        val spaces = SpacesStore(CoreClient(core = core), onSelected = { rooms.supersede(); rooms.seed() })
+        val job = scope.launch { rooms.seed() }
+        assertTrue(core.entered.await(5, TimeUnit.SECONDS))
+        spaces.select("!s:x")
+        core.release.countDown()
+        job.join()
+        assertEquals("the read that was asked for lands", listOf("!a:x"), rooms.rooms.value.map { it.room.id })
     }
 
     @Test

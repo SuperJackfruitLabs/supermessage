@@ -33,8 +33,11 @@ import uniffi.supermessage_ffi.FfiException
  */
 class SpacesStore(
     private val client: CoreClient,
-    /** Called as a selection begins, before the core is asked: the roster in flight is about to be the old space's. */
-    private val onSelecting: () -> Unit = {},
+    /**
+     * Called once the core has taken the selection (not when it refused): a roster
+     * read begun before it describes the old space. Suspends while the roster is re-read.
+     */
+    private val onSelected: suspend () -> Unit = {},
 ) {
     /** Bumped by [clear]: a read begun under an earlier value is a previous account's and is dropped. */
     private var epoch = 0
@@ -68,10 +71,12 @@ class SpacesStore(
     /** Filter the roster to [spaceId], or clear the filter with `null`. */
     suspend fun select(spaceId: String?) {
         val mine = epoch
-        onSelecting()
         try {
             client.spaceSelect(spaceId)
-            if (mine == epoch) _selectedId.value = spaceId
+            if (mine == epoch) {
+                _selectedId.value = spaceId
+                onSelected()
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: FfiException) {

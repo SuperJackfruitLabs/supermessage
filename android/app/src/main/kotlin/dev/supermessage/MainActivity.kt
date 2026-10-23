@@ -230,12 +230,14 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
     // The search term lives here, not in the panel: the list pane is recomposed on
     // the way back from a result, and the term has to be there when it is.
     var searchTerm by rememberSaveable(session) { mutableStateOf("") }
+    var searchNarrowed by rememberSaveable(session) { mutableStateOf(true) }
     // Bumped on sign-out: the scroll positions below belong to the account that left.
     var accountEpoch by remember { mutableIntStateOf(0) }
     LaunchedEffect(phase) {
         if (phase == Session.Phase.SIGNED_OUT) {
             destination = Destination.CHATS
             searchTerm = ""
+            searchNarrowed = true
             accountEpoch += 1
         }
     }
@@ -390,6 +392,8 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                                 roomName = { roomId -> rooms.firstOrNull { it.room.id == roomId }?.room?.name },
                                 hoistedTerm = searchTerm,
                                 onTermChange = { searchTerm = it },
+                                hoistedNarrowed = searchNarrowed,
+                                onNarrowedChange = { searchNarrowed = it },
                             )
                     }
                 }

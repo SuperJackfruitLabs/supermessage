@@ -408,6 +408,27 @@ class NavigationTest {
         )
     }
 
+    @Test
+    fun theResultsAndTheScopeSurviveAVisitElsewhere() {
+        val core = Core(fleet())
+        core.hits = listOf(
+            SearchResultDto(roomId = "!q:x", eventId = "\$e1", sender = "@a:x", body = "deploy done", timestampMs = 1uL),
+        )
+        show(core, tablet(840))
+        compose.onNodeWithText("Atlas").tap()
+        compose.waitForIdle()
+        select("search")
+        compose.onNodeWithTag("search-scope-all").performClick()
+        compose.onNodeWithTag("search-field").performTextInput("deploy")
+        compose.onNodeWithTag("search-field").performSemanticsAction(SemanticsActions.OnImeAction)
+        compose.waitUntil(5_000) { exists("search-result-\$e1") }
+        select("agents")
+        compose.waitForIdle()
+        select("search")
+        compose.waitUntil(5_000) { exists("search-result-\$e1") }
+        compose.onNodeWithTag("search-scope-all").assertIsSelected()
+    }
+
     // MARK: the toolbar
 
     @Test

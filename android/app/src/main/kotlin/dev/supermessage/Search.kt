@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -122,6 +123,9 @@ fun SearchPanel(
      */
     hoistedTerm: String? = null,
     onTermChange: ((String) -> Unit)? = null,
+    /** As [hoistedTerm], for the room/everywhere choice. `null` keeps it here. */
+    hoistedNarrowed: Boolean? = null,
+    onNarrowedChange: ((Boolean) -> Unit)? = null,
 ) {
     var localTerm by remember { mutableStateOf("") }
     val term = hoistedTerm ?: localTerm
@@ -132,7 +136,11 @@ fun SearchPanel(
     // Whether the search is narrowed to `scope`. Starts narrowed: a reader
     // who opened search from inside a room is asking about that room —
     // the same default `SearchPanel.swift`'s own `narrowed` documents.
-    var narrowed by remember { mutableStateOf(true) }
+    var localNarrowed by remember { mutableStateOf(true) }
+    val narrowed = hoistedNarrowed ?: localNarrowed
+    fun setNarrowed(next: Boolean) {
+        if (onNarrowedChange != null) onNarrowedChange(next) else localNarrowed = next
+    }
     val coroutineScope = rememberCoroutineScope()
 
     // Which search is the newest. Changing the scope while one is in flight
@@ -163,6 +171,12 @@ fun SearchPanel(
         // on `SearchPanel.swift`'s own `onChange(of: narrowed)`.
         if (state.query.isEmpty() && term.isBlank()) return
         coroutineScope.launch { run() }
+    }
+
+    // Coming back to a term the caller kept: ask again, so its results are here too.
+    // (Only on entry: `narrowed` and `scope` are read as they are then.)
+    LaunchedEffect(Unit) {
+        if (term.isNotBlank() && state is SearchState.Idle) run()
     }
 
     Column(modifier.fillMaxSize()) {
@@ -204,13 +218,13 @@ fun SearchPanel(
                     label = scope.name,
                     selected = narrowed,
                     testTag = "search-scope-room",
-                    onClick = { if (!narrowed) { narrowed = true; rerunIfAlreadyAsked() } },
+                    onClick = { if (!narrowed) { setNarrowed(true); rerunIfAlreadyAsked() } },
                 )
                 ScopeChip(
                     label = "All rooms",
                     selected = !narrowed,
                     testTag = "search-scope-all",
-                    onClick = { if (narrowed) { narrowed = false; rerunIfAlreadyAsked() } },
+                    onClick = { if (narrowed) { setNarrowed(false); rerunIfAlreadyAsked() } },
                 )
             }
         }
