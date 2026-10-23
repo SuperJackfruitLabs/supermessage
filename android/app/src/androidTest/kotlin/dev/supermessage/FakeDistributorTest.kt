@@ -58,11 +58,16 @@ class FakeDistributorTest {
         manager.cancelAll()
         AppCore.coordinator = null
         AppCore.installForTest(core)
+        // The fake answers REGISTER with an endpoint and a message at once, so the message can
+        // beat the registrar's stamp. A real homeserver pushes only once the pusher is set, by
+        // which time its account is stamped; this is that state.
+        AppCore.pushOwner(context).account = "@me:x"
         AppCore.installRegistrarForTest(
             PushRegistrar(
                 core = { core },
                 unregisterDistributor = {},
                 probe = { url -> if (url == FakeDistributor.GATEWAY) """{"unifiedpush":{"gateway":"matrix"}}""" else null },
+                owner = AppCore.pushOwner(context),
             ),
         )
         UnifiedPush.saveDistributor(context, distributor)
@@ -72,6 +77,8 @@ class FakeDistributorTest {
     @After
     fun tearDown() {
         UnifiedPush.removeDistributor(context)
+        androidx.work.WorkManager.getInstance(context).cancelAllWorkByTag(dev.supermessage.notify.PushWorker.TAG)
+        AppCore.pushOwner(context).account = null
         AppCore.installRegistrarForTest(null)
         AppCore.installForTest(null)
         manager.cancelAll()

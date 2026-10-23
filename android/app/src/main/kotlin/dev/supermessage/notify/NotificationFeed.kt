@@ -2,6 +2,7 @@ package dev.supermessage.notify
 
 import androidx.core.app.NotificationManagerCompat
 import android.content.Context
+import dev.supermessage.AppCore
 import dev.supermessage.kit.Session
 import dev.supermessage.kit.notify.NotificationCoordinator
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +33,13 @@ internal const val FEED_THROTTLE_MS = 250L
  * handed to the coordinator until the poster has the account. A change
  * skipped for that is not lost: the roster's previous snapshot and the
  * timeline's notified set are untouched, so the next look sees it.
+ *
+ * **Sign-out is handled here, not by an Activity** (RF5). The session's own
+ * hook runs on every `SIGNED_IN → SIGNED_OUT`, whether or not an Activity saw
+ * it (one recreated by a configuration change does not). It forgets the
+ * marks, unregisters from the distributor and clears the push owner
+ * ([PushRegistrar.signedOut]), cancels every queued push
+ * ([cancelQueuedPushes]), and withdraws what is shown.
  */
 @OptIn(FlowPreview::class)
 internal class NotificationFeed(
@@ -40,6 +48,11 @@ internal class NotificationFeed(
     private val poster: AndroidPoster,
     private val context: Context,
     private val scope: CoroutineScope,
+    /** Push's part of a sign-out; a seam, so tests reach no distributor or scheduler. */
+    private val pushSignedOut: () -> Unit = {
+        AppCore.registrar(context).signedOut()
+        cancelQueuedPushes(context)
+    },
 ) {
     private val jobs = mutableListOf<Job>()
     private var removeHook: (() -> Unit)? = null
@@ -49,6 +62,8 @@ internal class NotificationFeed(
         removeHook = session.onSignedOut {
             coordinator.signedOut()
             poster.accountId = null
+            // Before the withdrawal, so no push queued or under way posts after it.
+            pushSignedOut()
             NotificationManagerCompat.from(context).cancelAll()
         }
         // The sign-out hook above clears the account, synchronously with the phase.

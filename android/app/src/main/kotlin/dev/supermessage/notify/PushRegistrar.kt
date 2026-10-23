@@ -68,6 +68,8 @@ internal class PushRegistrar(
     private val coordinator: () -> NotificationCoordinator? = { AppCore.coordinator },
     private val deviceName: () -> String = { Build.MODEL },
     private val language: () -> String = { Locale.getDefault().toLanguageTag() },
+    /** Which account the pusher is for; every push is stamped with it ([PushOwner]). */
+    private val owner: PushOwner = PushOwner.InMemory(),
 ) {
     private val lock = Mutex()
 
@@ -101,6 +103,17 @@ internal class PushRegistrar(
             _status.value = PushStatus.NoMatrixGateway
             return@withLock
         }
+        // Stamped before the pusher exists, so no push for it can come first.
+        val account = try {
+            client.account().userId
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A pusher whose pushes could not be told apart from another account's is not registered.
+            return@withLock
+        }
+        if (mine != generation) return@withLock
+        owner.account = account
         val registration = PushRegistration(
             pushkey = endpoint,
             appId = APP_ID,
@@ -110,7 +123,11 @@ internal class PushRegistrar(
             gatewayUrl = gateway,
         )
         val landed = attempt { client.registerPusher(registration); true }
-        if (mine != generation) return@withLock
+        if (mine != generation) {
+            // Signed out while it registered: its pushes are no one's now.
+            owner.account = null
+            return@withLock
+        }
         if (!landed) {
             // The core removes a changed pushkey's pusher before it sets the
             // new one, so a failure here leaves none. The next foreground asks again.
@@ -148,13 +165,21 @@ internal class PushRegistrar(
     }
 
     /**
-     * RF5. The core's logout already removed the pusher (`C/session.rs:297`);
-     * the distributor is told, and everything is forgotten, so the next
-     * account registers afresh.
+     * RF5. The core's logout already removed the pusher, best effort
+     * (`C/session.rs:297`); the distributor is told, so the endpoint dies
+     * even if that removal did not land, the owner is cleared, so a push
+     * already on its way is no one's, and everything is forgotten, so the
+     * next account registers afresh. Called from the session's own sign-out
+     * hook ([NotificationFeed]), which needs no Activity.
      */
     fun signedOut() {
         generation++
-        unregisterDistributor()
+        owner.account = null
+        try {
+            unregisterDistributor()
+        } catch (e: Exception) {
+            // Sign-out never fails for the distributor's sake.
+        }
         forget()
         _status.value = null
     }
@@ -186,6 +211,40 @@ internal class PushRegistrar(
     companion object {
         /** The applicationId, which the pusher's `app_id` names. */
         const val APP_ID = "dev.supermessage"
+    }
+}
+
+/**
+ * The account this device's pusher was registered for, kept across processes
+ * (a push arrives in a cold one). Each push is stamped with it as it arrives,
+ * and is posted only while that account is the one signed in
+ * ([SupermessagePushService]), so a push queued for account A never posts
+ * after A signs out, or for B. Set before the pusher is registered, so no
+ * real push can come first; cleared on sign-out. *(no iOS copy: the
+ * extension runs only for the one signed-in app.)*
+ */
+internal interface PushOwner {
+    var account: String?
+
+    class InMemory : PushOwner {
+        @Volatile
+        override var account: String? = null
+    }
+
+    /** `commit`, not `apply`: a sign-out must be on disk before a job in the next process reads it. */
+    class Preferences(context: Context) : PushOwner {
+        private val prefs = context.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+
+        override var account: String?
+            get() = prefs.getString(KEY_ACCOUNT, null)
+            set(value) {
+                prefs.edit().apply { if (value == null) remove(KEY_ACCOUNT) else putString(KEY_ACCOUNT, value) }.commit()
+            }
+
+        private companion object {
+            const val FILE = "push"
+            const val KEY_ACCOUNT = "owner"
+        }
     }
 }
 

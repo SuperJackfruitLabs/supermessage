@@ -17,6 +17,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.Membership
 import uniffi.supermessage_core.PushRegistration
 import uniffi.supermessage_core.RoomAffordance
@@ -36,8 +37,13 @@ class PushRegistrarTest {
     private class Recording(@Volatile var signedIn: Boolean = true) : StubCore() {
         val registered: MutableList<PushRegistration> = Collections.synchronizedList(mutableListOf())
         val calls: MutableList<String> = Collections.synchronizedList(mutableListOf())
+        /** What the owner held when the pusher was registered. */
+        var ownerAtRegister: String? = "unset"
+        lateinit var owner: PushOwner
         override fun restoreSessionQuietly(): Boolean = signedIn
+        override fun account(): AccountDto = AccountDto(userId = "@me:x", homeserver = "https://x")
         override fun registerPusher(registration: PushRegistration) {
+            if (::owner.isInitialized) ownerAtRegister = owner.account
             calls += "register ${registration.pushkey}"
             registered += registration
         }
@@ -66,12 +72,39 @@ class PushRegistrarTest {
     @After
     fun restoreTheLanguage() = Locale.setDefault(savedLocale)
 
+    private val owner = PushOwner.InMemory()
+
     private val registrar = PushRegistrar(
         core = { core },
         unregisterDistributor = { distributorUnregistered++ },
         probe = { url -> probed += url; answer },
         coordinator = { coordinator },
+        owner = owner,
     )
+
+    /**
+     * I1: each push is stamped with the pusher's account as it arrives, so the
+     * owner is set before the pusher exists (no push can come first), and
+     * cleared on sign-out (a push on its way is no one's).
+     */
+    @Test
+    fun thePushersAccountIsStampedBeforeItRegistersAndClearedOnSignOut() {
+        core.owner = owner
+        endpoint()
+        assertEquals("@me:x", core.ownerAtRegister)
+        assertEquals("@me:x", owner.account)
+        registrar.signedOut()
+        assertNull(owner.account)
+    }
+
+    @Test
+    fun theOwnerIsKeptOnDiskForTheNextProcess() {
+        val app = ApplicationProvider.getApplicationContext<android.content.Context>()
+        PushOwner.Preferences(app).account = "@me:x"
+        assertEquals("a new process reads what the last one stamped", "@me:x", PushOwner.Preferences(app).account)
+        PushOwner.Preferences(app).account = null
+        assertNull(PushOwner.Preferences(app).account)
+    }
 
     private fun endpoint(url: String = ntfy) = runBlocking { registrar.newEndpoint(url, distributor = "ntfy") }
 

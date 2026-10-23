@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import dev.supermessage.kit.notify.NotificationCoordinator
+import dev.supermessage.notify.PushOwner
 import dev.supermessage.notify.PushRegistrar
 import org.unifiedpush.android.connector.INSTANCE_DEFAULT
 import org.unifiedpush.android.connector.UnifiedPush
@@ -66,9 +67,13 @@ object AppCore {
             registrar ?: PushRegistrar(
                 core = { core(app) },
                 unregisterDistributor = { UnifiedPush.unregister(app, INSTANCE_DEFAULT) },
+                owner = pushOwner(app),
             ).also { registrar = it }
         }
     }
+
+    /** Which account the pusher is for, on disk: the registrar sets it, each push is stamped with it. */
+    internal fun pushOwner(context: Context): PushOwner = PushOwner.Preferences(context)
 
     fun core(context: Context): CoreInterface {
         built?.let { return it }

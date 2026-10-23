@@ -128,7 +128,6 @@ class MainActivity : ComponentActivity() {
             session = model.session,
             permissionLauncher = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
             askForPush = { askForPush(this, registrar) },
-            pushSignedOut = registrar::signedOut,
         ).also { coordinator = it }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { coordinator.run() }
