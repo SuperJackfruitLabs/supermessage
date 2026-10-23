@@ -51,6 +51,8 @@ data class SupermessageTypography(
     val own: FontFamily,
     /** Sigils, roles, timestamps, counts, code. Data. */
     val code: FontFamily,
+    /** The reading view's face (`ThemeType.longread`): the one place a reader settles in. */
+    val longread: FontFamily = ThemeType.longread,
 )
 
 /**

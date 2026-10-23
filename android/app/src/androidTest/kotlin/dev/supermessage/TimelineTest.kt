@@ -813,6 +813,18 @@ class TimelineTest {
         compose.onNodeWithTag("row-r2").assertIsDisplayed()
     }
 
+    /** D6: a reply directly under its parent draws no quote, so there is nothing to jump from either. */
+    @Test
+    fun aReplyUnderItsParentHasNoQuoteAndNoJumpAction() {
+        val rows = quoting("r38").map { if (it.item.id == "r39") it.copy(hidesQuote = true) else it }
+        showQuoting(rows)
+        compose.onAllNodes(hasTestTag("reply-quote") and hasAnyAncestor(hasTestTag("row-r39")), useUnmergedTree = true)
+            .assertCountEquals(0)
+        val labels = compose.onNodeWithTag("row-r39").fetchSemanticsNode()
+            .config[SemanticsActions.CustomActions].map { it.label }
+        assertEquals(listOf("Reply"), labels)
+    }
+
     @Test
     fun aRowWhoseParentIsNotLoadedHasNoJumpAction() {
         showQuoting(quoting("\$missing"))

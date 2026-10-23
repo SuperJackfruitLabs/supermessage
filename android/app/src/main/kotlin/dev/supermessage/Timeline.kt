@@ -120,9 +120,9 @@ import uniffi.supermessage_core.TurnStep
  * bridge's runtime suffix is decided once, in the core (`timeline_grouping.rs`),
  * and arrives on every row as `continuesRun`, `endsRun` and `showsRuntime`.
  * [TimelineRow] takes them as parameters; this container only reads them off
- * the row. (The core also sends `hidesQuote`. Android draws every reply's
- * quote for now: switching it on is M4/M5 UI in the M1b plan, and no Android
- * code ever had its own copy of that rule.) Rows the core marks `hidden` get
+ * the row. (`hidesQuote` — a reply directly under its parent — is read by
+ * [TimelineRow], which then draws no quote, and here, which then offers no
+ * jump.) Rows the core marks `hidden` get
  * no entry ([displayRows]). A row's attribution
  * is its full name where two or more peers speak (`showsRuntime`), and its
  * short name otherwise.
@@ -457,7 +457,8 @@ fun Timeline(
                 val row = display.row
                 val hasMenu = !messageMenuActions(row).isEmpty
                 val time = revealedTime(row, ::clockLabel)
-                val quoteJump: (() -> Unit)? = row.item.replyTo?.eventId?.let { parent ->
+                // A quote the core hides (D6, `hidesQuote`) is not drawn, so it has no jump.
+                val quoteJump: (() -> Unit)? = row.item.replyTo?.eventId?.takeIf { !row.hidesQuote }?.let { parent ->
                     idByEventId[parent]?.let { target -> { jumpTo(target) } }
                 }
                 Box(modifier = Modifier.fillMaxWidth()) {

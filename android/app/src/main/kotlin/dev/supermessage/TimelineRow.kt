@@ -262,6 +262,8 @@ fun TimelineRow(
                 audio = view.audio,
                 named = named,
                 continuesRun = continuesRun,
+                faceUri = faceUri,
+                loadFace = loadFace,
                 transcript = view.transcript,
                 modifier = modifier,
             )
@@ -283,7 +285,11 @@ fun TimelineRow(
 
         // An agent's failed turn, as the card the core parsed off the hub's
         // message. See `TurnErrorCardView`.
-        is ItemView.TurnError -> TurnErrorCardView(card = view.card, modifier = modifier)
+        is ItemView.TurnError ->
+            TurnErrorRow(
+                row = row, named = named, card = view.card,
+                faceUri = faceUri, loadFace = loadFace, onReact = onReact, modifier = modifier,
+            )
 
         // What a voice note said, when its note is not loaded to carry it:
         // on the note's side, with no header — it belongs to the note, not
@@ -426,24 +432,7 @@ private fun MessageBlock(
         horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
     ) {
         if (!isOwn && !continuesRun) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // `row.senderInitial`, not `named`. For an agent the first
-                // character of the attribution is the glyph, so taking it
-                // here drew the symbol in the disc and left it in the name
-                // beside it — `✳ ✳ Atlas — Platform` under every message. The
-                // core now hands over the glyph and a name without it, the
-                // way RoomIdentity has always done for the roster.
-                SenderFace(mxcUri = row.item.senderAvatar, initial = row.senderInitial, faceUri = faceUri, loadFace = loadFace)
-                Text(
-                    named,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = row.item.sender?.let { SupermessageTheme.peer(it) } ?: Color.Unspecified,
-                )
-                row.item.timestampMs?.let {
-                    Text(clockLabel(it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                }
-                if (edited) EditedMarker()
-            }
+            PeerHeader(row = row, named = named, faceUri = faceUri, loadFace = loadFace, showsEdited = true)
         } else if (!isOwn && edited) {
             // A continuation drops its sender line, but "edited" is real
             // information rather than a repeated header — the desktop keeps
@@ -456,7 +445,7 @@ private fun MessageBlock(
         // (`TimelineRowView.swift:308-314`).
         prelude?.let { it(); Spacer(Modifier.height(6.dp)) }
 
-        row.replyQuote?.let { ReplyQuoteBlock(it, onTap = onQuoteTap) }
+        if (!row.hidesQuote) row.replyQuote?.let { ReplyQuoteBlock(it, onTap = onQuoteTap) }
 
         // Listen first, then read: the spoken answer above the words it says.
         spoken?.let { SpokenReply(spoken = it, isOwn = isOwn, modifier = Modifier.padding(bottom = 6.dp)) }
@@ -483,30 +472,31 @@ private fun MessageBlock(
             horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
         ) {
             CompositionLocalProvider(LocalContentColor provides textColor) {
-                Box(
-                    modifier = Modifier
-                        .testTag("bubble")
-                        // Bounded so wide content (a table, a code block) scrolls
-                        // inside itself rather than stretching this row — those
-                        // shapes already carry `horizontalScroll` in `RichText`,
-                        // but only a bounded container makes that scroll rather
-                        // than merely grow.
-                        .widthIn(max = 320.dp)
-                        .let {
-                            if (isOwn) {
-                                it.clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.13f))
-                                    .padding(10.dp)
-                            } else if (hasChips) {
-                                // A peer's text has no surface to hang the chips
-                                // from, so make room for the part they overlap.
-                                it.padding(bottom = 8.dp)
-                            } else {
-                                it
-                            }
-                        },
-                ) {
-                    RichText(blocks = blocks, fontFamily = bodyFontFamily)
+                // `peer-card` / `own-bubble` wrap the one `bubble`: the tag the
+                // role gives, around the card that is measured.
+                Box(Modifier.testTag(if (isOwn) "own-bubble" else "peer-card")) {
+                    Box(
+                        modifier = Modifier
+                            .testTag("bubble")
+                            // Bounded so wide content (a table, a code block) scrolls
+                            // inside itself rather than stretching this row. Peer
+                            // 600, own 520 (`WhatIDidFooter.swift:96-102`).
+                            .widthIn(max = if (isOwn) OwnMeasure else CardMeasure)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(
+                                if (isOwn) MaterialTheme.colorScheme.primary.copy(alpha = 0.13f)
+                                else SupermessageTheme.colors.surfaceRaised,
+                            )
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        // Never your own (the core says so); a long read is cut
+                        // and offers the reading view.
+                        if (row.isLongRead && !isOwn) {
+                            LongReadBody(blocks = blocks, fontFamily = bodyFontFamily, title = named)
+                        } else {
+                            RichText(blocks = blocks, fontFamily = bodyFontFamily)
+                        }
+                    }
                 }
             }
             // The add-reaction affordance sits in the same row as any existing
@@ -550,6 +540,9 @@ private fun MessageBlock(
 }
 
 /** How long a jumped-to message stays lit, `TimelineCollectionView.swift:921-935`. */
+private val CardMeasure = 600.dp
+private val OwnMeasure = 520.dp
+
 const val QuoteHighlightMs = 1_400L
 
 /**
@@ -588,7 +581,7 @@ private fun BoxScope.RowHighlight(highlighted: Boolean) {
  * a glyph alone reads as an action to take rather than a thing that happened.
  */
 @Composable
-private fun EditedMarker() {
+internal fun EditedMarker() {
     Text(
         "edited",
         modifier = Modifier.testTag("edited-marker"),
@@ -811,7 +804,7 @@ internal fun SenderFace(
     val uri = mxcUri?.let(faceUri)
     val bitmap = remember(uri) { uri?.decodeDataUri() }
     Box(
-        modifier = Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.size(size).testTag("sender-face").clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) {
@@ -1126,4 +1119,30 @@ private fun Modifier.quoteTap(onTap: () -> Unit): Modifier = composed {
                 true
             }
         }
+}
+
+/**
+ * An agent's failed turn under the agent's own header, with the reactions any
+ * message has (`TimelineRowView.swift:213-248`). Always headed: a failure is
+ * never the continuation of the answer above it.
+ */
+@Composable
+private fun TurnErrorRow(
+    row: TimelineRowDto,
+    named: String,
+    card: uniffi.supermessage_core.TurnErrorCard,
+    faceUri: (mxcUri: String) -> String?,
+    loadFace: suspend (mxcUri: String) -> Unit,
+    onReact: ((String) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth().padding(top = TurnGap), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        PeerHeader(row = row, named = named, faceUri = faceUri, loadFace = loadFace, showsEdited = false)
+        Column(verticalArrangement = Arrangement.spacedBy((-8).dp)) {
+            TurnErrorCardView(card = card)
+            if (row.item.reactions.isNotEmpty()) {
+                ReactionsRow(row.item.reactions, onReact = onReact, modifier = Modifier.padding(horizontal = 10.dp))
+            }
+        }
+    }
 }
