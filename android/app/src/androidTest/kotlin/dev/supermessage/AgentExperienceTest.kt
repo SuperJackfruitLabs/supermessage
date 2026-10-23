@@ -188,7 +188,7 @@ class AgentExperienceTest {
     ) {
         core = FakeCore(roomsList, castOf).also { c -> initial.forEach { (k, v) -> c.rows[k] = v.toMutableList() } }
         session = Session(
-            client = CoreClient(core = core, dispatcher = if (io) Dispatchers.IO else Dispatchers.Unconfined),
+            client = CoreClient(core = core, dispatcher = if (io) Dispatchers.IO else Dispatchers.Unconfined, resumeOn = if (io) Dispatchers.Main.immediate else null),
             scope = CoroutineScope(Dispatchers.Unconfined),
         )
         val file = File.createTempFile("agent-experience", ".preferences_pb")

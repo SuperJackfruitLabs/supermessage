@@ -17,8 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -180,8 +178,8 @@ internal fun CaughtUp(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
-            // Material's `Verified` seal is in `-extended`, which this build leaves out; the check in a circle is core.
-            Icons.Filled.CheckCircle,
+            // The seal iOS draws (`checkmark.seal`), as Material's "verified" (Glyphs.kt).
+            Glyphs.Verified,
             contentDescription = null,
             tint = colors.ok,
             modifier = Modifier

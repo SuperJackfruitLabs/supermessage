@@ -136,8 +136,10 @@ internal class AndroidPoster(
 
     private fun openRoom(note: PlannedNotification): PendingIntent {
         val intent = Intent(Intent.ACTION_VIEW, openRoomUri(note.roomId), context, MainActivity::class.java)
-            // SINGLE_TOP: without it CLEAR_TOP finishes and rebuilds a standard-mode
-            // Activity, dropping the ViewModel, the feed and the Session.
+            // MainActivity is singleTask, so the tap reaches the running instance's
+            // onNewIntent. SINGLE_TOP stays: should the launch mode ever go back to
+            // standard, CLEAR_TOP without it would finish and rebuild the Activity,
+            // dropping the ViewModel, the feed and the Session.
             .addFlags(
                 Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
             )

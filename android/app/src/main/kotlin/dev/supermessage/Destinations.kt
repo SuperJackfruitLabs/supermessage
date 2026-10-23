@@ -9,14 +9,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Forum
-import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.AutoAwesome
-import androidx.compose.material.icons.outlined.Forum
-import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -97,9 +91,9 @@ internal fun destinationTag(destination: Destination): String = when (destinatio
 }
 
 private fun iconFor(destination: Destination, selected: Boolean): ImageVector = when (destination) {
-    Destination.CHATS -> if (selected) Icons.Filled.Forum else Icons.Outlined.Forum
-    Destination.NEEDS_YOU -> if (selected) Icons.Filled.Inbox else Icons.Outlined.Inbox
-    Destination.AGENTS -> if (selected) Icons.Filled.AutoAwesome else Icons.Outlined.AutoAwesome
+    Destination.CHATS -> if (selected) Glyphs.ForumFilled else Glyphs.ForumOutlined
+    Destination.NEEDS_YOU -> if (selected) Glyphs.InboxFilled else Glyphs.InboxOutlined
+    Destination.AGENTS -> if (selected) Sparkle else Glyphs.SparkleOutlined
     Destination.SEARCH -> if (selected) Icons.Filled.Search else Icons.Outlined.Search
 }
 

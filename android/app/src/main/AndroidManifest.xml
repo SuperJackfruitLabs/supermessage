@@ -65,14 +65,32 @@
           narrowing instead of simply restarting clean. No test guards this
           line; it would need a real rotation on a device.
         -->
+        <!--
+          singleTask: one MainActivity, in the app's own task, whoever opens it. A link tapped in
+          another app starts its Activity in that app's task, where singleTop would only reuse an
+          instance already on top of that task: so it made a second MainActivity there, with a
+          second session and a second core over the same stores. singleTask hands the link to the
+          one instance (onNewIntent) and brings its task forward instead.
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!--
+              supermessage://open?room=<id>: the link iOS registers (Info.plist) and
+              its widgets build. A link opened while the app runs reaches the running
+              instance's onNewIntent (singleTask, above).
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="supermessage" android:host="open" />
             </intent-filter>
         </activity>
 

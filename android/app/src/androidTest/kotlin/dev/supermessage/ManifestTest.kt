@@ -114,4 +114,36 @@ class ManifestTest {
         )
         assertFalse("not exported", resolved.single().serviceInfo.exported)
     }
+
+    /**
+     * `supermessage://open?room=` is the link iOS registers and its widgets build. Without the
+     * filter the system finds no app for it and a tap on one does nothing.
+     */
+    @Test
+    fun theLinkResolvesToTheApp() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val link = android.content.Intent(
+            android.content.Intent.ACTION_VIEW,
+            android.net.Uri.parse("supermessage://open?room=%21a%3Ax"),
+        ).addCategory(android.content.Intent.CATEGORY_BROWSABLE).setPackage(context.packageName)
+        val found = context.packageManager.queryIntentActivities(link, 0).map { it.activityInfo.name }
+        assertTrue("MainActivity is not offered the link: $found", found.contains("dev.supermessage.MainActivity"))
+    }
+
+    /**
+     * One MainActivity, in the app's own task. A link tapped in another app is started in that
+     * app's task; under singleTop it made a second MainActivity there, with a second session and
+     * core over the same stores. `LinkIntentTest` shows the link reaching the running instance.
+     */
+    @Test
+    fun theAppRunsInOneTask() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val info = context.packageManager.getActivityInfo(
+            android.content.ComponentName(context, MainActivity::class.java), 0,
+        )
+        assertTrue(
+            "MainActivity's launchMode is ${info.launchMode}, not singleTask",
+            info.launchMode == android.content.pm.ActivityInfo.LAUNCH_SINGLE_TASK,
+        )
+    }
 }
