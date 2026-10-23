@@ -169,6 +169,9 @@ public protocol RoomMembership: Sendable {
 public protocol RoomAdministering: Sendable {
     func setRoomNotifications(roomId: String, mode: NotificationMode) async throws
     func setRoomPinned(roomId: String, pinned: Bool) async throws
+    /// Mark a room read without opening it (the roster's swipe). Whether a
+    /// receipt was sent.
+    func markRoomReadFromList(roomId: String) async throws -> Bool
     func roomInfo(roomId: String) async throws -> RoomInfoDto
     func roomAvatarFull(roomId: String) async throws -> String?
 }

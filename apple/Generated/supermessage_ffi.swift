@@ -737,6 +737,15 @@ public protocol CoreProtocol : AnyObject {
     func markRoomRead(roomId: String) throws 
     
     /**
+     * Mark `room_id` read up to its latest event, whether or not it is the
+     * open room: the roster's swipe. Returns whether a receipt was sent
+     * (`false` when there was nothing newer to acknowledge).
+     *
+     * `mark_room_read` above is for the open room and refuses any other.
+     */
+    func markRoomReadFromList(roomId: String) throws  -> Bool
+    
+    /**
      * An audio message's file, fetched, decrypted, and ready for this host's
      * player. `None` when `event_id` is not an audio message in the focused
      * room.
@@ -1483,6 +1492,21 @@ open func markRoomRead(roomId: String)throws  {try rustCallWithError(FfiConverte
         FfiConverterString.lower(roomId),$0
     )
 }
+}
+    
+    /**
+     * Mark `room_id` read up to its latest event, whether or not it is the
+     * open room: the roster's swipe. Returns whether a receipt was sent
+     * (`false` when there was nothing newer to acknowledge).
+     *
+     * `mark_room_read` above is for the open room and refuses any other.
+     */
+open func markRoomReadFromList(roomId: String)throws  -> Bool {
+    return try  FfiConverterBool.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_mark_room_read_from_list(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),$0
+    )
+})
 }
     
     /**
@@ -6153,6 +6177,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_mark_room_read() != 2656) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_mark_room_read_from_list() != 18301) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_media_audio() != 15242) {

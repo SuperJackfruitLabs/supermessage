@@ -211,7 +211,7 @@ struct AccountPanel: View {
         unblocked += 1
     }
 
-    /// The local part of the Matrix id — `@rakesh:id.agentpod.dev` is a name
+    /// The core's name for the Matrix id — `@rakesh:id.agentpod.dev` is a name
     /// and an address, and only the first half is worth a headline.
     private var name: String { AccountLabel.name(of: account?.userId) }
 

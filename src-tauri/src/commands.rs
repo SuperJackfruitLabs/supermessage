@@ -346,6 +346,18 @@ pub async fn mark_room_read(
     timeline.mark_read(&room_id).await
 }
 
+/// Marks `room_id` read without it being the open room — a row in the room
+/// list. Sends a public read receipt on the room's latest event; when
+/// `room_id` is the open room it is [`mark_room_read`]. Returns whether a
+/// receipt was sent.
+#[tauri::command]
+pub async fn mark_room_read_from_list(
+    room_id: String,
+    session: State<'_, Arc<Session>>,
+) -> Result<bool, CoreError> {
+    session.mark_room_read(&room_id).await
+}
+
 /// Resolves and fetches `room_id`'s avatar as a `data:` URI, or `None` when
 /// the room has no avatar to show (by any of `core::rooms::resolve_room_avatar_mxc`'s
 /// rules) or its bytes don't sniff to a renderable image format (see

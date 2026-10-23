@@ -78,7 +78,8 @@ public final class RoomsStore {
 
     /// Mark `roomId` read from the roster, without opening it.
     ///
-    /// The core's `mark_room_read`, the same call opening a room makes. The
+    /// The core's `mark_room_read_from_list`, which works on a room that is
+    /// not open (`mark_room_read` refuses any but the focused one). The
     /// row's unread count is not touched here: the core re-emits the row when
     /// the receipt lands, and a count that dropped locally before the
     /// homeserver agreed would be a count the roster made up. Returns whether
