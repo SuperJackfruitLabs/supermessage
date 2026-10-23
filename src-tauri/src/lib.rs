@@ -30,9 +30,7 @@ mod notify_actions;
 // The tray is desktop-only (Tauri has no tray on mobile), and the tokens are only its dot.
 #[cfg(desktop)]
 mod tokens;
-// `set_attention` drives the tray's view from the next task; until then nothing calls it.
 #[cfg(desktop)]
-#[allow(dead_code)]
 mod tray;
 
 use crate::commands::{

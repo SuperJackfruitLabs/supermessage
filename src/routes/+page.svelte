@@ -117,10 +117,21 @@
       liveStore.roomId === roomsStore.selectedId && liveStore.inProgress,
     );
   });
-  // The window title carries the Needs you count: the inbox's own badge count, set only when it changes.
+  // The window title and the tray carry the Needs you count (the inbox's own badge count) and how
+  // many agents are working, sent only when they change. Statuses age, so a tick re-reads them.
   $effect(() => {
     if (!restored) return;
-    attention.follow(destinations.inbox);
+    void attention.follow({
+      inbox: destinations.inbox,
+      rows: untrack(() => roomsStore.rooms),
+      agents: destinations.agents,
+      openRoomId: roomsStore.selectedId,
+      turnInProgress: liveStore.roomId === roomsStore.selectedId && liveStore.inProgress,
+    });
+  });
+  $effect(() => {
+    if (!restored) return;
+    return attention.startTicking();
   });
   let signingOut = $state(false);
 

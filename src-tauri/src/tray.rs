@@ -70,6 +70,18 @@ pub fn dot_icon(rgba: &[u8], width: u32, height: u32, colour: [u8; 4]) -> Vec<u8
     out
 }
 
+/// The icon as a macOS template image wants it: black wherever the icon is painted, with the
+/// icon's own alpha. The menu bar recolours a template by its alpha alone, so the dot shows
+/// there as a shape (the knock-out ring keeps it apart), not as amber.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+pub fn monochrome(rgba: &[u8]) -> Vec<u8> {
+    rgba.as_chunks::<4>()
+        .0
+        .iter()
+        .flat_map(|p| [0, 0, 0, p[3]])
+        .collect()
+}
+
 /// What the tray shows. [`TauriTray`] is the real one.
 pub trait TrayView {
     /// The two menu lines, as the core words them.
@@ -142,14 +154,13 @@ pub struct TauriTray<R: Runtime = tauri::Wry> {
 /// handled by [`on_menu_event`].
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TauriTray<R>> {
     let decoded = Image::from_bytes(ICON_PNG)?;
-    let plain = decoded.clone().to_owned();
+    #[cfg(target_os = "macos")]
+    let base = monochrome(decoded.rgba());
+    #[cfg(not(target_os = "macos"))]
+    let base = decoded.rgba().to_vec();
+    let plain = Image::new_owned(base.clone(), decoded.width(), decoded.height());
     let dotted = Image::new_owned(
-        dot_icon(
-            decoded.rgba(),
-            decoded.width(),
-            decoded.height(),
-            SIGNAL_DARK_RGBA,
-        ),
+        dot_icon(&base, decoded.width(), decoded.height(), SIGNAL_DARK_RGBA),
         decoded.width(),
         decoded.height(),
     );
@@ -163,6 +174,9 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TauriTray<R>> {
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| on_menu_event(app, event.id().as_ref()));
+    // The menu bar expects a template image (it tints it for light and dark bars).
+    #[cfg(target_os = "macos")]
+    let builder = builder.icon_as_template(true);
     // Linux has no tooltip; the lines in the menu say it instead.
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     let builder = builder.tooltip(widget::pulse(0, 0, false));
@@ -286,6 +300,12 @@ mod tests {
     fn pixel(rgba: &[u8], x: u32, y: u32) -> &[u8] {
         let at = ((y * SIZE + x) * 4) as usize;
         &rgba[at..at + 4]
+    }
+
+    #[test]
+    fn monochrome_keeps_the_alpha_and_drops_the_colour() {
+        let out = monochrome(&[200, 100, 50, 255, 9, 9, 9, 0, 1, 2, 3, 128]);
+        assert_eq!(out, vec![0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 128]);
     }
 
     #[test]

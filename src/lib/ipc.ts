@@ -2681,9 +2681,12 @@ export async function notificationPermission(prompt: boolean): Promise<Notificat
   return await invoke<NotificationPermission>("notification_permission", { prompt });
 }
 
-/** Puts the Needs you count in the window title ("(3) supermessage"; zero is the plain name). */
-export async function setAttention(needsYou: number): Promise<void> {
-  await invoke<void>("set_attention", { needsYou });
+/**
+ * Puts the Needs you count in the window title ("(3) supermessage"; zero is the plain name) and
+ * both counts on the tray, which the core words.
+ */
+export async function setAttention(needsYou: number, working: number): Promise<void> {
+  await invoke<void>("set_attention", { needsYou, working });
 }
 
 /** Removes every delivered notification (sign-out). */
