@@ -290,6 +290,13 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
         if (destination == Destination.AGENTS) RosterArrangement.agentDirectory(rooms, now) else emptyList()
     }
 
+    // A pull on Chats, Needs you or Agents: the clock first, then the roster, read again
+    // (`RoomListView.swift:175-178`). The indicator stays until the read returns.
+    val refresh: suspend () -> Unit = {
+        now = Instant.now()
+        session.rooms.seed()
+    }
+
     val navigation = ShellNavigation(
         selected = destination,
         onSelect = { next ->
@@ -348,6 +355,8 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                             openDetail = openDetail,
                             openPanel = openPanel,
                             accountInitial = accountInitial,
+                            loaded = loaded,
+                            onRefresh = refresh,
                         )
                     }
                     when (destination) {
@@ -362,6 +371,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                                 onOpenRoom = openRoom,
                                 onOpenInfo = { roomId -> openPanel(ExtraPanel.RoomInfo(roomId)) },
                                 listState = needsYouListState,
+                                onRefresh = refresh,
                             )
 
                         Destination.AGENTS ->
@@ -374,6 +384,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                                 onLoadAvatar = { roomId -> scope.launch { session.avatars.load(roomId) } },
                                 onOpenRoom = openRoom,
                                 listState = agentsListState,
+                                onRefresh = refresh,
                             )
 
                         Destination.SEARCH ->

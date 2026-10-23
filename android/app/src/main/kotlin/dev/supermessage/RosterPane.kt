@@ -25,6 +25,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.RoomAffordance
+import uniffi.supermessage_core.RosterFilter
 import uniffi.supermessage_core.RoomRow as RoomRowDto
 import uniffi.supermessage_core.RosterRow
 
@@ -46,11 +47,16 @@ internal fun RosterPane(
     openPanel: (ExtraPanel) -> Unit,
     /** The account's initial, for the toolbar's leading button. */
     accountInitial: String,
+    /** Whether the roster has been read at all; "No rooms yet" waits for it. */
+    loaded: Boolean = true,
+    /** A pull on the list: the shell takes a fresh `now`, then re-reads the roster. */
+    onRefresh: suspend () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val storedView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
     // A stored arrangement that is no longer offered (Machine) reads as Waiting.
     val rosterView = RosterChoice.offeredOrDefault(storedView)
+    val filter by prefs.filter.collectAsStateWithLifecycle(initialValue = RosterFilter.ALL)
     val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
     val spaces by session.spaces.spaces.collectAsStateWithLifecycle()
     val selectedSpace by session.spaces.selectedId.collectAsStateWithLifecycle()
@@ -100,6 +106,7 @@ internal fun RosterPane(
             worthShowing = connectionState != Connection.Live,
         )
 
+        Refreshable(onRefresh = onRefresh, modifier = Modifier.weight(1f).fillMaxWidth()) {
         Roster(
             sections = sections,
             invitations = invitations,
@@ -120,8 +127,12 @@ internal fun RosterPane(
                 else SwipeAction("Mark read", colors.accent) { session.rooms.markRead(entry.row.room.id) }
             },
             trailingSwipes = { entry -> swipesFor(entry, session, known, colors) },
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier.fillMaxSize(),
+            filter = filter,
+            onFilter = { next -> scope.launch { prefs.setFilter(next) } },
+            loaded = loaded,
         )
+        }
     }
 }
 

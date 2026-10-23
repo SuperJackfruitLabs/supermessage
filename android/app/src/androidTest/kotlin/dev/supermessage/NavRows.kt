@@ -26,9 +26,10 @@ object NavRows {
         agent: Boolean = false,
         minutesAgo: Double? = 3.0,
         preview: String? = "hello",
+        unread: Int = 0,
     ): RoomRow = RoomRow(
         room = RoomSummary(
-            id = id, name = name, avatarUrl = null, unread = 0uL, lastMessage = preview,
+            id = id, name = name, avatarUrl = null, unread = unread.toULong(), lastMessage = preview,
             lastMessageIsOwn = false, lastMessageNamesSender = false, lastEventType = null,
             lastActivityMs = minutesAgo?.let { (NOW.toEpochMilli() - (it * 60_000).toLong()).toULong() },
             runtime = if (agent) RuntimeDto("claude-code", "foundry") else null,

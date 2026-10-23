@@ -48,13 +48,16 @@ fun AgentsPane(
     modifier: Modifier = Modifier,
     /** Hoisted by the shell, so the scroll position outlives a visit to another destination. */
     listState: LazyListState = rememberLazyListState(),
+    /** A pull on the list re-reads the roster; the indicator stays until it returns. */
+    onRefresh: suspend () -> Unit = {},
 ) {
     // A `null` directory is a roster not yet read: draw nothing, in particular not "No agents yet".
     if (agents == null) {
         Box(modifier.fillMaxSize().testTag("agents-unread"))
         return
     }
-    Box(modifier.fillMaxSize()) {
+    Refreshable(onRefresh = onRefresh, modifier = modifier.fillMaxSize()) {
+      Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize().testTag("agents-list"), state = listState) {
             items(agents, key = { it.row.room.id }) { entry ->
                 val roomId = entry.row.room.id
@@ -76,6 +79,7 @@ fun AgentsPane(
                 modifier = Modifier.testTag("no-agents"),
             )
         }
+      }
     }
 }
 

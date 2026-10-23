@@ -229,7 +229,7 @@ class NavigationTest {
         listOf("Chats", "Needs you", "Agents", "Search").forEach { title ->
             compose.onNode(hasText(title) and hasAnyAncestor(hasTestTag("nav-bar")), useUnmergedTree = true).assertIsDisplayed()
         }
-        assertTrue("the bar sits under the roster", top("nav-bar") >= bottom("roster") - 1f)
+        assertTrue("the bar sits under the roster", top("nav-bar") >= bottom("roster-list") - 1f)
     }
 
     @Test
@@ -237,7 +237,7 @@ class NavigationTest {
         show(Core(fleet()), tablet(840))
         assertTrue(exists("nav-rail"))
         assertTrue(!exists("nav-bar"))
-        assertTrue("the roster starts after the rail", left("roster") >= right("nav-rail") - 1f)
+        assertTrue("the roster starts after the rail", left("roster-list") >= right("nav-rail") - 1f)
         assertTrue("two panes after the rail", exists("pane-timeline"))
     }
 
@@ -245,7 +245,7 @@ class NavigationTest {
     fun aWideTabletKeepsThreePanes() {
         show(Core(fleet()), tablet(1280))
         assertTrue(exists("nav-rail"))
-        assertTrue(left("roster") >= right("nav-rail") - 1f)
+        assertTrue(left("roster-list") >= right("nav-rail") - 1f)
         assertTrue(exists("pane-timeline"))
         compose.onNodeWithText("Design Review").tap()
         compose.waitForIdle()
@@ -548,7 +548,7 @@ class NavigationTest {
     fun theRosterStaysAliveAcrossDestinationSwitches() {
         val core = Core(manyAgents(60))
         show(core)
-        compose.onNodeWithTag("roster").performScrollToNode(hasText("Room 45"))
+        compose.onNodeWithTag("roster-list").performScrollToNode(hasText("Room 45"))
         compose.waitForIdle()
         compose.onNodeWithText("Room 45").assertIsDisplayed()
         val rosterReads = core.rosterReads.get()

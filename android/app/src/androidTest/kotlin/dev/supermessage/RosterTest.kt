@@ -2,8 +2,13 @@ package dev.supermessage
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -19,6 +24,7 @@ import uniffi.supermessage_core.RoomAffordance
 import uniffi.supermessage_core.RoomIdentity
 import uniffi.supermessage_core.RoomRow
 import uniffi.supermessage_core.RoomSummary
+import uniffi.supermessage_core.RosterFilter
 import uniffi.supermessage_core.RosterRow
 import uniffi.supermessage_core.RosterSection
 
@@ -34,9 +40,9 @@ class RosterTest {
 
     @get:Rule val compose = createComposeRule()
 
-    private fun row(id: String, name: String): RoomRow = RoomRow(
+    private fun row(id: String, name: String, unread: Int = 0): RoomRow = RoomRow(
         room = RoomSummary(
-            id = id, name = name, avatarUrl = null, unread = 0uL, lastMessage = null,
+            id = id, name = name, avatarUrl = null, unread = unread.toULong(), lastMessage = null,
             lastMessageIsOwn = false, lastMessageNamesSender = false, lastEventType = null,
             lastActivityMs = null, runtime = null, membership = Membership.JOINED,
         ),
@@ -196,5 +202,135 @@ class RosterTest {
             )
         }
         compose.onNodeWithTag("invitations-row").assertDoesNotExist()
+    }
+
+    // MARK: the chips and the empty states (parity M5 Task 3)
+
+    private fun entry(name: String, unread: Int = 0) =
+        RosterRow(row = row("!$name:x", name, unread), state = AgentState.ACTIVE, describesAgent = false)
+
+    private fun sectionOf(vararg names: Pair<String, Int>, title: String? = null) = RosterSection(
+        id = "all", title = title, detail = null, rows = names.map { entry(it.first, it.second) }, attention = false,
+    )
+
+    private val fourRooms = sectionOf("Alpha" to 0, "Bravo" to 2, "Charlie" to 0, "Delta" to 1)
+
+    private fun chipped(
+        sections: List<RosterSection>,
+        invitations: List<RosterRow> = emptyList(),
+        invitationsOpen: Boolean = false,
+        start: RosterFilter = RosterFilter.ALL,
+        loaded: Boolean = true,
+    ) {
+        compose.setContent {
+            var filter by remember { mutableStateOf(start) }
+            Roster(
+                sections = sections, invitations = invitations, invitationsOpen = invitationsOpen,
+                onToggleInvitations = {}, now = Instant.now(), avatarUri = { null },
+                filter = filter, onFilter = { filter = it }, loaded = loaded,
+            )
+        }
+    }
+
+    private fun top(text: String) = compose.onNodeWithText(text).fetchSemanticsNode().boundsInRoot.top
+
+    @Test
+    fun unreadNarrowsTheRoster() {
+        chipped(listOf(fourRooms))
+        compose.onNodeWithTag("chip-unread").performClick()
+        compose.onNodeWithText("Alpha").assertDoesNotExist()
+        compose.onNodeWithText("Charlie").assertDoesNotExist()
+        compose.onNodeWithText("Bravo").assertIsDisplayed()
+        compose.onNodeWithText("Delta").assertIsDisplayed()
+        assertTrue("the arrangement's order, not a re-sort", top("Bravo") < top("Delta"))
+        // The count is of the whole arrangement: it does not fall to what is left.
+        compose.onNodeWithTag("chip-count-unread", useUnmergedTree = true).assertTextEquals("2")
+        compose.onNodeWithTag("chip-all").assertContentDescriptionEquals("All, 4")
+    }
+
+    @Test
+    fun theChipsAreAboveTheInvitationsRow() {
+        chipped(listOf(fourRooms), invitations = listOf(invitation("!i1:x", "Lab Room")))
+        val chips = compose.onNodeWithTag("filter-chips").fetchSemanticsNode().boundsInRoot
+        val invitations = compose.onNodeWithTag("invitations-row").fetchSemanticsNode().boundsInRoot
+        assertTrue("chips bottom ${chips.bottom} must not pass the invitations row top ${invitations.top}", chips.bottom <= invitations.top)
+    }
+
+    @Test
+    fun noRoomsShowsNoChipsAndSaysSo() {
+        chipped(emptyList())
+        compose.onNodeWithTag("filter-chips").assertDoesNotExist()
+        compose.onNodeWithTag("roster-empty-none").assertIsDisplayed()
+        compose.onNodeWithText("No rooms yet").assertIsDisplayed()
+        compose.onNodeWithText("Rooms appear here as they sync.").assertIsDisplayed()
+    }
+
+    @Test
+    fun anUnreadRosterIsNotSaidToBeEmpty() {
+        chipped(emptyList(), loaded = false)
+        compose.onNodeWithText("No rooms yet").assertDoesNotExist()
+        compose.onNodeWithTag("roster-empty-none").assertDoesNotExist()
+    }
+
+    @Test
+    fun aChipThatLeavesNothingOffersShowAll() {
+        chipped(listOf(sectionOf("Alpha" to 0, "Charlie" to 0)), start = RosterFilter.UNREAD)
+        compose.onNodeWithTag("roster-empty-filter").assertIsDisplayed()
+        compose.onNodeWithText("Nothing unread").assertIsDisplayed()
+        compose.onNodeWithText("Every room is read.").assertIsDisplayed()
+        // The chips stay: the way back is also one of them.
+        compose.onNodeWithTag("filter-chips").assertIsDisplayed()
+        compose.onNodeWithText("Show all").performClick()
+        compose.onNodeWithTag("chip-all").assertIsSelected()
+        compose.onNodeWithText("Alpha").assertIsDisplayed()
+        compose.onNodeWithTag("roster-empty-filter").assertDoesNotExist()
+    }
+
+    @Test
+    fun onlyInvitationsSaysSo() {
+        var open by mutableStateOf(false)
+        compose.setContent {
+            Roster(
+                sections = emptyList(),
+                invitations = listOf(invitation("!i1:x", "Lab Room"), invitation("!i2:x", "Ops Room")),
+                invitationsOpen = open, onToggleInvitations = { open = !open },
+                now = Instant.now(), avatarUri = { null },
+            )
+        }
+        compose.onNodeWithTag("roster-empty-invitations").assertIsDisplayed()
+        compose.onNodeWithText("Nothing but invitations").assertIsDisplayed()
+        compose.onNodeWithText("2 waiting — open Invitations above.").assertIsDisplayed()
+        compose.onNodeWithTag("invitations-row").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("roster-empty-invitations").assertDoesNotExist()
+        compose.onNodeWithText("Lab Room").assertIsDisplayed()
+    }
+
+    @Test
+    fun sectionTitlesAreReadable() {
+        chipped(listOf(sectionOf("Alpha" to 0, title = "Rakeshs-MacBook-Pro.local")))
+        compose.onNodeWithText("Rakeshs-MacBook-Pro").assertIsDisplayed()
+        compose.onNodeWithText("Rakeshs-MacBook-Pro.local").assertDoesNotExist()
+    }
+
+    /** Desktop's chip row was squashed to about 10px in a long roster. */
+    @Test
+    fun aChipIsAReadableHeight() {
+        val dp = compose.density.density
+        chipped(listOf(sectionOf("Alpha" to 0)))
+        val short = compose.onNodeWithTag("chip-all").fetchSemanticsNode().boundsInRoot.height
+        assertTrue("a chip is a readable height: ${short / dp}dp", short / dp >= 24f)
+    }
+
+    @Test
+    fun theChipsKeepTheirHeightWhenTheListIsLong() {
+        val dp = compose.density.density
+        val many = sectionOf(*Array(80) { "Room $it" to if (it % 3 == 0) 1 else 0 })
+        chipped(listOf(many))
+        val long = compose.onNodeWithTag("chip-all").fetchSemanticsNode().boundsInRoot.height
+        val row = compose.onNodeWithTag("filter-chips").fetchSemanticsNode().boundsInRoot.height
+        assertTrue("a chip is a readable height in a long list: ${long / dp}dp", long / dp >= 24f)
+        assertTrue("and the row holds it with its padding: ${row / dp}dp", row >= long)
+        compose.onNodeWithTag("chip-unread").assertIsDisplayed()
     }
 }

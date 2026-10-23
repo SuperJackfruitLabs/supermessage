@@ -71,6 +71,8 @@ fun NeedsYouPane(
     modifier: Modifier = Modifier,
     /** Hoisted by the shell, so the scroll position outlives a visit to another destination. */
     listState: LazyListState = rememberLazyListState(),
+    /** A pull on the list re-reads the roster; the indicator stays until it returns. */
+    onRefresh: suspend () -> Unit = {},
 ) {
     val reduce = reducesMotion()
 
@@ -99,7 +101,8 @@ fun NeedsYouPane(
         Box(modifier.fillMaxSize().testTag("needs-you-unread"))
         return
     }
-    Box(modifier.fillMaxSize()) {
+    Refreshable(onRefresh = onRefresh, modifier = modifier.fillMaxSize()) {
+      Box(Modifier.fillMaxSize()) {
         LazyColumn(Modifier.fillMaxSize().testTag("needs-you-list"), state = listState) {
             if (inbox.decisions.isNotEmpty()) {
                 stickyHeader(key = "header-decisions") {
@@ -115,6 +118,7 @@ fun NeedsYouPane(
             }
         }
         if (inbox.count == 0u) CaughtUp()
+      }
     }
 }
 

@@ -90,4 +90,15 @@ class SpaceMenuTest {
         compose.onNodeWithText("Engineering · 2").assertIsDisplayed()
         compose.onNodeWithText("!eng:x · 2").assertDoesNotExist()
     }
+
+    /** A generated id reads "Runtime 9247e5" through the core's own naming, in the item and the title. */
+    @Test
+    fun spacesAreNamedReadably() {
+        val raw = "9247e5c1-aaaa-bbbb-cccc-0123456789ab"
+        val runtime = space("!rt:x", raw, 3uL, displayName = uniffi.supermessage_ffi.spaceDisplayName(raw))
+        menu(list = listOf(runtime), selected = "!rt:x")
+        compose.onNodeWithTag("space-menu").assertContentDescriptionEquals("Space: Runtime 9247e5")
+        compose.onNodeWithTag("space-menu").performClick()
+        compose.onNodeWithText("Runtime 9247e5 · 3").assertIsDisplayed()
+    }
 }
