@@ -90,6 +90,8 @@ fun Roster(
     onFilter: (RosterFilter) -> Unit = {},
     /** Whether the roster has been read at all: an unread roster is not an empty account. */
     loaded: Boolean = true,
+    /** The core's count of invitations withheld from [sections] (`RosterArrangement.hiddenInvitations`). */
+    waitingInvitations: Int = invitations.size,
 ) {
     // The chips count the whole arrangement, so "Unread 2" stays 2 once it is chosen.
     val chips = remember(sections) { RosterArrangement.filterChips(sections) }
@@ -185,7 +187,7 @@ fun Roster(
                 {
                     ContentUnavailable(
                         title = "Nothing but invitations",
-                        description = "${invitations.size} waiting — open Invitations above.",
+                        description = "$waitingInvitations waiting — open Invitations above.",
                         icon = Icons.Filled.Email,
                         modifier = Modifier.testTag("roster-empty-invitations"),
                     )
