@@ -81,6 +81,9 @@ export function turnAgentName(summary: TurnSummary | null, cast: RoomCast | null
   if (cast === null) return null;
   const id = summary?.agentId;
   if (id !== undefined && cast.agentIds.includes(id)) {
+    // The room's own agent keeps the header's name ("Atlas", not the profile's "atlas-bot"):
+    // one agent, one name (D11, P2).
+    if (cast.counterpart?.userId === id) return cast.counterpart.name;
     const person = cast.people.find((p) => p.userId === id);
     if (person) return person.name;
   }

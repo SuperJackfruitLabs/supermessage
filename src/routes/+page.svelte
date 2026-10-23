@@ -16,7 +16,7 @@
   // used to build a second `Client` and a second set of streams, which
   // froze the room list for the whole session.
 
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { spacesStore } from "$lib/stores/spaces.svelte";
@@ -84,11 +84,11 @@
   // bounds each name's length first. `null` until the core answers, and
   // whenever nobody is typing.
   let typingLine = $state<string | null>(null);
-  // The agents typing now, for the dock above the composer (a later task reads it).
+  // The agents typing now, for the dock above the composer (the dock's effect reads it).
   let typingAgents = $state<string[]>([]);
 
-  // The focused room's turn and cast follow the selection. The cast loads first
-  // so the live card's name is known when the restored turn shows.
+  // The focused room's turn and cast follow the selection. They load in parallel;
+  // the live card names its agent once the cast arrives.
   $effect(() => {
     const id = roomsStore.selectedId;
     void liveStore.focus(id);
@@ -146,6 +146,9 @@
     // A room of people that is not an invitation (iOS `RoomScreen.swift:116-123`).
     if (id !== null && (roomsStore.selectedAffordance ?? "compose") === "compose") {
       void header.refreshMembers(id);
+    } else {
+      // An invitation, a left room or no room: no count, and not the previous room's.
+      header.forgetMembers();
     }
   });
 
@@ -154,7 +157,8 @@
     let current = true;
     if (args.typers.length === 0) {
       typingLine = null;
-      typingAgents = [];
+      // Not a fresh array each run: the dock's effect depends on this one.
+      if (untrack(() => typingAgents.length) > 0) typingAgents = [];
       return;
     }
     typingView(args.typers, args.agentIds, args.counterpart)
@@ -1212,18 +1216,15 @@
             </div>
           </div>
           {#key roomsStore.selectedId}
-            <Timeline roomId={roomsStore.selectedId} onOpenRecovery={() => void openRecovery()} />
+            <Timeline roomId={roomsStore.selectedId} onOpenRecovery={() => void openRecovery()}>
+              {#snippet overlay()}
+                <!-- The dock, then the typing pill: floating capsules over the newest end
+                     (iOS `TimelineView.swift:118-146`). They take no room in the layout. -->
+                <AcknowledgementDock ack={acknowledgementStore.current} />
+                <TypingIndicator text={typingLine} />
+              {/snippet}
+            </Timeline>
           {/key}
-          <!-- The dock, then the typing pill: floating capsules above the composer (iOS
-               `TimelineView.swift:123-146`). The row takes no room when both are empty. -->
-          <div
-            class="flex shrink-0 flex-col items-start gap-1 bg-surface-sunken px-3 {acknowledgementStore.current !== null || typingLine
-              ? 'pb-1'
-              : ''}"
-          >
-            <AcknowledgementDock ack={acknowledgementStore.current} />
-            <TypingIndicator text={typingLine} />
-          </div>
           <!--
             The composer is for rooms this account is *in*. An invitation gets
             Accept / Decline in the same place instead (issue #1), and a room

@@ -10,6 +10,8 @@
   import { storyServices } from "./live/liveCardStoryServices";
 
   import Timeline from "./Timeline.svelte";
+  import AcknowledgementDock from "./composer/AcknowledgementDock.svelte";
+  import TypingIndicator from "./TypingIndicator.svelte";
 
   const ROOM = "!story:example.org";
   const T0 = 1_700_000_000_000;
@@ -172,6 +174,7 @@
   const replyHarness = liveHarness(null);
   const probeHarness = liveHarness(null);
   const awayHarness = liveHarness(null);
+  const floatHarness = liveHarness(null);
 
   let arrivePush: (row: TimelineRow) => void = () => {};
   let awayPush: (row: TimelineRow) => void = () => {};
@@ -344,6 +347,9 @@
     [...root.querySelectorAll("[data-testid='timeline-row']")] as HTMLElement[];
   const buttonNamed = (root: ParentNode, name: string) =>
     [...root.querySelectorAll("button")].find((b) => b.textContent?.trim() === name) as HTMLElement | undefined;
+  /** What the floating-capsule story shows; the play function flips these. */
+  const floaters = $state({ dock: false, typing: false });
+
   const { Story } = defineMeta({ title: "Timeline/Rhythm and quiet meta", component: Timeline });
 </script>
 
@@ -691,6 +697,69 @@
   {#snippet template()}
     <div class="flex h-[560px] w-[760px] flex-col bg-surface">
       <Timeline roomId={ROOM} store={seededStore(jumpRows)} live={probeHarness.store} liveServices={storyServices} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  The floating capsules (iOS `safeAreaInset`): the dock and the typing pill are drawn over the
+  bottom of the list, and the list keeps a constant reserve under its last row. The newest row
+  is measured on every frame as the dock appears, the pill appears, and both go: it must not move
+  by even half a pixel, and it must never sit under a capsule.
+-->
+<Story
+  name="Timeline — the dock and the typing pill do not move the history"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (rowEls(root).length >= jumpRows.length ? root : null), 4000, "the history");
+    await new Promise((r) => setTimeout(r, 500));
+    const newest = () => {
+      const rows = rowEls(root);
+      return rows[rows.length - 1]!.getBoundingClientRect();
+    };
+    const before = newest();
+    const tops: number[] = [];
+    let covered = "";
+    let running = true;
+    const loop = () => {
+      setTimeout(() => {
+        const r = newest();
+        tops.push(r.top);
+        for (const el of root.querySelectorAll("[data-testid='ack-dock'], [data-testid='typing-pill']")) {
+          if (r.bottom > el.getBoundingClientRect().top + 0.5) covered = `${el.getAttribute("data-testid")} covers the newest row`;
+        }
+      }, 0);
+      if (running) requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+    const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    floaters.dock = true;
+    await settled(() => root.querySelector("[data-testid='ack-dock']"), 2000, "the dock");
+    await pause(450);
+    floaters.typing = true;
+    await settled(() => root.querySelector("[data-testid='typing-pill']"), 2000, "the pill");
+    await pause(450);
+    floaters.dock = false;
+    floaters.typing = false;
+    await pause(450);
+    running = false;
+    await pause(50);
+    const after = newest();
+    if (tops.length < 30) throw new Error(`only ${tops.length} frames sampled`);
+    const moved = Math.max(...tops.map((t) => Math.abs(t - before.top)));
+    if (moved > 0.5) throw new Error(`the newest row moved ${moved.toFixed(1)}px as the capsules came and went`);
+    if (Math.abs(after.top - before.top) > 0.5) throw new Error("the newest row did not come back");
+    if (covered) throw new Error(covered);
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(jumpRows)} live={floatHarness.store} liveServices={storyServices}>
+        {#snippet overlay()}
+          <AcknowledgementDock ack={floaters.dock ? { kind: "onIt", names: ["Atlas"], text: "Atlas is on it…" } : null} />
+          <TypingIndicator text={floaters.typing ? "Kiran is typing…" : null} />
+        {/snippet}
+      </Timeline>
     </div>
   {/snippet}
 </Story>

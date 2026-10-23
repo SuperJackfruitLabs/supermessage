@@ -79,6 +79,7 @@
 // the render-decision vocabulary so a future `core::item_view::view_for` change can't
 // silently change which messages collapse into a run.
 
+import { factsOf, type MessageFacts } from "./timeline/messageView";
 import type { ItemView, TimelineItem, TimelineRow } from "$lib/ipc";
 
 /** One row `Timeline.svelte` iterates, in place of the raw item array. */
@@ -102,6 +103,11 @@ export type TimelineDisplayRow =
       /** What the composer shows when someone replies to this item. */
       replyPreview: string | null;
       continuesRun: boolean;
+      /** The core's row facts (batch B), carried through when the row has them. */
+      isAgent?: boolean;
+      isLongRead?: boolean;
+      hidesQuote?: boolean;
+      showsRuntime?: boolean;
     }
   | { type: "membershipGroup"; key: string; items: TimelineItem[]; text: string }
   /**
@@ -400,6 +406,8 @@ export function groupTimelineItems(
         senderInitial: row.senderInitial,
         replyPreview: row.replyPreview,
         continuesRun: continuesSenderRun(rows.at(-1), item),
+        // TODO(batch B): the cast goes once `TimelineRow` declares these four.
+        ...factsOf(row as MessageFacts),
       });
     }
   }

@@ -48,6 +48,19 @@ describe("the @ menu's search", () => {
     expect(krishna).toMatchObject({ isAgent: false, runtime: null });
   });
 
+  it("says which query its results answer, so a pick never uses an earlier one", async () => {
+    const s = make(async (_r, q) => (q === "" ? [person("@a:x", "Atlas")] : [person("@q:x", "Quill")]));
+    s.search.search("!r:x", "");
+    await vi.advanceTimersByTimeAsync(80);
+    expect(s.search.resultQuery).toBe("");
+    s.search.search("!r:x", "q");
+    expect(s.search.resultQuery).toBe("");
+    await vi.advanceTimersByTimeAsync(80);
+    expect(s.search.resultQuery).toBe("q");
+    s.search.close();
+    expect(s.search.resultQuery).toBeNull();
+  });
+
   it("a slow answer to an old query is dropped", async () => {
     const slow = deferred<PersonDto[]>();
     const s = make(async (_r, q) => (q === "a" ? slow.promise : [person("@q:x", "Quill")]));

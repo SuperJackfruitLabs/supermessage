@@ -1,5 +1,5 @@
 // Who is in the focused room, from the core (`room_cast`): the typing line,
-// the live card's name and, later, the composer's mentions read it.
+// the live card's name, the dock and the composer's mentions read it.
 
 import { roomCast as defaultRoomCast, type RoomCast } from "$lib/ipc";
 

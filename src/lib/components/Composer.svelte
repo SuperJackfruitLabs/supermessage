@@ -131,13 +131,17 @@
   let mentionCursor = $state(-1);
   /** What is being typed after an `@`, or null when nothing is. */
   let mentionQuery = $state<string | null>(null);
+  /** The index of the `@` whose menu Escape closed, or null. */
+  let dismissedAt: number | null = null;
 
   // The candidates are the core's: the room's cast matched by `room_mention_candidates`, asked
   // per query after a short pause and dropped if stale.
   let mentionMatches = $state<MentionCandidate[]>([]);
   const mentionSearch = createMentionSearch(undefined, () => {
-    mentionMatches = mentionSearch.results;
-    if (mentionCursor >= mentionMatches.length) mentionCursor = mentionMatches.length === 0 ? -1 : 0;
+    untrack(() => {
+      mentionMatches = mentionSearch.results;
+      if (mentionCursor >= mentionMatches.length) mentionCursor = mentionMatches.length === 0 ? -1 : 0;
+    });
   });
   $effect(() => {
     // A room change or a closed query forgets the list.
@@ -152,7 +156,9 @@
   function refreshMentionQuery(): void {
     const caret = input?.selectionStart ?? value.length;
     const found = findMentionQuery(value, caret);
-    const next = found?.query ?? null;
+    // Escape closed the menu for this `@`; it stays closed until the caret leaves it.
+    if (found === null || found.start !== dismissedAt) dismissedAt = null;
+    const next = found !== null && found.start !== dismissedAt ? found.query : null;
     // The cursor goes back to the top only when the query changes: a key-up after an arrow key
     // must not undo the arrow.
     if (next !== mentionQuery) mentionCursor = next === null ? -1 : 0;
@@ -697,12 +703,16 @@
       }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
+        // The list on screen may answer the query before this one (80 ms pause plus the round
+        // trip): do not insert from it.
+        if (mentionSearch.resultQuery !== mentionQuery) return;
         const picked = mentionMatches[Math.max(mentionCursor, 0)];
         if (picked) chooseMention(picked);
         return;
       }
       if (event.key === "Escape") {
         event.preventDefault();
+        dismissedAt = findMentionQuery(value, input?.selectionStart ?? value.length)?.start ?? null;
         mentionQuery = null;
         mentionCursor = -1;
         return;
@@ -819,7 +829,7 @@
       role="combobox"
       aria-expanded={mentionQuery !== null && mentionMatches.length > 0}
       aria-haspopup="listbox"
-      aria-controls="mention-menu"
+      aria-controls={mentionQuery !== null && mentionMatches.length > 0 ? "mention-menu" : undefined}
       aria-autocomplete="list"
       aria-activedescendant={mentionQuery !== null && mentionMatches.length > 0 && mentionCursor >= 0
         ? `mention-menu-option-${mentionCursor}`

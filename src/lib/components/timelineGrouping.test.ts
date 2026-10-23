@@ -45,6 +45,15 @@ describe("groupTimelineItems", () => {
     expect(items[1]).toBe(copy[1]);
   });
 
+  it("carries the core's four row facts into the display row, and only those it has", () => {
+    const facts = { isAgent: true, isLongRead: true, hidesQuote: true, showsRuntime: true };
+    const rows = groupTimelineItems([{ ...message("a"), ...facts } as never, message("b")]);
+    expect(rows[0]).toMatchObject(facts);
+    // A row without them carries no keys, so a spread never overwrites a stopgap with `undefined`.
+    expect(Object.keys(rows[1]!)).not.toContain("isAgent");
+    expect(Object.keys(rows[1]!)).not.toContain("showsRuntime");
+  });
+
   it("passes non-membership items through unchanged, keyed on their own id and shape", () => {
     const msg = message("msg1");
     const rows = groupTimelineItems([msg]);

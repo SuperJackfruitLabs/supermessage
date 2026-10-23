@@ -53,12 +53,14 @@
   // ---- the header's word and clock, both the core's ----
 
   let word = $state<string | null>(null);
+  // A derived value, so a turn update that leaves how it ended alone does not ask again.
+  const endedBy = $derived(summary?.endedBy ?? null);
   $effect(() => {
-    const endedBy = summary?.endedBy ?? null;
+    const ended = endedBy;
     let live = true;
     word = null;
     services
-      .statusWord(endedBy)
+      .statusWord(ended)
       .then((w) => {
         if (live) word = w;
       })

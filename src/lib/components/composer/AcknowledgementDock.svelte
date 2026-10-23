@@ -23,7 +23,7 @@
   {#if ack !== null && glyph !== null}
     <div
       in:fly={{ y: 8, duration: still ? 0 : 220 }}
-      class="inline-flex max-w-full items-center gap-[7px] rounded-pill border border-border bg-surface-raised px-3 py-[7px] shadow-overlay"
+      class="pointer-events-auto inline-flex max-w-full items-center gap-[7px] rounded-pill border border-border bg-surface-raised px-3 py-[7px] shadow-overlay"
       data-testid="ack-dock"
       data-kind={ack.kind}
     >

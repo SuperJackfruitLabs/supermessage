@@ -1,7 +1,9 @@
 // TODO(batch B): delete this file. Core batch B puts `isAgent`, `isLongRead`,
 // `hidesQuote` and `showsRuntime` on `TimelineRow`; until it merges, the host
 // derives stand-ins here so `messageView.ts` already reads the row's own
-// fields. After the merge `Timeline.svelte` passes `row` straight through.
+// fields. After the merge, delete this file, `factsByKey`, `agentIds` and the `cast` prop in
+// `Timeline.svelte`: the display row already carries the core's four facts, and `messageRow`
+// lets them win over this stopgap.
 
 import type { TimelineDisplayRow } from "../timelineGrouping";
 import type { MessageFacts } from "./messageView";

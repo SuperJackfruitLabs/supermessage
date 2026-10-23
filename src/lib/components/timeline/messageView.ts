@@ -13,6 +13,16 @@ export interface MessageFacts {
   showsRuntime?: boolean;
 }
 
+/** The facts a row carries, leaving out any it does not (so a spread never overwrites with `undefined`). */
+export function factsOf(row: MessageFacts): MessageFacts {
+  const facts: MessageFacts = {};
+  if (row.isAgent !== undefined) facts.isAgent = row.isAgent;
+  if (row.isLongRead !== undefined) facts.isLongRead = row.isLongRead;
+  if (row.hidesQuote !== undefined) facts.hidesQuote = row.hidesQuote;
+  if (row.showsRuntime !== undefined) facts.showsRuntime = row.showsRuntime;
+  return facts;
+}
+
 /** The part of a timeline row these functions read. */
 export interface MessageRow extends MessageFacts {
   item: { isOwn: boolean };

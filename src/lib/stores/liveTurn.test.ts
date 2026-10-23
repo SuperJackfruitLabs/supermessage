@@ -142,6 +142,15 @@ describe("turnAgentName", () => {
     expect(turnAgentName(summary({ agentId: "@g:x.org" }), cast())).toBe("Ganesha");
   });
 
+  it("a turn by the room's own agent keeps the header's name", () => {
+    const c = cast({
+      people: [{ userId: "@k:x.org", name: "krishna-bot", initial: "K", runtime: null, avatarUrl: null }],
+      counterpart: { userId: "@k:x.org", name: "Krishna" },
+      agentIds: ["@k:x.org"],
+    });
+    expect(turnAgentName(summary({ agentId: "@k:x.org" }), c)).toBe("Krishna");
+  });
+
   it("falls back to the room's agent when the writer is not in the cast", () => {
     expect(turnAgentName(summary({ agentId: "@evil:x.org" }), cast())).toBe("Krishna");
   });

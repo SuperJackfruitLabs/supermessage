@@ -335,7 +335,7 @@
   import ReaderFaces from "./timeline/ReaderFaces.svelte";
   import SenderHeader from "./timeline/SenderHeader.svelte";
   import LongReadDialog from "./timeline/LongReadDialog.svelte";
-  import { attributionFor, isLongRead, quoteFor, showsAgentLabel, type MessageRow } from "./timeline/messageView";
+  import { attributionFor, factsOf, isLongRead, quoteFor, showsAgentLabel, type MessageRow } from "./timeline/messageView";
   import { stopgapFacts } from "./timeline/batchBStopgap";
   import { createReaderLabels } from "./timeline/readerLabel";
   import { castStore } from "$lib/stores/cast.svelte";
@@ -361,6 +361,7 @@
     live,
     liveServices,
     cast,
+    overlay,
   }: {
     roomId: string;
     onOpenRecovery?: () => void;
@@ -372,6 +373,13 @@
     liveServices?: LiveCardServices;
     /** The room's cast. Only stories pass one; the app uses its own. */
     cast?: RoomCast | null;
+    /**
+     * Floating capsules over the bottom of the list (the dock and the typing pill; iOS
+     * `safeAreaInset`, `TimelineView.swift:118-138`). They are drawn over the list, never in
+     * its flow, and the list keeps a constant reserve below its last row while this is set, so
+     * a capsule coming or going moves nothing.
+     */
+    overlay?: Snippet;
   } = $props();
   const agentIds = $derived((cast !== undefined ? cast : castStore.castFor(roomId))?.agentIds ?? []);
   const timelineStore = $derived(store ?? appTimelineStore);
@@ -629,7 +637,9 @@
       senderName: row.senderName,
       senderShort: row.senderShort,
       replyQuote: row.replyQuote,
+      // The stopgap first, the core's own facts over it: a stopgap left in place never wins.
       ...factsByKey.get(row.key),
+      ...factsOf(row),
     };
   }
 
@@ -1448,6 +1458,14 @@
 {/snippet}
 
 <div class="relative min-h-0 flex-1">
+  {#if overlay}
+    <!-- Over the list, on the 72ch reading column; only the capsules take the pointer. -->
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-3 pb-1" data-testid="timeline-overlay">
+      <div class="flex w-full max-w-[72ch] flex-col items-start gap-1">
+        {@render overlay()}
+      </div>
+    </div>
+  {/if}
   {#if reading !== null}
     <LongReadDialog title={reading.title} blocks={reading.blocks} onClose={() => void closeReading()} />
   {/if}
@@ -1535,7 +1553,7 @@
       This wrapper contains exactly one thing, and `h-full` keeps the list's
       `height: 100%` resolving against the same box it did before.
     -->
-    <div bind:this={scrollBox} class="fade-in h-full">
+    <div bind:this={scrollBox} class="fade-in h-full {overlay ? 'bg-surface-sunken pb-[4.5rem]' : ''}" data-testid="timeline-scrollbox">
     <VList
       bind:this={vlist}
       data={displayRows}

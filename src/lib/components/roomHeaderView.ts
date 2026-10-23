@@ -167,6 +167,17 @@ export function createHeaderStatus(deps: HeaderStatusDeps = DEFAULT_DEPS, onChan
       members = next;
       onChange?.();
     },
+    /**
+     * The selected room has no count to show (an invitation, a left room): forget the previous
+     * room's, and drop any ask still in flight for it.
+     */
+    forgetMembers(): void {
+      membersAsk++;
+      membersRoom = null;
+      if (members === null) return;
+      members = null;
+      onChange?.();
+    },
     /** Forget everything (no room selected, or the session ended). */
     clear(): void {
       lastKey = null;

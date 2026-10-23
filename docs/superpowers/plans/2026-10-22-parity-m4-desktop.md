@@ -299,7 +299,8 @@ tasks run one after another in plan order; none run in parallel on this track.
   `statusLabel` `text-meta`). Padding 12/6; `bg-surface-sunken rounded-card`; at most 600px wide.
 - **Streaming must not move the history** (`TimelineCollectionView.swift:161-229`): layout is
   applied without animation while a turn streams. iOS then glides the visible cells (0.32 s); the
-  desktop does not (Decision 2). The tail-follow `ResizeObserver` in `Timeline.svelte`
+  desktop does not (Decision 2). Corrected 23 Oct: the glide WAS ported (owner Q5), transform-only
+  and additive in `Timeline.svelte`. The tail-follow `ResizeObserver` in `Timeline.svelte`
   (`:789-889`, `shouldRepin`) already re-pins a reader at the tail on content growth by assigning
   `scrollTop` — instantly — and leaves a scrolled-up reader alone.
 
@@ -563,7 +564,9 @@ tasks run one after another in plan order; none run in parallel on this track.
   `src/lib/components/mentions.ts` (+ test: `matchMentions` deleted — the core matches now;
   `findMentionQuery`, `applyMention`, `mentionLabel` stay).
 - Modify (only if P2 merged): `liveCardView.ts` `writerName` takes `agentId` and the cast.
-- Modify: `README.md` (desktop cells of the rows this plan turns ✅).
+- Modify: `README.md` (the product README's row only). Do NOT edit
+  `docs/research/2026-10-22-ios-parity/README.md`: it is a dated record, and M8 supersedes it
+  across all platforms (corrected 23 Oct after the whole-branch review).
 - Create: `.superpowers/sdd/m4-desktop/m4-desktop-verification.md`.
 
 **Interfaces:**
@@ -609,8 +612,8 @@ tasks run one after another in plan order; none run in parallel on this track.
   - **Falsify:** ask only on room change → `a progress message the agent edits ends the dock`
     fails; drop the room guard → `an answer for the room just left is dropped` fails; pass
     `cast.addressee` for another room → `asks with the room's facts` fails.
-  - README: correct the desktop cells for A1, T1, A2, A3, T6, D5, D6, D11, R1 against the merged
-    code.
+  - README: do not edit the dated parity matrix (corrected 23 Oct: roadmap M8 writes a superseding
+    record). Update only the product README's row.
   - Fill `m4-desktop-verification.md` with the exit table below; ✅ only with a test, a story or a
     screenshot; "live pending (owner)" for anything that needs a send.
   - **Running app (read-only), 1905px then 600px, Default then Largest text:** the roster's tiles,
@@ -636,7 +639,7 @@ tasks run one after another in plan order; none run in parallel on this track.
 | Decision cards (G1), arrival motion, receipts | M2 Tasks 7 and 10. | M2 |
 | An `agent_avatar` command | M3 Q1: no desktop caller; roster tiles come from `RosterRow.avatar`. | M6/M7 if ever |
 | A finished-turn haptic | No desktop haptics (roadmap M2 lists it for Android only). | — |
-| iOS's 0.32 s glide of the history | Not ported (Decision 2). | Owner Q5 |
+| iOS's 0.32 s glide of the history | Ported after all (owner Q5, 23 Oct); Decision 2 is superseded. | Owner Q5 |
 | `StreamingMarkdown.split` into the core | The desktop parses the whole revealed answer through the core; no split to share. | Core backlog |
 | A4 Stop | Blocked on AgentPod's cancel event. | — |
 | N1–N3, R3, O1 | M5 (the Agents view will reuse `RoomAvatar`). | M5 |
@@ -678,8 +681,8 @@ tasks run one after another in plan order; none run in parallel on this track.
 
 1. The live store mirrors only the focused room, as iOS; other rooms' turns live in the core
    (`turn(roomId)` on focus).
-2. No glide: the tail-follow observer re-pins instantly as the card grows (owner Q5 can ask for a
-   transform glide later).
+2. ~~No glide~~ Superseded 23 Oct: the glide was ported (owner Q5). The tail-follow observer glides
+   the history 0.32 s while a turn streams, and re-pins instantly otherwise.
 3. Corners use the desktop's tokens: `rounded-card` for the live card, the peer card and "What I
    did"; your own bubble keeps `rounded-control`. iOS's literal 14 is not added as a token.
 4. The peer card keeps the desktop's reading measure, `68ch` (≈ 600px at the body size), and your

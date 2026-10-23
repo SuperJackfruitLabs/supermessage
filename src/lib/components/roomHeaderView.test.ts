@@ -166,6 +166,26 @@ describe("createHeaderStatus", () => {
     await first;
     expect(h.members).toBe(2);
   });
+
+  it("an invitation after a room of people shows no count", async () => {
+    const deps = { ...fakeDeps({}), roomInfo: vi.fn(async () => ({ activeMemberCount: 2 })) } as never;
+    const h = createHeaderStatus(deps);
+    await h.refreshMembers("!people:x");
+    expect(h.members).toBe(2);
+    h.forgetMembers();
+    expect(h.members).toBeNull();
+  });
+
+  it("a count still being read for the room just left is dropped", async () => {
+    const slow = deferred<{ activeMemberCount: number }>();
+    const deps = { ...fakeDeps({}), roomInfo: vi.fn(() => slow.promise) } as never;
+    const h = createHeaderStatus(deps);
+    const ask = h.refreshMembers("!people:x");
+    h.forgetMembers();
+    slow.resolve({ activeMemberCount: 7 });
+    await ask;
+    expect(h.members).toBeNull();
+  });
 });
 
 describe("the header's cost", () => {

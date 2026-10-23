@@ -20,6 +20,8 @@ export function createMentionSearch(deps: MentionSearchDeps = DEFAULT_DEPS, onCh
   let results: MentionCandidate[] = [];
   // Bumped by every search and by close(): an answer that finds it moved is stale.
   let counter = 0;
+  // The query the current `results` answer, so a pick never uses the list of an earlier query.
+  let resultQuery: string | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
 
   function stop(): void {
@@ -36,6 +38,10 @@ export function createMentionSearch(deps: MentionSearchDeps = DEFAULT_DEPS, onCh
     get results(): MentionCandidate[] {
       return results;
     },
+    /** The query `results` answers, or null when none has been answered. */
+    get resultQuery(): string | null {
+      return resultQuery;
+    },
     /** Ask for `query`'s candidates in `roomId` after the pause; the old list stays meanwhile. */
     search(roomId: string, query: string): void {
       stop();
@@ -45,11 +51,15 @@ export function createMentionSearch(deps: MentionSearchDeps = DEFAULT_DEPS, onCh
         deps
           .roomMentionCandidates(roomId, query)
           .then((people) => {
-            if (mine === counter) set(people.map(candidateFromPerson));
+            if (mine !== counter) return;
+            resultQuery = query;
+            set(people.map(candidateFromPerson));
           })
           .catch(() => {
             // A convenience: a room whose cast cannot be read is still a room you can type in.
-            if (mine === counter) set([]);
+            if (mine !== counter) return;
+            resultQuery = query;
+            set([]);
           });
       }, deps.delayMs);
     },
@@ -57,6 +67,7 @@ export function createMentionSearch(deps: MentionSearchDeps = DEFAULT_DEPS, onCh
     close(): void {
       stop();
       counter++;
+      resultQuery = null;
       set([]);
     },
   };
