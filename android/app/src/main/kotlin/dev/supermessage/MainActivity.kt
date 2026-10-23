@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -149,7 +150,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** A link opened while the app is running (the manifest's singleTop delivers it here). */
+    /** A link opened while the app is running (the manifest's singleTask delivers it here). */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -158,9 +159,19 @@ class MainActivity : ComponentActivity() {
 
     /** `supermessage://open?room=` becomes a request for that room; anything else does nothing. */
     private fun takeLink(intent: Intent?) {
-        val room = intent?.data?.toString()?.let(AppLink::roomId) ?: return
+        val room = linkedRoom(intent) ?: return
         model.requests.request(room)
     }
+}
+
+/**
+ * The room a launch [intent] links to, if it is a `supermessage://open?room=` link that has not
+ * been followed before. Reopening the app from Recents relaunches the task with the Intent that
+ * first started it: a link already followed, flagged `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`.
+ */
+internal fun linkedRoom(intent: Intent?): String? {
+    if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
+    return intent.data?.toString()?.let(AppLink::roomId)
 }
 
 /** Edge to edge, with bar icons for the scheme in force rather than the phone's. */
@@ -272,12 +283,15 @@ internal fun AppRoot(
     // A link made before sign-in waits for it; one still pending when the account signs out was the
     // last account's and is dropped (Review Focus 1).
     var wasSignedIn by remember { mutableStateOf(false) }
+    // A link that named a room the roster does not list, until the reader dismisses the notice.
+    var unavailableLink by remember { mutableStateOf(false) }
     LaunchedEffect(phase) {
         if (phase == Session.Phase.SIGNED_IN) {
             wasSignedIn = true
         } else if (phase == Session.Phase.SIGNED_OUT && wasSignedIn) {
             wasSignedIn = false
             requests.clear()
+            unavailableLink = false
         }
     }
 
@@ -322,6 +336,11 @@ internal fun AppRoot(
     }
     newRecoveryKey?.let { key ->
         NewRecoveryKeyDialog(key = key, onDone = session::clearNewRecoveryKey)
+    }
+
+    // A link to a room the roster does not list, in iOS's words (`RoomScreen.swift:61-63`).
+    if (unavailableLink) {
+        RoomUnavailableDialog(onDismiss = { unavailableLink = false })
     }
 
     // Reactive, not a one-time snapshot: collectAsStateWithLifecycle
@@ -394,21 +413,20 @@ internal fun AppRoot(
                 openDetail()
             }
             // A room asked for from outside, honoured once the roster is there: always in Chats, so
-            // Back lands somewhere that lists it (PhoneShell.swift:72-80). The core is asked even when
-            // the roster has no row for it; the detail pane opens only for a room the roster shows.
+            // Back lands somewhere that lists it (PhoneShell.swift:72-80).
+            //
+            // A room the roster does not list (left, or in another space) is not opened, and the core
+            // is not asked: iOS never calls `open` for one (`RoomScreen.swift:51-64`). Whatever the
+            // reader has open stays open, and nothing is left subscribed; they are told instead.
             val asked by requests.pending.collectAsStateWithLifecycle()
             LaunchedEffect(asked, phase, loaded) {
                 if (asked == null || phase != Session.Phase.SIGNED_IN || !loaded) return@LaunchedEffect
                 val roomId = requests.consume() ?: return@LaunchedEffect
-                destination = Destination.CHATS
                 if (rooms.any { it.room.id == roomId }) {
+                    destination = Destination.CHATS
                     openRoom(roomId)
                 } else {
-                    // Not in this effect: consuming changes `asked`, which restarts (cancels) it.
-                    scope.launch {
-                        session.open(roomId)
-                        session.closeRoom()
-                    }
+                    unavailableLink = true
                 }
             }
             val railed = LocalNavigationRail.current
@@ -653,6 +671,20 @@ internal sealed class ExtraPanel {
     object NewRoom : ExtraPanel()
     data class RoomInfo(val roomId: String) : ExtraPanel()
     object Account : ExtraPanel()
+}
+
+/** "Room unavailable" for a link to a room the roster does not list; the reader stays where they were. */
+@Composable
+internal fun RoomUnavailableDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        modifier = Modifier.testTag("room-unavailable"),
+        onDismissRequest = onDismiss,
+        title = { Text("Room unavailable") },
+        text = { Text("It may have been left or removed.") },
+        confirmButton = {
+            TextButton(modifier = Modifier.testTag("room-unavailable-ok"), onClick = onDismiss) { Text("OK") }
+        },
+    )
 }
 
 /** A destination's own title, for the ones that do not draw one themselves (`NeedsYouView.swift:50`, `AgentsView.swift:49`). */

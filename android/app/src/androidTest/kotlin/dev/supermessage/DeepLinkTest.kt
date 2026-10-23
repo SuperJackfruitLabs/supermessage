@@ -10,10 +10,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.dp
@@ -38,7 +41,6 @@ import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.RoomRow
 import uniffi.supermessage_core.SpaceSummary
 import uniffi.supermessage_ffi.EventSink
-import uniffi.supermessage_ffi.FfiException
 import uniffi.supermessage_ffi.RoomsSnapshot
 import uniffi.supermessage_ffi.TimelineSnapshot
 
@@ -52,7 +54,9 @@ class DeepLinkTest {
         /** When set, the roster waits for it: the window in which a signed-in shell has no rooms yet. */
         @Volatile var rosterGate: CountDownLatch? = null,
     ) : StubCore() {
-        val subscribed = mutableListOf<String>()
+        /** Written on IO threads, read on the test's. */
+        val subscribed: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+        fun subscribedNow(): List<String> = synchronized(subscribed) { subscribed.toList() }
         private var sink: EventSink? = null
 
         override fun restoreSession(sink: EventSink): Boolean { this.sink = sink; return signedIn }
@@ -77,7 +81,6 @@ class DeepLinkTest {
         override fun markRoomRead(roomId: String) {}
         override fun timelineSubscribe(roomId: String, sink: EventSink) {
             subscribed += roomId
-            if (roomId == "!nope:x") throw FfiException.RoomChanged(requested = roomId, focused = "")
         }
         override fun timelineResync(): TimelineSnapshot =
             TimelineSnapshot(roomId = subscribed.lastOrNull().orEmpty(), seq = 0uL, items = emptyList())
@@ -101,7 +104,7 @@ class DeepLinkTest {
     private fun tablet(width: Int): Modifier =
         Modifier.fillMaxWidth().wrapContentWidth(Alignment.Start, unbounded = true).requiredWidth(width.dp).fillMaxHeight()
 
-    private fun show(core: Core, shell: Modifier = phone()) {
+    private fun show(core: Core, shell: Modifier = phone()): Session {
         val session = Session(
             client = CoreClient(core = core, dispatcher = Dispatchers.IO, resumeOn = Dispatchers.Main.immediate),
             scope = CoroutineScope(Dispatchers.Unconfined),
@@ -112,6 +115,7 @@ class DeepLinkTest {
             Box(shell.testTag("test-shell")) { AppRoot(session = session, prefs = prefs, requests = requests) }
         }
         compose.waitForIdle()
+        return session
     }
 
     private fun exists(tag: String) = compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
@@ -133,6 +137,13 @@ class DeepLinkTest {
 
     private fun waitForRoom() = compose.waitUntil(5_000) { exists("room-header") }
 
+    /**
+     * `session.open` subscribes two IO hops after the header appears (`client.turn`, then the
+     * subscribe), and `waitForIdle` does not wait for IO: so this waits for it.
+     */
+    private fun waitForSubscribe(core: Core, condition: (List<String>) -> Boolean) =
+        compose.waitUntil(5_000) { condition(core.subscribedNow()) }
+
     @Test
     fun aLinkOpensTheRoomInChats() {
         val core = Core(NavRows.fleet())
@@ -143,7 +154,7 @@ class DeepLinkTest {
 
         ask("!a:x")
         waitForRoom()
-        assertTrue("the core was asked to open it: ${core.subscribed}", core.subscribed.contains("!a:x"))
+        waitForSubscribe(core) { "!a:x" in it }
         assertTrue("the bar is hidden in a room", !exists("nav-bar"))
         back()
         compose.onNodeWithTag("destination-chats").assertIsSelected()
@@ -161,7 +172,7 @@ class DeepLinkTest {
         back()
         ask("!q:x")
         waitForRoom()
-        assertEquals("!q:x", core.subscribed.last())
+        waitForSubscribe(core) { it.lastOrNull() == "!q:x" }
     }
 
     @Test
@@ -177,7 +188,7 @@ class DeepLinkTest {
         compose.onNodeWithTag("password").performTextInput("pw")
         compose.onNodeWithTag("sign-in").performSemanticsAction(SemanticsActions.OnClick)
         waitForRoom()
-        assertTrue(core.subscribed.contains("!a:x"))
+        waitForSubscribe(core) { "!a:x" in it }
     }
 
     @Test
@@ -190,7 +201,7 @@ class DeepLinkTest {
         waitForRoom()
         compose.onNodeWithTag("destination-chats").assertIsSelected()
         assertTrue("the rail stays", exists("nav-rail"))
-        assertTrue(core.subscribed.contains("!a:x"))
+        waitForSubscribe(core) { "!a:x" in it }
     }
 
     @Test
@@ -222,16 +233,51 @@ class DeepLinkTest {
         assertTrue(core.subscribed.isEmpty())
     }
 
+    /**
+     * A room the roster does not list (left, or in another space): nothing is opened and the core
+     * is not asked, and the reader is told, in iOS's words (`RoomScreen.swift:61-63`).
+     */
     @Test
-    fun aRoomTheRosterDoesNotHaveIsStillAsked() {
+    fun aLinkToARoomTheRosterDoesNotListSaysSo() {
         val core = Core(NavRows.fleet())
         show(core)
         compose.waitUntil(5_000) { exists("roster-list") }
         ask("!nope:x")
-        compose.waitUntil(5_000) { core.subscribed.contains("!nope:x") }
+        compose.waitUntil(5_000) { exists("room-unavailable-ok") }
+        compose.onNodeWithText("Room unavailable").assertIsDisplayed()
+        compose.onNodeWithText("It may have been left or removed.").assertIsDisplayed()
+        compose.onNodeWithTag("room-unavailable-ok").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitForIdle()
-        compose.onNodeWithTag("destination-chats").assertIsSelected()
+        assertTrue("the notice goes", !exists("room-unavailable-ok"))
         assertTrue("no detail pane", !exists("room-header"))
         assertTrue("the roster is still there", exists("roster-list"))
+        // Long enough for an open to have reached the core, had one been made.
+        Thread.sleep(300)
+        assertTrue("the core was not asked: ${core.subscribed}", core.subscribed.isEmpty())
+        assertNull(requests.pending.value)
+    }
+
+    /** The room the reader has open stays open, subscribed and shown, under the notice. */
+    @Test
+    fun aLinkToAnUnlistedRoomLeavesTheOpenRoomAlone() {
+        val core = Core(NavRows.fleet())
+        val session = show(core)
+        compose.waitUntil(5_000) { exists("roster-list") }
+        ask("!q:x")
+        waitForRoom()
+        waitForSubscribe(core) { it == listOf("!q:x") }
+
+        ask("!nope:x")
+        compose.waitUntil(5_000) { exists("room-unavailable-ok") }
+        Thread.sleep(300)
+        compose.waitForIdle()
+        assertEquals("still selected", "!q:x", session.rooms.selectedId.value)
+        assertEquals("still the timeline's room", "!q:x", session.timeline.roomId.value)
+        assertEquals("nothing else subscribed", listOf("!q:x"), core.subscribedNow())
+
+        compose.onNodeWithTag("room-unavailable-ok").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+        assertTrue("the room is still on screen", exists("room-header"))
+        compose.onNodeWithTag("room-header").assertTextContains("Design Review", substring = true)
     }
 }

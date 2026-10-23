@@ -58,4 +58,21 @@ class ManifestTest {
         val found = context.packageManager.queryIntentActivities(link, 0).map { it.activityInfo.name }
         assertTrue("MainActivity is not offered the link: $found", found.contains("dev.supermessage.MainActivity"))
     }
+
+    /**
+     * One MainActivity, in the app's own task. A link tapped in another app is started in that
+     * app's task; under singleTop it made a second MainActivity there, with a second session and
+     * core over the same stores. `LinkIntentTest` shows the link reaching the running instance.
+     */
+    @Test
+    fun theAppRunsInOneTask() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val info = context.packageManager.getActivityInfo(
+            android.content.ComponentName(context, MainActivity::class.java), 0,
+        )
+        assertTrue(
+            "MainActivity's launchMode is ${info.launchMode}, not singleTask",
+            info.launchMode == android.content.pm.ActivityInfo.LAUNCH_SINGLE_TASK,
+        )
+    }
 }
