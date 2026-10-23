@@ -108,6 +108,29 @@ describe("destinations", () => {
     expect([inboxCalls, directoryCalls]).toEqual([1, 1]);
   });
 
+  it("a failed read of the roster is asked again on the next refresh", async () => {
+    let calls = 0;
+    const d = make({
+      rosterNeedsYouInbox: async () => {
+        calls++;
+        if (calls === 1) throw new Error("offline");
+        return inbox(["!a"], []);
+      },
+    });
+    const same = rows("!a");
+    const log = console.error;
+    console.error = () => {};
+    try {
+      await d.refresh(same, 1, "!a", false);
+    } finally {
+      console.error = log;
+    }
+    expect(d.badgeCount).toBe(0);
+    await d.refresh(same, 1, "!a", false);
+    expect(calls).toBe(2);
+    expect(d.badgeCount).toBe(1);
+  });
+
   it("statuses are asked for only while Agents shows", async () => {
     const asked: boolean[] = [];
     const d = make({

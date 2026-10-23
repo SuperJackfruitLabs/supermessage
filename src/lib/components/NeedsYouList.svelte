@@ -17,10 +17,9 @@
     avatars: { get(roomId: string): string | null; markFailed(roomId: string): void };
     selectedId?: string | null;
     onSelect: (roomId: string) => void;
-    onOpenInfo?: (roomId: string) => void;
   }
 
-  let { inbox, nowMs, showsState, avatars, selectedId = null, onSelect, onOpenInfo }: Props = $props();
+  let { inbox, nowMs, showsState, avatars, selectedId = null, onSelect }: Props = $props();
 
   const sections = $derived(inbox === null ? [] : inboxSections(inbox));
 </script>
@@ -49,7 +48,6 @@
             now={nowMs}
             {onSelect}
             onAvatarFailed={(roomId) => avatars.markFailed(roomId)}
-            onMenu={onOpenInfo ? (roomId) => onOpenInfo(roomId) : undefined}
           />
         {/each}
       {/each}

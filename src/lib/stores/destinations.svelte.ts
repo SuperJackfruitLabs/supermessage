@@ -75,6 +75,8 @@ export function createDestinations(deps: DestinationsDeps = defaultDeps) {
     if (!rosterTicket.isCurrent(ticket)) return;
     inbox = nextInbox;
     agents = nextAgents;
+    // Only a read that landed counts as asked: a failed one is tried again on the next refresh.
+    lastRows = rows;
   }
 
   return {
@@ -106,10 +108,7 @@ export function createDestinations(deps: DestinationsDeps = defaultDeps) {
       openRoomId = open;
       inProgress = turnInProgress;
       try {
-        if (rows !== lastRows) {
-          lastRows = rows;
-          await readRoster(rows, nowMs);
-        }
+        if (rows !== lastRows) await readRoster(rows, nowMs);
         await refreshStatuses();
       } catch (err) {
         console.error("destinations refresh failed", err);

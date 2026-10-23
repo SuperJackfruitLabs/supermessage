@@ -7,7 +7,7 @@
    * and the inbox's count needs somewhere to go. Each is a glyph over its title; the selected one
    * is accent on accent-soft. The count is decisions only and sits over the Needs you glyph.
    *
-   * Titles never truncate: when the four do not fit side by side the row wraps instead.
+   * Titles never truncate: when the four do not fit side by side they sit two by two instead.
    */
   export interface Props {
     selected: Destination;
@@ -32,7 +32,9 @@
   };
 </script>
 
-<nav aria-label="Destinations" class="flex flex-wrap gap-1 px-[10px] py-1.5">
+<!-- Four across when the sidebar is wide enough for every title; otherwise two by two. -->
+<div class="@container">
+<nav aria-label="Destinations" class="grid grid-cols-2 gap-1 px-[10px] py-1.5 @[18rem]:grid-cols-4">
   {#each DESTINATIONS as d (d.id)}
     {@const on = d.id === selected}
     <button
@@ -41,7 +43,7 @@
       aria-label={destinationLabel(d.id, badgeCount)}
       aria-current={on ? "page" : undefined}
       onclick={() => onSelect(d.id)}
-      class="flex min-w-max flex-1 flex-col items-center gap-[3px] rounded-[8px] py-1.5 transition-colors {on
+      class="flex min-w-0 flex-col items-center gap-[3px] rounded-[8px] py-1.5 transition-colors {on
         ? 'bg-accent-soft text-accent'
         : 'text-content-muted hover:bg-surface hover:text-content'}"
     >
@@ -70,3 +72,4 @@
     </button>
   {/each}
 </nav>
+</div>

@@ -90,3 +90,22 @@
 >
   {#snippet template(args)}{@render frame(args, "zoom: 1.5;")}{/snippet}
 </Story>
+
+<!-- A 288px sidebar at 150 % text is 192px of layout: two by two, nothing stretched, nothing cut. -->
+<Story
+  name="Two by two at the sidebar width"
+  args={{ selected: "needsYou", badgeCount: 3 }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await check(root, "needsYou", "Needs you, 3", "3");
+    const tops = new Set(buttons(root).map((b) => Math.round(b.getBoundingClientRect().top)));
+    if (tops.size !== 2) throw new Error(`expected two rows, got ${tops.size}`);
+    const widths = new Set(buttons(root).map((b) => Math.round(b.getBoundingClientRect().width)));
+    if (widths.size !== 1) throw new Error(`buttons differ in width: ${[...widths]}`);
+    for (const t of root.querySelectorAll<HTMLElement>("[data-testid='destination-title']")) {
+      if (t.scrollWidth > t.clientWidth) throw new Error(`"${t.textContent}" is clipped`);
+    }
+  }}
+>
+  {#snippet template(args)}{@render frame(args, "zoom: 1.5; width: 192px;")}{/snippet}
+</Story>
