@@ -2,8 +2,17 @@ package dev.supermessage
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.SystemClock
+import android.view.ViewGroup
+import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import dev.supermessage.kit.CoreClient
 import dev.supermessage.kit.Session
@@ -134,6 +143,48 @@ internal object RoomHarness {
 
     fun mainActivitySoftInputMode(context: Context): Int =
         context.packageManager.getActivityInfo(ComponentName(context, MainActivity::class.java), 0).softInputMode
+
+    /**
+     * Raises the real soft keyboard on the composer and waits until it is on screen.
+     *
+     * Android drops a show request from a window that does not have input focus yet (logcat:
+     * `ImeTracker onFailed at PHASE_SERVER_UPDATE_CLIENT_VISIBILITY`); CI's software-rendered
+     * AVD hit that right after the room opened, and a single request never recovered. So this
+     * waits for window focus, taps the field, and repeats the request each second until the
+     * keyboard shows. The first show on a cold emulator also starts the keyboard app, which
+     * has taken over 10s there.
+     */
+    fun AndroidComposeTestRule<*, out ComponentActivity>.raiseKeyboard(timeoutMillis: Long = 30_000) {
+        fun focused(): Boolean {
+            var f = false
+            runOnUiThread { f = activity.hasWindowFocus() }
+            return f
+        }
+        try {
+            waitUntil(timeoutMillis) { focused() }
+        } catch (e: ComposeTimeoutException) {
+            throw AssertionError("the window never got input focus, so no keyboard can show", e)
+        }
+        onNodeWithTag("composer-text").performClick()
+        var asked = 0L
+        try {
+            waitUntil(timeoutMillis) {
+                var shown = false
+                runOnUiThread {
+                    val host = activity.findViewById<ViewGroup>(android.R.id.content).getChildAt(0)
+                    shown = ViewCompat.getRootWindowInsets(host)?.isVisible(WindowInsetsCompat.Type.ime()) == true
+                    if (!shown && SystemClock.uptimeMillis() - asked >= 1_000) {
+                        asked = SystemClock.uptimeMillis()
+                        WindowCompat.getInsetsController(activity.window, host).show(WindowInsetsCompat.Type.ime())
+                    }
+                }
+                if (!shown) Thread.sleep(100)
+                shown
+            }
+        } catch (e: ComposeTimeoutException) {
+            throw AssertionError("the soft keyboard never showed (window focused: ${focused()})", e)
+        }
+    }
 
     fun AndroidComposeTestRule<*, *>.count(tag: String): Int =
         onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes().size
