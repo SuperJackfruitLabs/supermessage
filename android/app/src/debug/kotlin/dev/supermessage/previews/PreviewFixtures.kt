@@ -758,6 +758,62 @@ object PreviewFixtures {
             ),
         )
 
+    // ── Navigation (Needs you, Agents) ───────────────────────────────────
+
+    /**
+     * The fleet of `NavigationRevampFixtures.fleet` (iOS): agents in every
+     * state, a room of people and an invitation, with the same names, roles,
+     * previews and ages. These are inputs to the core's inbox and directory —
+     * the previews call it — and two of them are pending, so this is the one
+     * list here that is not [roster] (see [roomNeedsYou]'s rule: amber is a
+     * pending decision, and a Needs you screen is made of them).
+     */
+    fun fleet(now: ULong): List<RoomRow> {
+        fun ago(minutes: Double): ULong = now - (minutes * 60_000).toULong()
+        return listOf(
+            roomRow(
+                id = "!superpipeline:example.org", rawName = "⌘ Superpipeline — Delivery", glyph = "⌘",
+                name = "Superpipeline", role = "Delivery", initial = "⌘",
+                preview = RoomPreview("Merge this branch into main?", true), unread = 2uL,
+                lastActivityMs = ago(3.0), runtime = RuntimeDto("superpipeline", "foundry"),
+            ),
+            roomRow(
+                id = "!atlas:example.org", rawName = "✳ Atlas — Platform", glyph = "✳",
+                name = "Atlas", role = "Platform", initial = "✳",
+                preview = RoomPreview("Atlas: Rebased onto main and the diff is empty.", false), unread = 1uL,
+                lastActivityMs = ago(6.0), runtime = RuntimeDto("claude-code", "foundry"),
+            ),
+            roomRow(
+                id = "!sam:example.org", rawName = "◆ Strategy Sam — Strategy", glyph = "◆",
+                name = "Strategy Sam", role = "Strategy", initial = "◆",
+                preview = RoomPreview("Can I open a draft PR for the pricing page?", true),
+                lastActivityMs = ago(40.0), runtime = RuntimeDto("codex", "studio"),
+            ),
+            roomRow(
+                id = "!design:example.org", rawName = "Design review", glyph = null,
+                name = "Design Review", role = null, initial = "D",
+                preview = RoomPreview("Priya: the new tab bar reads well", false), unread = 4uL,
+                lastActivityMs = ago(90.0),
+            ),
+            roomRow(
+                id = "!quill:example.org", rawName = "✒ Quill — Writing", glyph = "✒",
+                name = "Quill", role = "Writing", initial = "✒",
+                preview = RoomPreview("Draft is in the branch.", false), lastActivityMs = ago(60.0 * 24 * 3),
+            ),
+            roomRow(
+                id = "!estate:example.org", rawName = "Estate Planning", glyph = null,
+                name = "Estate Planning", role = null, initial = "E", preview = null,
+                lastActivityMs = null, membership = Membership.INVITED,
+                affordance = RoomAffordance.RESPOND_TO_INVITATION,
+            ),
+        )
+    }
+
+    /** The same fleet with every decision answered and no invitation left: what "finished" looks like. */
+    fun caughtUp(now: ULong): List<RoomRow> = fleet(now)
+        .filter { it.affordance != RoomAffordance.RESPOND_TO_INVITATION }
+        .map { row -> row.copy(preview = row.preview?.copy(pending = false)) }
+
     /** The invitations the roster offers behind its one row (the core's sections never hold them). */
     val rosterInvitations: List<RosterRow>
         get() = listOf(RosterRow(roomInvitation, AgentState.IDLE, describesAgent = false))

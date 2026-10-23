@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,7 +32,20 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import uniffi.supermessage_ffi.displayInitial
+import uniffi.supermessage_ffi.peopleLabel
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -46,6 +62,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.supermessage.kit.AppLink
+import dev.supermessage.kit.NavigationRequests
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.RosterChoice
 import dev.supermessage.kit.Session
@@ -72,8 +90,13 @@ private val Context.rosterDataStore: DataStore<Preferences> by preferencesDataSt
 private val Context.appearanceDataStore: DataStore<Preferences> by preferencesDataStore(name = "appearance")
 
 class MainActivity : ComponentActivity() {
+    private val model: SessionViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A recreated Activity is handed the Intent it was first started with: that link was
+        // already taken (or is still held by the view model), so it is not asked for again.
+        if (savedInstanceState == null) takeLink(intent)
         val appearance = AppearancePreferences(applicationContext.appearanceDataStore)
         // Read before `setContent`, so the first frame is drawn in the stored
         // choice rather than in the house palette and then repainted (iOS:
@@ -109,11 +132,46 @@ class MainActivity : ComponentActivity() {
                     // the one place in the tree that has one to give it.
                     val prefs = remember { RosterPreferences(applicationContext.rosterDataStore) }
 
-                    AppRoot(session = vm.session, prefs = prefs, appearance = appearance)
+                    val firstRun = remember { FirstRunPreferences(applicationContext.rosterDataStore) }
+                    // Only on a fresh launch: a rotation must not queue the demo again.
+                    if (savedInstanceState == null) {
+                        LaunchedEffect(Unit) { applyDebugLaunch(intent, firstRun) }
+                    }
+
+                    AppRoot(
+                        session = vm.session,
+                        prefs = prefs,
+                        appearance = appearance,
+                        firstRun = firstRun,
+                        requests = vm.requests,
+                    )
                 }
             }
         }
     }
+
+    /** A link opened while the app is running (the manifest's singleTask delivers it here). */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        takeLink(intent)
+    }
+
+    /** `supermessage://open?room=` becomes a request for that room; anything else does nothing. */
+    private fun takeLink(intent: Intent?) {
+        val room = linkedRoom(intent) ?: return
+        model.requests.request(room)
+    }
+}
+
+/**
+ * The room a launch [intent] links to, if it is a `supermessage://open?room=` link that has not
+ * been followed before. Reopening the app from Recents relaunches the task with the Intent that
+ * first started it: a link already followed, flagged `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`.
+ */
+internal fun linkedRoom(intent: Intent?): String? {
+    if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
+    return intent.data?.toString()?.let(AppLink::roomId)
 }
 
 /** Edge to edge, with bar icons for the scheme in force rather than the phone's. */
@@ -140,7 +198,16 @@ private fun ComponentActivity.applySystemBars(dark: Boolean) {
  * already reaches `AndroidSecretStore.rawForTest`.
  */
 @Composable
-internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: AppearancePreferences? = null) {
+internal fun AppRoot(
+    session: Session,
+    prefs: RosterPreferences,
+    appearance: AppearancePreferences? = null,
+    /** The welcome and the first-run demo; `null` is no onboarding at all (a test not about it). */
+    firstRun: FirstRunPreferences? = null,
+    /** Rooms asked for from outside; `null` is none (a test not about links). */
+    requests: NavigationRequests? = null,
+) {
+    val requests = requests ?: remember { NavigationRequests() }
     val phase by session.phase.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         if (phase == Session.Phase.STARTING) session.start()
@@ -204,8 +271,49 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
     LaunchedEffect(phase) {
         if (phase == Session.Phase.SIGNED_IN) {
             accountUserId = session.account()?.userId
+        } else {
+            // Not the previous account's, for the toolbar's initial or the info panel.
+            accountUserId = null
         }
     }
+
+    // Which of the four places the list pane shows. Per session, saved across a
+    // rotation, and back to Chats on sign-out so the next account never opens on
+    // the last one's Needs you.
+    // A link made before sign-in waits for it; one still pending when the account signs out was the
+    // last account's and is dropped (Review Focus 1).
+    var wasSignedIn by remember { mutableStateOf(false) }
+    // A link that named a room the roster does not list, until the reader dismisses the notice.
+    var unavailableLink by remember { mutableStateOf(false) }
+    LaunchedEffect(phase) {
+        if (phase == Session.Phase.SIGNED_IN) {
+            wasSignedIn = true
+        } else if (phase == Session.Phase.SIGNED_OUT && wasSignedIn) {
+            wasSignedIn = false
+            requests.clear()
+            unavailableLink = false
+        }
+    }
+
+    var destination by rememberSaveable(session) { mutableStateOf(Destination.CHATS) }
+    // The search term lives here, not in the panel: the list pane is recomposed on
+    // the way back from a result, and the term has to be there when it is.
+    var searchTerm by rememberSaveable(session) { mutableStateOf("") }
+    var searchNarrowed by rememberSaveable(session) { mutableStateOf(true) }
+    // Bumped on sign-out: the scroll positions below belong to the account that left.
+    var accountEpoch by remember { mutableIntStateOf(0) }
+    LaunchedEffect(phase) {
+        if (phase == Session.Phase.SIGNED_OUT) {
+            destination = Destination.CHATS
+            searchTerm = ""
+            searchNarrowed = true
+            accountEpoch += 1
+        }
+    }
+    // Hoisted above the destination switch, so Needs you and Agents come back where they were left.
+    val needsYouListState = remember(accountEpoch) { LazyListState() }
+    val agentsListState = remember(accountEpoch) { LazyListState() }
+    val haptic = LocalHapticFeedback.current
 
     // The key generated at sign-in, shown where the reader already is.
     //
@@ -214,8 +322,39 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
     // sign-in, and the alternative was an account whose backup could never be
     // opened by anyone, silently.
     val newRecoveryKey by session.newRecoveryKey.collectAsStateWithLifecycle()
+    val recoverySettled by session.recoverySettled.collectAsStateWithLifecycle()
+
+    // The first-run demo, over the signed-in shell, once the first sign-in's recovery key has been
+    // shown and put away (`RootView.swift:89-139`). Composed before the key's dialog so the key
+    // draws above it, should it still arrive.
+    if (firstRun != null) {
+        val demoPending by firstRun.demoPending.collectAsStateWithLifecycle(initialValue = false)
+        val demoSeen by firstRun.demoSeen.collectAsStateWithLifecycle(initialValue = true)
+        // Gone as soon as the reader finishes, not when the write lands: a write that fails (a full
+        // disk) must neither keep them in the demo nor take the app down.
+        var demoFinished by remember { mutableStateOf(false) }
+        if (phase == Session.Phase.SIGNED_IN && demoPending && !demoSeen && !demoFinished && newRecoveryKey == null && recoverySettled) {
+            FirstRunDemoScreen(
+                onFinish = {
+                    demoFinished = true
+                    scope.launch {
+                        try {
+                            firstRun.finishDemo()
+                        } catch (e: java.io.IOException) {
+                            // Not written: the demo comes back on the next launch, which is all it costs.
+                        }
+                    }
+                },
+            )
+        }
+    }
     newRecoveryKey?.let { key ->
         NewRecoveryKeyDialog(key = key, onDone = session::clearNewRecoveryKey)
+    }
+
+    // A link to a room the roster does not list, in iOS's words (`RoomScreen.swift:61-63`).
+    if (unavailableLink) {
+        RoomUnavailableDialog(onDismiss = { unavailableLink = false })
     }
 
     // Reactive, not a one-time snapshot: collectAsStateWithLifecycle
@@ -236,24 +375,157 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
         }
     }
 
+    // Whether the roster has been read at all. An empty list before that is not an
+    // empty account, and must not be shown as one ("You're all caught up").
+    val loaded by session.rooms.loaded.collectAsStateWithLifecycle()
+    val selectedRoomId by session.rooms.selectedId.collectAsStateWithLifecycle()
+    val roomInProgress by session.live.inProgress.collectAsStateWithLifecycle()
+    val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
+
+    // The core decides who is in the inbox, and what the badge counts (decisions only).
+    // Keyed on what it reads, so an answered decision leaves in the same update.
+    val inbox = remember(rooms, now) { RosterArrangement.needsYouInbox(rooms, now) }
+    val badgeCount = if (loaded) inbox.badgeCount.toInt() else 0
+    val agents = remember(rooms, now, destination == Destination.AGENTS) {
+        if (destination == Destination.AGENTS) RosterArrangement.agentDirectory(rooms, now) else emptyList()
+    }
+
+    // A pull on Chats, Needs you or Agents: the clock first, then the roster, read again
+    // (`RoomListView.swift:175-178`). The indicator stays until the read returns.
+    val refresh: suspend () -> Unit = {
+        now = Instant.now()
+        session.rooms.seed()
+    }
+
+    val navigation = ShellNavigation(
+        selected = destination,
+        onSelect = { next ->
+            if (next != destination) {
+                haptic.play(Haptic.Selection)
+                destination = next
+            }
+        },
+        badgeCount = badgeCount,
+    )
+
+    val accountInitial = displayInitial(accountUserId?.let { peopleLabel(listOf(it)) } ?: "Signed in")
+
     RootScaffold(
         phase = phase,
+        navigation = navigation,
         listPaneContent = { _, openDetail, openInfo ->
-            // Search and the account panel share the Extra pane with room
+            // The account panel and a new room share the Extra pane with room
             // info: set which panel `extraPaneContent` below should show, then
             // ask RootScaffold to open it.
-            RosterPane(
-                session = session,
-                prefs = prefs,
-                rooms = rooms,
-                avatarCache = avatarCache,
-                now = now,
-                openDetail = openDetail,
-                openPanel = { panel ->
-                    extraPanel = panel
-                    openInfo()
-                },
-            )
+            val openPanel: (ExtraPanel) -> Unit = { panel ->
+                extraPanel = panel
+                openInfo()
+            }
+            val openRoom: (String) -> Unit = { roomId ->
+                session.rooms.select(roomId)
+                scope.launch { session.open(roomId) }
+                openDetail()
+            }
+            // A room asked for from outside, honoured once the roster is there: always in Chats, so
+            // Back lands somewhere that lists it (PhoneShell.swift:72-80).
+            //
+            // A room the roster does not list (left, or in another space) is not opened, and the core
+            // is not asked: iOS never calls `open` for one (`RoomScreen.swift:51-64`). Whatever the
+            // reader has open stays open, and nothing is left subscribed; they are told instead.
+            val asked by requests.pending.collectAsStateWithLifecycle()
+            LaunchedEffect(asked, phase, loaded) {
+                if (asked == null || phase != Session.Phase.SIGNED_IN || !loaded) return@LaunchedEffect
+                val roomId = requests.consume() ?: return@LaunchedEffect
+                if (rooms.any { it.room.id == roomId }) {
+                    destination = Destination.CHATS
+                    openRoom(roomId)
+                } else {
+                    unavailableLink = true
+                }
+            }
+            val railed = LocalNavigationRail.current
+            Column(Modifier.fillMaxSize()) {
+                // On a tablet the toolbar stays on the sidebar whatever the destination;
+                // on a phone it is Chats' alone, and the others show their title.
+                if (destination != Destination.CHATS) {
+                    if (railed) {
+                        ChatsToolbar(
+                            accountInitial = accountInitial,
+                            onAccount = { openPanel(ExtraPanel.Account) },
+                            onCompose = { openPanel(ExtraPanel.NewRoom) },
+                            title = { if (destination != Destination.SEARCH) DestinationTitle(destination) },
+                        )
+                    } else if (destination != Destination.SEARCH) {
+                        DestinationTitle(destination, Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                    }
+                }
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    // Always composed, shown only on Chats: leaving would drop its scroll
+                    // position and avatars, and coming back would fetch them all again.
+                    Box(Modifier.fillMaxSize().shownOnlyIf(destination == Destination.CHATS)) {
+                        RosterPane(
+                            session = session,
+                            prefs = prefs,
+                            rooms = rooms,
+                            avatarCache = avatarCache,
+                            now = now,
+                            openDetail = openDetail,
+                            openPanel = openPanel,
+                            accountInitial = accountInitial,
+                            loaded = loaded,
+                            onRefresh = refresh,
+                        )
+                    }
+                    when (destination) {
+                        Destination.CHATS -> {}
+                        Destination.NEEDS_YOU ->
+                            NeedsYouPane(
+                                inbox = if (loaded) inbox else null,
+                                now = now,
+                                showsState = showsState,
+                                avatarUri = { roomId -> avatarCache[roomId] },
+                                onLoadAvatar = { roomId -> scope.launch { session.avatars.load(roomId) } },
+                                onOpenRoom = openRoom,
+                                onOpenInfo = { roomId -> openPanel(ExtraPanel.RoomInfo(roomId)) },
+                                listState = needsYouListState,
+                                onRefresh = refresh,
+                            )
+
+                        Destination.AGENTS ->
+                            AgentsPane(
+                                agents = if (loaded) agents else null,
+                                now = now,
+                                openRoomId = selectedRoomId,
+                                openRoomInProgress = roomInProgress,
+                                avatarUri = { roomId -> avatarCache[roomId] },
+                                onLoadAvatar = { roomId -> scope.launch { session.avatars.load(roomId) } },
+                                onOpenRoom = openRoom,
+                                listState = agentsListState,
+                                onRefresh = refresh,
+                            )
+
+                        Destination.SEARCH ->
+                            SearchPanel(
+                                // The open room where one is selected (a tablet); none on a phone,
+                                // where a room being open means the list is not on screen.
+                                scope = if (railed) {
+                                    rooms.firstOrNull { it.room.id == selectedRoomId }
+                                        ?.let { SearchPanelScope(it.room.id, it.identity.name) }
+                                } else {
+                                    null
+                                },
+                                onOpen = openRoom,
+                                onClose = null,
+                                search = session::search,
+                                roomName = { roomId -> rooms.firstOrNull { it.room.id == roomId }?.room?.name },
+                                hoistedTerm = searchTerm,
+                                onTermChange = { searchTerm = it },
+                                hoistedNarrowed = searchNarrowed,
+                                onNarrowedChange = { searchNarrowed = it },
+                            )
+                    }
+                }
+            }
         },
         detailPaneContent = { _, openInfo ->
             RoomPane(
@@ -316,21 +588,6 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                         )
                     }
 
-                    is ExtraPanel.Search ->
-                        SearchPanel(
-                            scope = panel.scope,
-                            onOpen = { roomId ->
-                                session.rooms.select(roomId)
-                                scope.launch { session.open(roomId) }
-                            },
-                            onClose = {
-                                extraPanel = null
-                                closeInfo()
-                            },
-                            search = session::search,
-                            roomName = { roomId -> rooms.firstOrNull { it.room.id == roomId }?.room?.name },
-                        )
-
                     ExtraPanel.Account -> {
                         val blockedNow by session.safety.blocked.collectAsStateWithLifecycle()
                         val storedView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
@@ -382,39 +639,39 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
             session.closeRoom()
         },
         signedOutContent = {
-            LoginScreen(
-                homeserver = homeserverField.value,
-                onHomeserverChange = homeserverField::onChange,
-                failure = failure,
-                busy = busy,
-                onSignIn = { username, password ->
-                    // busy lives here, not in Session: it
-                    // guards this form against a double tap,
-                    // it is not part of what Session itself
-                    // tracks (see Session.kt's own
-                    // `phase`/`failure`, neither of which
-                    // serves that purpose while a sign-in is
-                    // in flight).
-                    scope.launch {
-                        busy = true
-                        try {
-                            session.signIn(
-                                homeserver = homeserverField.value,
-                                username = username,
-                                password = password,
-                            )
-                        } finally {
-                            busy = false
+            SignedOutContent(firstRun = firstRun) {
+                LoginScreen(
+                    homeserver = homeserverField.value,
+                    onHomeserverChange = homeserverField::onChange,
+                    failure = failure,
+                    busy = busy,
+                    onSignIn = { username, password ->
+                        // busy lives here, not in Session: it guards this form against a double
+                        // tap, it is not part of what Session itself tracks.
+                        scope.launch {
+                            busy = true
+                            try {
+                                session.signIn(
+                                    homeserver = homeserverField.value,
+                                    username = username,
+                                    password = password,
+                                )
+                                // Only an interactive sign-in that got in queues the demo; a restored
+                                // session never does (`LoginView.swift:115-126`).
+                                if (session.phase.value == Session.Phase.SIGNED_IN) firstRun?.setDemoPending(true)
+                            } finally {
+                                busy = false
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         },
     )
 }
 
 /**
- * Which of a new room, room info, search or the account panel
+ * Which of a new room, room info or the account panel
  * `RootScaffold`'s single Extra pane is currently showing — `null` when none
  * of the four was asked for. An app-level type, not a core sealed class: the
  * `when` over it above may use `else` freely, though it does not.
@@ -427,7 +684,47 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
 internal sealed class ExtraPanel {
     object NewRoom : ExtraPanel()
     data class RoomInfo(val roomId: String) : ExtraPanel()
-    /** [scope] is the room it was opened from, if any: search offers it, narrowed. */
-    data class Search(val scope: SearchPanelScope?) : ExtraPanel()
     object Account : ExtraPanel()
 }
+
+/** "Room unavailable" for a link to a room the roster does not list; the reader stays where they were. */
+@Composable
+internal fun RoomUnavailableDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        modifier = Modifier.testTag("room-unavailable"),
+        onDismissRequest = onDismiss,
+        title = { Text("Room unavailable") },
+        text = { Text("It may have been left or removed.") },
+        confirmButton = {
+            TextButton(modifier = Modifier.testTag("room-unavailable-ok"), onClick = onDismiss) { Text("OK") }
+        },
+    )
+}
+
+/** A destination's own title, for the ones that do not draw one themselves (`NeedsYouView.swift:50`, `AgentsView.swift:49`). */
+@Composable
+internal fun DestinationTitle(destination: Destination, modifier: Modifier = Modifier) {
+    Text(
+        destination.title,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+        modifier = modifier.testTag("destination-title").semantics { heading() },
+    )
+}
+
+/**
+ * Composed always, drawn and heard only when [shown]: nothing of it is placed, touched or
+ * offered to TalkBack otherwise, but its state (a list's scroll position, the avatars it
+ * loaded) stays where it was.
+ */
+internal fun Modifier.shownOnlyIf(shown: Boolean): Modifier =
+    if (shown) {
+        this
+    } else {
+        this
+            .clearAndSetSemantics {}
+            .layout { measurable, constraints ->
+                measurable.measure(constraints)
+                layout(0, 0) {}
+            }
+    }

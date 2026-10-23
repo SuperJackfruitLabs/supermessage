@@ -2,11 +2,22 @@ package dev.supermessage.kit
 
 import java.time.Instant
 import uniffi.supermessage_core.AgentState
+import uniffi.supermessage_core.NeedsYouInbox
 import uniffi.supermessage_core.RoomRow
+import uniffi.supermessage_core.RosterEmptyState
+import uniffi.supermessage_core.RosterFilter
+import uniffi.supermessage_core.RosterFilterChip
 import uniffi.supermessage_core.RosterRow
 import uniffi.supermessage_core.RosterSection
 import uniffi.supermessage_core.RosterView
+import uniffi.supermessage_ffi.rosterAgentDirectory
+import uniffi.supermessage_ffi.rosterFilterChips
+import uniffi.supermessage_ffi.rosterFilterEmptyState
+import uniffi.supermessage_ffi.rosterFilterFromKey
+import uniffi.supermessage_ffi.rosterFilterKey
+import uniffi.supermessage_ffi.rosterFilterSections
 import uniffi.supermessage_ffi.rosterHiddenInvitations
+import uniffi.supermessage_ffi.rosterNeedsYouInbox
 import uniffi.supermessage_ffi.rosterRow
 import uniffi.supermessage_ffi.rosterSections
 import uniffi.supermessage_ffi.rosterState
@@ -103,6 +114,34 @@ object RosterArrangement {
      */
     fun rosterRow(roomId: String, rows: List<RoomRow>, now: Instant): RosterRow? =
         rosterRow(rows, roomId, milliseconds(now))
+
+    /**
+     * Needs you: every decision owed and every invitation waiting, and the
+     * counts (`RosterArrangement.needsYouInbox`, iOS). A row leaves when the
+     * core stops saying it needs you, so an empty inbox is a fact, not a filter.
+     */
+    fun needsYouInbox(rows: List<RoomRow>, now: Instant): NeedsYouInbox =
+        rosterNeedsYouInbox(rows, milliseconds(now))
+
+    /** The Agents directory: agent rooms, recency order, no invitations (`agentDirectory`, iOS). */
+    fun agentDirectory(rows: List<RoomRow>, now: Instant): List<RosterRow> =
+        rosterAgentDirectory(rows, milliseconds(now))
+
+    /** [sections] narrowed to what [filter] admits, in the same order (`RosterFilter.apply`, iOS). */
+    fun filterSections(sections: List<RosterSection>, filter: RosterFilter): List<RosterSection> =
+        rosterFilterSections(sections, filter)
+
+    /** The offered chips (All, Unread) with their counts, over the whole arrangement. */
+    fun filterChips(sections: List<RosterSection>): List<RosterFilterChip> = rosterFilterChips(sections)
+
+    /** A stored chip read back: an unknown, empty or unoffered key is All. */
+    fun filterFromKey(key: String): RosterFilter = rosterFilterFromKey(key)
+
+    /** The stored form of a chip. */
+    fun filterKey(filter: RosterFilter): String = rosterFilterKey(filter)
+
+    /** What to say when [filter] leaves nothing. */
+    fun filterEmptyState(filter: RosterFilter): RosterEmptyState = rosterFilterEmptyState(filter)
 
     private fun milliseconds(now: Instant): ULong = maxOf(0L, now.toEpochMilli()).toULong()
 }

@@ -215,18 +215,26 @@ class RoomsStoreTest {
         )
     }
 
-    /** A swipe plays its success haptic only for a change that landed. */
+    /** The swipe marks any room, and plays its success haptic whenever the call goes through, as iOS does. */
     @Test
-    fun `markRead reports whether it landed`() = runTest {
-        val ok = RoomsStore(client = CoreClient(core = MarkReadCore(fail = false)), scope = this)
-        assertEquals(true, ok.markRead("!a:x"))
-        val refused = RoomsStore(client = CoreClient(core = MarkReadCore(fail = true)), scope = this)
-        assertEquals(false, refused.markRead("!a:x"))
+    fun `markRead is the roster's mark and reports whether the call went through`() = runTest {
+        val sent = MarkReadCore(answer = { true })
+        assertEquals(true, RoomsStore(client = CoreClient(core = sent), scope = this).markRead("!closed:x"))
+        assertEquals("the room asked about, which is not open", listOf("!closed:x"), sent.asked)
+
+        val nothingNewer = MarkReadCore(answer = { false })
+        assertEquals(true, RoomsStore(client = CoreClient(core = nothingNewer), scope = this).markRead("!a:x"))
+
+        val refused = MarkReadCore(answer = { throw IllegalStateException("offline") })
+        assertEquals(false, RoomsStore(client = CoreClient(core = refused), scope = this).markRead("!a:x"))
     }
 
-    private class MarkReadCore(private val fail: Boolean) : StubCore() {
-        override fun markRoomRead(roomId: String) {
-            if (fail) throw IllegalStateException("not the open room")
+    /** Fake only: the live account is never asked. */
+    private class MarkReadCore(private val answer: () -> Boolean) : StubCore() {
+        val asked = mutableListOf<String>()
+        override fun markRoomReadFromList(roomId: String): Boolean {
+            asked += roomId
+            return answer()
         }
     }
 

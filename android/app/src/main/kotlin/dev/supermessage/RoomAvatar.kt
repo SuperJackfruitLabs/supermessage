@@ -152,7 +152,7 @@ fun RoomAvatar(
  * leaves that glyph out, so its path is drawn directly rather than pulling in
  * `-extended` for one shape.
  */
-private val Sparkle: ImageVector = ImageVector.Builder(
+internal val Sparkle: ImageVector = ImageVector.Builder(
     name = "Sparkle", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f,
 ).addPath(
     pathData = addPathNodes(

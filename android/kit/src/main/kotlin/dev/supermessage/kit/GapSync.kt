@@ -108,6 +108,9 @@ class GapSync<T>(
     private var generation = 0
     private var stopped = false
 
+    /** [supersede] found a resync in flight: ask again once it ends, for what it was asked is stale. */
+    private var reseedAfter = false
+
     /** Fold one envelope in, or recover. */
     fun handle(subject: String, seq: ULong, ops: List<DiffOp<T>>) {
         if (stopped) return
@@ -252,7 +255,33 @@ class GapSync<T>(
         stopped = false
     }
 
+    /**
+     * Whatever resync is in flight answers a question that is no longer being
+     * asked (the roster's space changed under it): its result is dropped when
+     * it lands. Unlike [resume] this touches nothing else.
+     *
+     * A resync in flight also swallowed whatever the new context sent while it
+     * ran (the [handle] guard: a Reset for the new space, say), and its own
+     * result is dropped, so nothing would ever ask again. It therefore asks
+     * once more when it ends.
+     */
+    fun supersede() {
+        generation += 1
+        if (resyncing) reseedAfter = true
+    }
+
     private suspend fun performResync(generation: Int) {
+        // A call that found one already running leaves the flag to that one.
+        if (resyncing) return
+        resyncOnce(generation)
+        // Not inside the try: its early returns would skip this.
+        if (reseedAfter) {
+            reseedAfter = false
+            if (!stopped) performResync(this.generation)
+        }
+    }
+
+    private suspend fun resyncOnce(generation: Int) {
         // Belt and braces over `handle`'s own check, so this is safe to call
         // from anywhere without relying on it.
         if (resyncing) return

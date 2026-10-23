@@ -23,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -110,31 +111,49 @@ data class SearchPanelScope(val roomId: String, val name: String)
 fun SearchPanel(
     scope: SearchPanelScope?,
     onOpen: (roomId: String) -> Unit,
-    onClose: () -> Unit,
+    /** Abandons the search. `null` when Search is a destination, which has nothing to close (iOS `SearchPanel(session:scope:onOpen:)`). */
+    onClose: (() -> Unit)?,
     search: suspend (term: String, roomId: String?) -> List<SearchResultDto>,
     roomName: (roomId: String) -> String? = { null },
     now: Instant = Instant.now(),
     modifier: Modifier = Modifier,
+    /**
+     * The term, when the caller keeps it (so a visit to a result and back, or to another
+     * destination and back, finds it still there); `null` keeps it here.
+     */
+    hoistedTerm: String? = null,
+    onTermChange: ((String) -> Unit)? = null,
+    /** As [hoistedTerm], for the room/everywhere choice. `null` keeps it here. */
+    hoistedNarrowed: Boolean? = null,
+    onNarrowedChange: ((Boolean) -> Unit)? = null,
 ) {
-    var term by remember { mutableStateOf("") }
+    var localTerm by remember { mutableStateOf("") }
+    val term = hoistedTerm ?: localTerm
+    fun setTerm(next: String) {
+        if (onTermChange != null) onTermChange(next) else localTerm = next
+    }
     var state by remember { mutableStateOf<SearchState>(SearchState.Idle) }
     // Whether the search is narrowed to `scope`. Starts narrowed: a reader
     // who opened search from inside a room is asking about that room —
     // the same default `SearchPanel.swift`'s own `narrowed` documents.
-    var narrowed by remember { mutableStateOf(true) }
+    var localNarrowed by remember { mutableStateOf(true) }
+    val narrowed = hoistedNarrowed ?: localNarrowed
+    fun setNarrowed(next: Boolean) {
+        if (onNarrowedChange != null) onNarrowedChange(next) else localNarrowed = next
+    }
     val coroutineScope = rememberCoroutineScope()
 
     // Which search is the newest. Changing the scope while one is in flight
     // starts another; an older answer arriving after it must not overwrite it.
     val latest = remember { intArrayOf(0) }
 
-    suspend fun run() {
+    suspend fun run(inRoom: Boolean = narrowed) {
         val query = term.trim()
         if (query.isEmpty()) return
         val mine = ++latest[0]
         state = SearchState.Searching(query)
         val outcome: SearchState = try {
-            val results = search(query, if (narrowed) scope?.roomId else null)
+            val results = search(query, if (inRoom) scope?.roomId else null)
             if (results.isEmpty()) SearchState.Empty(query) else SearchState.Found(results)
         } catch (e: CancellationException) {
             throw e
@@ -146,12 +165,18 @@ fun SearchPanel(
         if (mine == latest[0]) state = outcome
     }
 
-    fun rerunIfAlreadyAsked() {
+    fun rerunIfAlreadyAsked(inRoom: Boolean) {
         // Changing where to look re-asks rather than leaving the old
         // scope's results under the new scope's label — matching the guard
         // on `SearchPanel.swift`'s own `onChange(of: narrowed)`.
         if (state.query.isEmpty() && term.isBlank()) return
-        coroutineScope.launch { run() }
+        coroutineScope.launch { run(inRoom) }
+    }
+
+    // Coming back to a term the caller kept: ask again, so its results are here too.
+    // (Only on entry: `narrowed` and `scope` are read as they are then.)
+    LaunchedEffect(Unit) {
+        if (term.isNotBlank() && state is SearchState.Idle) run()
     }
 
     Column(modifier.fillMaxSize()) {
@@ -163,13 +188,15 @@ fun SearchPanel(
             Text("Search", style = MaterialTheme.typography.titleMedium)
             // Cancel, not Done: nothing here is being composed, and the
             // only thing this button does is abandon the search.
-            TextButton(onClick = onClose, modifier = Modifier.testTag("search-cancel")) { Text("Cancel") }
+            if (onClose != null) {
+                TextButton(onClick = onClose, modifier = Modifier.testTag("search-cancel")) { Text("Cancel") }
+            }
         }
 
         OutlinedTextField(
             value = term,
             onValueChange = { next ->
-                term = next
+                setTerm(next)
                 state = state.typed(next)
             },
             modifier = Modifier
@@ -191,13 +218,13 @@ fun SearchPanel(
                     label = scope.name,
                     selected = narrowed,
                     testTag = "search-scope-room",
-                    onClick = { if (!narrowed) { narrowed = true; rerunIfAlreadyAsked() } },
+                    onClick = { if (!narrowed) { setNarrowed(true); rerunIfAlreadyAsked(true) } },
                 )
                 ScopeChip(
                     label = "All rooms",
                     selected = !narrowed,
                     testTag = "search-scope-all",
-                    onClick = { if (narrowed) { narrowed = false; rerunIfAlreadyAsked() } },
+                    onClick = { if (narrowed) { setNarrowed(false); rerunIfAlreadyAsked(false) } },
                 )
             }
         }
@@ -264,7 +291,7 @@ fun SearchPanel(
                                 now = now,
                                 onClick = {
                                     onOpen(result.roomId)
-                                    onClose()
+                                    onClose?.invoke()
                                 },
                             )
                         }

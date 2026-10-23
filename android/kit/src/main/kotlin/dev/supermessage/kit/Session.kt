@@ -194,7 +194,7 @@ class Session(
 
     val connection = ConnectionStore()
     val rooms: RoomsStore = RoomsStore(client = client, scope = scope)
-    val spaces: SpacesStore = SpacesStore(client = client)
+    val spaces: SpacesStore = SpacesStore(client = client, onSelected = { rooms.supersede(); rooms.seed() })
     val avatars: AvatarCache = AvatarCache(client = client)
 
     /** Senders' faces, keyed by `mxc:` URI — see [AvatarCache.forMembers]. */
@@ -320,6 +320,10 @@ class Session(
 
     suspend fun signIn(homeserver: String, username: String, password: String) {
         _failure.value = null
+        // Not settled from the first moment of a sign-in, so nothing waiting on the recovery key (the
+        // demo, behind a stale "pending") can show before the core has said whether one is coming.
+        _recoverySettled.value = false
+        var handedOff = false
         try {
             // Same reason as start(): undo a prior signOut's teardown — or a
             // still-active drain, if this is called again without one —
@@ -336,6 +340,7 @@ class Session(
             bindSafety(adoptLegacy = false)
             beginDraining()
             load()
+            handedOff = true
             setUpRecoveryIfNeeded()
         } catch (e: CancellationException) {
             throw e
@@ -343,6 +348,9 @@ class Session(
             _failure.value = ErrorPresenter.message(e)
         } catch (e: Exception) {
             _failure.value = "Couldn't sign in."
+        } finally {
+            // A sign-in that never got as far as asking for a key has nothing to wait for.
+            if (!handedOff) _recoverySettled.value = true
         }
     }
 
@@ -972,11 +980,25 @@ class Session(
      * noise on the screen they just signed in to.
      */
     fun setUpRecoveryIfNeeded() {
+        _recoverySettled.value = false
         scope.launch {
-            val key = runCatching { client.ensureRecovery() }.getOrNull()
-            if (!key.isNullOrEmpty()) _newRecoveryKey.value = key
+            try {
+                val key = runCatching { client.ensureRecovery() }.getOrNull()
+                if (!key.isNullOrEmpty()) _newRecoveryKey.value = key
+            } finally {
+                _recoverySettled.value = true
+            }
         }
     }
+
+    private val _recoverySettled = MutableStateFlow(true)
+
+    /**
+     * `false` from a sign-in until the core has said whether a new recovery key is coming, so that
+     * something which must wait for the key (the first-run demo, `RootView.swift:89-139`) cannot slip
+     * in ahead of it. `true` otherwise, including for a restored session, which makes no key.
+     */
+    val recoverySettled: StateFlow<Boolean> = _recoverySettled.asStateFlow()
 
     /** Destructive: replaces the identity and returns a new key. */
     suspend fun resetRecovery(password: String): String = client.resetRecovery(password)

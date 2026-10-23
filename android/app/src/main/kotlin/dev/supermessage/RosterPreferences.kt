@@ -5,12 +5,14 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.RosterChoice
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import uniffi.supermessage_core.RosterFilter
 
 /**
- * The three settings a reader's device remembers between launches.
+ * The settings a reader's device remembers between launches.
  *
  * Takes a `DataStore<Preferences>` rather than a `Context`: the store is
  * this class's only dependency, so a test can hand it one backed by a
@@ -22,6 +24,7 @@ class RosterPreferences(private val store: DataStore<Preferences>) {
     private object Keys {
         val HOMESERVER = stringPreferencesKey("login.homeserver")
         val VIEW = stringPreferencesKey("roster.view")
+        val FILTER = stringPreferencesKey("roster.filter")
         val SHOWS_STATE = booleanPreferencesKey("roster.showsState")
     }
 
@@ -59,6 +62,14 @@ class RosterPreferences(private val store: DataStore<Preferences>) {
             }
         }
 
+    /**
+     * The chip in force. Read through the core, so a key this build does not
+     * offer (an older build's Agents or Needs you) reads as All rather than
+     * narrowing the list with no chip lit.
+     */
+    val filter: Flow<RosterFilter> =
+        store.data.map { RosterArrangement.filterFromKey(it[Keys.FILTER] ?: "") }
+
     val showsState: Flow<Boolean> =
         store.data.map { it[Keys.SHOWS_STATE] ?: true }
 
@@ -68,6 +79,10 @@ class RosterPreferences(private val store: DataStore<Preferences>) {
 
     suspend fun setView(value: RosterChoice) {
         store.edit { it[Keys.VIEW] = value.name }
+    }
+
+    suspend fun setFilter(value: RosterFilter) {
+        store.edit { it[Keys.FILTER] = RosterArrangement.filterKey(value) }
     }
 
     suspend fun setShowsState(value: Boolean) {
@@ -83,5 +98,10 @@ class RosterPreferences(private val store: DataStore<Preferences>) {
      */
     internal suspend fun setRawViewForTest(raw: String) {
         store.edit { it[Keys.VIEW] = raw }
+    }
+
+    /** As [setRawViewForTest], for the `roster.filter` key. */
+    internal suspend fun setRawFilterForTest(raw: String) {
+        store.edit { it[Keys.FILTER] = raw }
     }
 }

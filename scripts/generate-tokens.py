@@ -19,6 +19,7 @@ from scripts.tokens.emit_kotlin import emit_kotlin  # noqa: E402
 from scripts.tokens.emit_mark import (  # noqa: E402
     emit_android_colors,
     emit_android_foreground,
+    emit_android_mark,
     emit_android_monochrome,
     emit_logo_svg,
 )
@@ -81,6 +82,7 @@ def main() -> int:
     outputs[res / "values" / "generated_theme_colors.xml"] = emit_android_colors(tokens)
     outputs[res / "drawable" / "ic_launcher_foreground.xml"] = emit_android_foreground(tokens)
     outputs[res / "drawable" / "ic_launcher_monochrome.xml"] = emit_android_monochrome(tokens)
+    outputs[res / "drawable" / "mark.xml"] = emit_android_mark(tokens)
 
     for path, content in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)

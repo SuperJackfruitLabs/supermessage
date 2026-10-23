@@ -39,6 +39,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import androidx.compose.runtime.LaunchedEffect
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -86,7 +87,7 @@ class RosterReachabilityTest {
     @get:Rule val compose = createComposeRule()
 
     private fun sessionOf(core: CoreInterface, dispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Unconfined): Session =
-        Session(client = CoreClient(core = core, dispatcher = dispatcher), scope = CoroutineScope(Dispatchers.Unconfined))
+        Session(client = CoreClient(core = core, dispatcher = dispatcher, resumeOn = resumeOnMainFor(dispatcher)), scope = CoroutineScope(Dispatchers.Unconfined))
 
     /** A `RosterPreferences` over a real, throwaway `DataStore` — no `Context` needed. */
     private fun preferences(): RosterPreferences {
@@ -141,7 +142,7 @@ class RosterReachabilityTest {
         compose.waitForIdle()
 
         // Before this task: no button existed for this at all.
-        compose.onNodeWithTag("roster-open-new-room").performClick()
+        compose.onNodeWithTag("toolbar-new-conversation").performClick()
         compose.waitForIdle()
 
         // The real `NewRoomPanel`, not a stand-in — reached through the
@@ -549,6 +550,8 @@ class RosterReachabilityTest {
             roomInfoResult = { infoOf(it, 4uL) },
         )
         typeAndSend(fake, haptics)
+        // The send runs off the UI thread; waitForIdle does not wait for it (it failed once as `expected [hello there] but was []`).
+        compose.waitUntil(5_000) { fake.sent.isNotEmpty() && haptics.played.isNotEmpty() }
         assertEquals(listOf("hello there"), fake.sent)
         assertEquals(listOf(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick), haptics.played)
     }
@@ -747,8 +750,20 @@ class RosterReachabilityTest {
         )
         val session = sessionOf(fake, Dispatchers.IO)
         val prefs = preferences()
+        // The session's state reaching the composition off the main thread is what failed this test
+        // on CI: the IO worker that wrote it went on to draw a frame, and the roster's LazyColumn
+        // asked it for a Choreographer it does not have. Counted, so a regression fails here every
+        // time rather than when the worker happens to win the race for the frame.
+        val offMain = java.util.concurrent.atomic.AtomicInteger(0)
+        val mainLooper = android.os.Looper.getMainLooper()
 
         compose.setContent {
+            LaunchedEffect(Unit) {
+                session.phase.collect { if (android.os.Looper.myLooper() != mainLooper) offMain.incrementAndGet() }
+            }
+            LaunchedEffect(Unit) {
+                session.rooms.rooms.collect { if (android.os.Looper.myLooper() != mainLooper) offMain.incrementAndGet() }
+            }
             // Two panes: the roster stays beside the room, so the pane is
             // reused across the switch and only the room id changes. On a
             // phone the pane leaves composition and forgets anything.
@@ -775,6 +790,7 @@ class RosterReachabilityTest {
         }
         compose.waitForIdle()
         compose.onAllNodesWithText("4 members").assertCountEquals(0)
+        assertEquals("the session's state reached the composition off the main thread", 0, offMain.get())
         stalled.countDown()
     }
 
@@ -874,28 +890,7 @@ class RosterReachabilityTest {
         assertEquals(listOf<String?>("!ops:x"), fake.spaceSelected)
     }
 
-    /** Opened with a room selected, search offers that room, narrowed (`SplitShell.swift:121-127`). */
-    @Test
-    fun searchOpenedFromARoomOffersThatRoom() {
-        val fake = FakeCore(
-            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Atlas"))) },
-            roomInfoResult = { infoOf(it, 4uL) },
-        )
-        val session = sessionOf(fake)
-        compose.setContent {
-            // Two panes: the roster stays on screen beside the open room.
-            Box(Modifier.requiredWidth(800.dp).fillMaxHeight().testTag("test-shell")) {
-                AppRoot(session = session, prefs = preferences())
-            }
-        }
-        compose.waitForIdle()
-        compose.onNodeWithText("Atlas").performScrollTo().performClick()
-        compose.waitForIdle()
-        compose.onNodeWithTag("roster-open-search").performClick()
-        compose.waitForIdle()
-
-        compose.onNodeWithTag("search-scope-room").assertTextEquals("Atlas").assertIsSelected()
-    }
+    // (Search with a room open offers that room: NavigationTest.searchOnATabletOffersTheOpenRoom.)
 
     /** With nothing open, search offers no scope at all. */
     @Test
@@ -907,7 +902,7 @@ class RosterReachabilityTest {
             }
         }
         compose.waitForIdle()
-        compose.onNodeWithTag("roster-open-search").performClick()
+        compose.onNodeWithTag("destination-search").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("search-field").assertIsDisplayed()
         compose.onAllNodesWithTag("search-scope-room").assertCountEquals(0)
@@ -1009,7 +1004,7 @@ class RosterReachabilityTest {
         // Machine would have headed the room with its host.
         compose.onAllNodesWithTag("section-header").assertCountEquals(0)
 
-        compose.onNodeWithTag("roster-open-account").performClick()
+        compose.onNodeWithTag("toolbar-account").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("account-order-waiting").performScrollTo().assertIsSelected()
     }
@@ -1035,7 +1030,7 @@ class RosterReachabilityTest {
             }
         }
         compose.waitForIdle()
-        compose.onNodeWithTag("roster-open-account").performClick()
+        compose.onNodeWithTag("toolbar-account").performClick()
         compose.waitForIdle()
 
         compose.onNodeWithTag("accent-pink").performScrollTo().performClick()
@@ -1050,7 +1045,7 @@ class RosterReachabilityTest {
      * On a phone: list -> room -> back must leave the list as it was. The
      * invitations row stays open ("not stored" means across a restart, not
      * across opening a room), a swipe's Mute/Unmute label is not forgotten, and
-     * the open room is cleared, because Search offers `selectedRow` as its scope.
+     * the open room is cleared.
      */
     @Test
     fun theListSurvivesOpeningARoomAndGoingBackOnAPhone() {

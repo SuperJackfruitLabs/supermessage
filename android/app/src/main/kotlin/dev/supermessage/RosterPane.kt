@@ -1,13 +1,9 @@
 package dev.supermessage
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -18,7 +14,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.supermessage.kit.RoomToggles
 import dev.supermessage.kit.RosterArrangement
@@ -30,6 +25,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.RoomAffordance
+import uniffi.supermessage_core.RosterFilter
 import uniffi.supermessage_core.RoomRow as RoomRowDto
 import uniffi.supermessage_core.RosterRow
 
@@ -49,11 +45,18 @@ internal fun RosterPane(
     now: Instant,
     openDetail: () -> Unit,
     openPanel: (ExtraPanel) -> Unit,
+    /** The account's initial, for the toolbar's leading button. */
+    accountInitial: String,
+    /** Whether the roster has been read at all; "No rooms yet" waits for it. */
+    loaded: Boolean = true,
+    /** A pull on the list: the shell takes a fresh `now`, then re-reads the roster. */
+    onRefresh: suspend () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     val storedView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
     // A stored arrangement that is no longer offered (Machine) reads as Waiting.
     val rosterView = RosterChoice.offeredOrDefault(storedView)
+    val filter by prefs.filter.collectAsStateWithLifecycle(initialValue = RosterFilter.ALL)
     val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
     val spaces by session.spaces.spaces.collectAsStateWithLifecycle()
     val selectedSpace by session.spaces.selectedId.collectAsStateWithLifecycle()
@@ -73,56 +76,44 @@ internal fun RosterPane(
             .filter { it.row.affordance == RoomAffordance.RESPOND_TO_INVITATION }
     }
 
+    // How many the core withholds from the sections: what "Nothing but invitations" counts.
+    val waiting = remember(rooms) { RosterArrangement.hiddenInvitations(rooms, showsInvitations = false) }
+
     // What the last swipe learned, per sign-in: a new session starts empty.
     val known = remember(session) { mutableStateMapOf<String, KnownSettings>() }
     val colors = SupermessageTheme.colors
 
     Column(Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp)) {
-            Row(Modifier.testTag("roster-title")) {
-                SpaceMenu(
-                    spaces = spaces,
-                    selectedId = selectedSpace,
-                    allCount = rooms.size,
-                    isInvitation = session.spaces::isInvitation,
-                    onSelect = { id -> scope.launch { session.spaces.select(id) } },
-                )
-            }
-        }
+        // The account at the leading edge, compose at the trailing (`AppDestination.swift:48-107`);
+        // the title, a menu of spaces, between them.
+        ChatsToolbar(
+            accountInitial = accountInitial,
+            onAccount = { openPanel(ExtraPanel.Account) },
+            onCompose = { openPanel(ExtraPanel.NewRoom) },
+            title = {
+                Row(Modifier.testTag("roster-title")) {
+                    SpaceMenu(
+                        spaces = spaces,
+                        selectedId = selectedSpace,
+                        allCount = rooms.size,
+                        isInvitation = session.spaces::isInvitation,
+                        onSelect = { id -> scope.launch { session.spaces.select(id) } },
+                    )
+                }
+            },
+        )
         // One line, like iOS's: it sits under the title, not above the roster.
         ConnectionBar(
             state = connectionState,
             message = connectionMessage,
             worthShowing = connectionState != Connection.Live,
         )
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.End,
-        ) {
-            TextButton(
-                onClick = { openPanel(ExtraPanel.NewRoom) },
-                modifier = Modifier.testTag("roster-open-new-room"),
-            ) { Text("New room") }
-            TextButton(
-                onClick = {
-                    // Opened with a room selected, search offers that room,
-                    // narrowed (`SplitShell.swift:121-127`).
-                    val open = session.rooms.selectedRow
-                    openPanel(
-                        ExtraPanel.Search(open?.let { SearchPanelScope(it.room.id, it.identity.name) }),
-                    )
-                },
-                modifier = Modifier.testTag("roster-open-search"),
-            ) { Text("Search") }
-            TextButton(
-                onClick = { openPanel(ExtraPanel.Account) },
-                modifier = Modifier.testTag("roster-open-account"),
-            ) { Text("Account") }
-        }
 
+        Refreshable(onRefresh = onRefresh, modifier = Modifier.weight(1f).fillMaxWidth()) {
         Roster(
             sections = sections,
             invitations = invitations,
+            waitingInvitations = waiting,
             invitationsOpen = invitationsOpen,
             onToggleInvitations = { invitationsOpen = !invitationsOpen },
             now = now,
@@ -140,8 +131,12 @@ internal fun RosterPane(
                 else SwipeAction("Mark read", colors.accent) { session.rooms.markRead(entry.row.room.id) }
             },
             trailingSwipes = { entry -> swipesFor(entry, session, known, colors) },
-            modifier = Modifier.weight(1f).fillMaxWidth(),
+            modifier = Modifier.fillMaxSize(),
+            filter = filter,
+            onFilter = { next -> scope.launch { prefs.setFilter(next) } },
+            loaded = loaded,
         )
+        }
     }
 }
 

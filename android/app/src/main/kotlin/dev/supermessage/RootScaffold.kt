@@ -22,6 +22,8 @@ import androidx.compose.material3.adaptive.layout.PaneScaffoldDirective
 import androidx.compose.material3.adaptive.layout.ThreePaneScaffoldValue
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldLayout
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -124,7 +126,7 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
-fun RootScaffold(
+internal fun RootScaffold(
     modifier: Modifier = Modifier,
     phase: Session.Phase = Session.Phase.SIGNED_IN,
     signedOutContent: @Composable () -> Unit = {},
@@ -139,6 +141,11 @@ fun RootScaffold(
         Pane("pane-info", "Room info", shellWidth)
     },
     onBackFromDetail: () -> Unit = {},
+    /**
+     * The four destinations. When present, a bar (phones) or rail (tablets) wraps the panes
+     * and the pane count is taken from the width left beside it; `null` changes nothing.
+     */
+    navigation: ShellNavigation? = null,
 ) {
     // Fix 4's blocker 1: systemBarsPadding() used to live only on
     // SignedIn's own ListDetailPaneScaffold (below), so STARTING and
@@ -171,7 +178,7 @@ fun RootScaffold(
                 // every time the keyboard does.
                 Box(Modifier.fillMaxSize().imePadding()) { signedOutContent() }
             Session.Phase.SIGNED_IN ->
-                SignedIn(Modifier, listPaneContent, detailPaneContent, extraPaneContent, onBackFromDetail)
+                SignedIn(Modifier, listPaneContent, detailPaneContent, extraPaneContent, onBackFromDetail, navigation)
         }
     }
 }
@@ -196,14 +203,20 @@ private fun SignedIn(
     detailPaneContent: @Composable (shellWidth: Dp, openInfo: () -> Unit) -> Unit,
     extraPaneContent: @Composable (shellWidth: Dp, closeInfo: () -> Unit) -> Unit,
     onBackFromDetail: () -> Unit = {},
+    navigation: ShellNavigation? = null,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         // Captured into a local before the nested pane lambdas: their
         // receiver is ThreePaneScaffoldPaneScope, which shadows the implicit
         // BoxWithConstraintsScope receiver that `maxWidth` lives on — only an
         // explicit local (or receiver) crosses that boundary.
-        val shellWidth = maxWidth
-        val panes = paneCountFor(shellWidth)
+        val outerWidth = maxWidth
+        // With destinations, the panes are counted on what is left beside the
+        // rail. Decided from this outer width alone (not from the width measured
+        // inside the suite), so hiding the rail for a room cannot change the
+        // count that hid it.
+        val railed = navigation != null && outerWidth >= TwoPaneWidth
+        val panes = paneCountFor(if (railed) outerWidth - RailWidth else outerWidth)
         val navigator = rememberListDetailPaneScaffoldNavigator<Nothing>(
             scaffoldDirective = directiveFor(panes),
         )
@@ -228,6 +241,15 @@ private fun SignedIn(
         ) {
             scope.launch { navigator.navigateBack() }
             onBackFromDetail()
+        }
+
+        // Owner Q5: on a phone, Back from Needs you, Agents or Search with no room
+        // open goes to Chats first; from Chats it leaves, as it always did.
+        val listIsCurrent = navigator.currentDestination?.pane.let { it == null || it == ListDetailPaneScaffoldRole.List }
+        BackHandler(
+            enabled = navigation != null && panes == 1 && listIsCurrent && navigation.selected != Destination.CHATS,
+        ) {
+            navigation?.onSelect?.invoke(Destination.CHATS)
         }
 
         // Rule 2: when the shell narrows past three panes, an open info pane
@@ -322,78 +344,98 @@ private fun SignedIn(
             null
         }
 
-        ListDetailPaneScaffold(
-            // Defect B fix, moved by fix 4: systemBarsPadding() used to live
-            // right here, on ListDetailPaneScaffold's own modifier — the
-            // per-screen placement that left STARTING and SIGNED_OUT with
-            // no padding at all (see RootScaffold's own comment above,
-            // where it now lives, once, for every phase). Bare Modifier
-            // here is deliberate, not an oversight: applying it a second
-            // time on top of the shared one above would double the inset.
-            //
-            // Still not safeDrawingPadding() up there: safeDrawing folds in
-            // the IME inset too, which would pad this whole shell (roster
-            // header included) down every time the keyboard shows, on top
-            // of Composer.kt's own imePadding() fix for the composer
-            // specifically — a shell that bounces whenever the keyboard
-            // does, not a composer that clears it. systemBarsPadding()
-            // only ever reacts to the status/navigation bars, which is the
-            // actual defect here.
-            //
-            // Moving the padding above this BoxWithConstraints (rather than
-            // leaving it here, inside it) is still safe for
-            // RootScaffoldTest's pane-rule contracts: `shellWidth =
-            // maxWidth` is read from BoxWithConstraints directly, and those
-            // contracts (four geometry tests, the Phase C stranding test,
-            // the two-pane sheet test) depend on that being the shell's
-            // full forced width, not a width already shrunk by padding. A
-            // vertical-only inset shrinking the space handed to this
-            // scaffold does not touch that measurement at all — true
-            // whether the inset is consumed just inside this
-            // BoxWithConstraints or just outside it.
-            modifier = Modifier,
-            directive = navigator.scaffoldDirective,
-            value = when {
-                panes == 2 -> twoPaneScaffoldValue
-                onePaneScaffoldValue != null -> onePaneScaffoldValue
-                else -> navigator.scaffoldValue
-            },
-            listPane = {
-                listPaneContent(
-                    shellWidth,
-                    { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail) } },
-                    { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Extra) } },
-                )
-            },
-            detailPane = {
-                detailPaneContent(
-                    shellWidth,
-                    { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Extra) } },
-                )
-            },
-            // panes == 3 only: at panes == 2 the value substitution above
-            // already keeps Extra out of the partition layout, and the sheet
-            // below is what shows info instead.
-            extraPane = if (panes == 3 && extraIsShown) {
-                { extraPaneContent(shellWidth) { scope.launch { navigator.navigateBack() } } }
-            } else null,
-        )
+        val content: @Composable (Dp) -> Unit = { shellWidth ->
+            ListDetailPaneScaffold(
+                // Defect B fix, moved by fix 4: systemBarsPadding() used to live
+                // right here, on ListDetailPaneScaffold's own modifier — the
+                // per-screen placement that left STARTING and SIGNED_OUT with
+                // no padding at all (see RootScaffold's own comment above,
+                // where it now lives, once, for every phase). Bare Modifier
+                // here is deliberate, not an oversight: applying it a second
+                // time on top of the shared one above would double the inset.
+                //
+                // Still not safeDrawingPadding() up there: safeDrawing folds in
+                // the IME inset too, which would pad this whole shell (roster
+                // header included) down every time the keyboard shows, on top
+                // of Composer.kt's own imePadding() fix for the composer
+                // specifically — a shell that bounces whenever the keyboard
+                // does, not a composer that clears it. systemBarsPadding()
+                // only ever reacts to the status/navigation bars, which is the
+                // actual defect here.
+                //
+                // Moving the padding above this BoxWithConstraints (rather than
+                // leaving it here, inside it) is still safe for
+                // RootScaffoldTest's pane-rule contracts: `shellWidth =
+                // maxWidth` is read from BoxWithConstraints directly, and those
+                // contracts (four geometry tests, the Phase C stranding test,
+                // the two-pane sheet test) depend on that being the shell's
+                // full forced width, not a width already shrunk by padding. A
+                // vertical-only inset shrinking the space handed to this
+                // scaffold does not touch that measurement at all — true
+                // whether the inset is consumed just inside this
+                // BoxWithConstraints or just outside it.
+                modifier = Modifier,
+                directive = navigator.scaffoldDirective,
+                value = when {
+                    panes == 2 -> twoPaneScaffoldValue
+                    onePaneScaffoldValue != null -> onePaneScaffoldValue
+                    else -> navigator.scaffoldValue
+                },
+                listPane = {
+                    listPaneContent(
+                        shellWidth,
+                        { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail) } },
+                        { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Extra) } },
+                    )
+                },
+                detailPane = {
+                    detailPaneContent(
+                        shellWidth,
+                        { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Extra) } },
+                    )
+                },
+                // panes == 3 only: at panes == 2 the value substitution above
+                // already keeps Extra out of the partition layout, and the sheet
+                // below is what shows info instead.
+                extraPane = if (panes == 3 && extraIsShown) {
+                    { extraPaneContent(shellWidth) { scope.launch { navigator.navigateBack() } } }
+                } else null,
+            )
 
-        // The sheet itself: at any width below three panes — widened from
-        // `panes == 2` alone (Task 5's fix for the phone soft-lock: panes ==
-        // 1 has exactly the same "no partition for Extra" shape panes == 2
-        // does, just with one fewer partition to spare) — and only while
-        // info is actually requested. Narrowing from three panes with info
-        // open does not reach here showing a sheet, because the
-        // LaunchedEffect above already calls navigateBack() first whenever
-        // panes drops below 3 with Extra as the current destination (that is
-        // [narrowingBelowThreePanesStrandsAnOpenInfoPane]'s scenario: an
-        // open info pane collapsing away entirely, not reappearing as a
-        // sheet). This branch only ever fires for a fresh openInfo() request
-        // made while already at a one- or two-pane width.
-        if (panes < 3 && infoRequested) {
-            ModalBottomSheet(onDismissRequest = { scope.launch { navigator.navigateBack() } }) {
-                extraPaneContent(shellWidth) { scope.launch { navigator.navigateBack() } }
+            // The sheet itself: at any width below three panes — widened from
+            // `panes == 2` alone (Task 5's fix for the phone soft-lock: panes ==
+            // 1 has exactly the same "no partition for Extra" shape panes == 2
+            // does, just with one fewer partition to spare) — and only while
+            // info is actually requested. Narrowing from three panes with info
+            // open does not reach here showing a sheet, because the
+            // LaunchedEffect above already calls navigateBack() first whenever
+            // panes drops below 3 with Extra as the current destination (that is
+            // [narrowingBelowThreePanesStrandsAnOpenInfoPane]'s scenario: an
+            // open info pane collapsing away entirely, not reappearing as a
+            // sheet). This branch only ever fires for a fresh openInfo() request
+            // made while already at a one- or two-pane width.
+            if (panes < 3 && infoRequested) {
+                ModalBottomSheet(onDismissRequest = { scope.launch { navigator.navigateBack() } }) {
+                    extraPaneContent(shellWidth) { scope.launch { navigator.navigateBack() } }
+                }
+            }
+
+        }
+
+        if (navigation == null) {
+            content(outerWidth)
+        } else {
+            val detailIsCurrentOnOnePane =
+                panes == 1 && navigator.currentDestination?.pane == ListDetailPaneScaffoldRole.Detail
+            val layoutType = navLayoutFor(outerWidth, detailIsCurrentOnOnePane)
+            CompositionLocalProvider(LocalNavigationRail provides railed) {
+                NavigationSuiteScaffoldLayout(
+                    navigationSuite = { ShellNavigationSuite(navigation, layoutType) },
+                    layoutType = layoutType,
+                ) {
+                    // Measured again, inside the suite: this is what the panes are laid out in.
+                    BoxWithConstraints(Modifier.fillMaxSize()) { content(maxWidth) }
+                }
             }
         }
     }

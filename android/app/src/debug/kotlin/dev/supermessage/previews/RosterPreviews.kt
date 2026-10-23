@@ -123,7 +123,7 @@ internal fun RosterFurnished() {
  */
 @Preview(name = "Roster, nothing yet", showBackground = true, heightDp = 320)
 @Composable
-internal fun RosterEmpty() {
+internal fun RosterNoRooms() {
     PreviewGround {
         Roster(
             sections = emptyList(),

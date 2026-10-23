@@ -17,6 +17,7 @@ import uniffi.supermessage_core.RoomIdentity
 import uniffi.supermessage_core.RoomPreview
 import uniffi.supermessage_core.RoomRow
 import uniffi.supermessage_core.RoomSummary
+import uniffi.supermessage_core.RosterFilter
 import uniffi.supermessage_core.RuntimeDto
 
 /**
@@ -95,13 +96,14 @@ class RosterArrangementTest {
             pending: Boolean = false,
             host: String? = null,
             invited: Boolean = false,
+            unread: Int = 0,
         ): RoomRow {
             val ms = (now.toEpochMilli() - (minutesAgo * 60.0 * 1000.0).toLong()).toULong()
             val summary = RoomSummary(
                 id = id,
                 name = id,
                 avatarUrl = null,
-                unread = 0uL,
+                unread = unread.toULong(),
                 lastMessage = "hi",
                 lastMessageIsOwn = false,
                 lastMessageNamesSender = false,
@@ -285,5 +287,90 @@ class RosterArrangementTest {
             val ordered = sections.flatMap { it.rows }.map { it.row.room.id }
             assertEquals("$view did not put the newest first", "new", ordered.first())
         }
+    }
+
+    // --- the inbox and the directory (N2, N3) -----------------------------
+
+    /** the inbox is the core's: decisions, invitations, and the two counts */
+    @Test
+    fun theInboxIsTheCores() {
+        val rows = listOf(
+            row("owed1", pending = true),
+            row("owed2", minutesAgo = 30.0, pending = true),
+            row("invite", invited = true),
+            row("quiet", minutesAgo = 5.0),
+        )
+        val inbox = RosterArrangement.needsYouInbox(rows, now)
+        assertEquals(listOf("owed1", "owed2"), inbox.decisions.map { it.row.room.id })
+        assertEquals(listOf("invite"), inbox.invitations.map { it.row.room.id })
+        assertEquals(3u, inbox.count)
+        // An invitation alone must not light the badge.
+        assertEquals(2u, inbox.badgeCount)
+    }
+
+    /** the directory is agents only, newest first, and never an invitation */
+    @Test
+    fun theDirectoryLeavesOutPeopleAndInvitations() {
+        val rows = listOf(
+            row("people", minutesAgo = 1.0),
+            row("agent", minutesAgo = 5.0, host = "foundry"),
+            row("invitedAgent", minutesAgo = 2.0, host = "foundry", invited = true),
+        )
+        assertEquals(listOf("agent"), RosterArrangement.agentDirectory(rows, now).map { it.row.room.id })
+    }
+
+    // --- the chips (R3) ---------------------------------------------------
+
+    private fun unreadFixture() = RosterArrangement.sections(
+        rows = listOf(
+            row("a", minutesAgo = 1.0, unread = 3),
+            row("b", minutesAgo = 2.0),
+            row("c", minutesAgo = 3.0, unread = 1),
+            row("d", minutesAgo = 4.0),
+            row("e", minutesAgo = 5.0),
+        ),
+        view = RosterChoice.RECENT,
+        showsInvitations = false,
+        now = now,
+    )
+
+    /** two chips, counted over the whole arrangement */
+    @Test
+    fun theChipsAreAllAndUnreadWithTheirCounts() {
+        val chips = RosterArrangement.filterChips(unreadFixture())
+        assertEquals(
+            listOf("All" to 5u, "Unread" to 2u),
+            chips.map { it.title to it.count },
+        )
+        assertEquals(listOf(RosterFilter.ALL, RosterFilter.UNREAD), chips.map { it.filter })
+    }
+
+    /** a key the app does not offer, or none, is All; an offered one round-trips */
+    @Test
+    fun anUnofferedKeyReadsAsAll() {
+        assertEquals(RosterFilter.ALL, RosterArrangement.filterFromKey("agents"))
+        assertEquals(RosterFilter.ALL, RosterArrangement.filterFromKey("needsYou"))
+        assertEquals(RosterFilter.ALL, RosterArrangement.filterFromKey(""))
+        assertEquals(RosterFilter.UNREAD, RosterArrangement.filterFromKey(RosterArrangement.filterKey(RosterFilter.UNREAD)))
+    }
+
+    /** the chip narrows the arrangement and leaves its order alone */
+    @Test
+    fun unreadNarrowsWithoutReordering() {
+        val all = unreadFixture()
+        val narrowed = RosterArrangement.filterSections(all, RosterFilter.UNREAD)
+        val allOrder = all.flatMap { it.rows }.map { it.row.room.id }
+        val kept = narrowed.flatMap { it.rows }.map { it.row.room.id }
+        assertEquals(listOf("a", "c"), kept)
+        assertEquals(allOrder.filter { it in kept }, kept)
+        assertEquals(all, RosterArrangement.filterSections(all, RosterFilter.ALL))
+    }
+
+    /** the words for a chip that leaves nothing are the core's */
+    @Test
+    fun anEmptyChipSaysWhatTheCoreSays() {
+        val state = RosterArrangement.filterEmptyState(RosterFilter.UNREAD)
+        assertEquals("Nothing unread", state.title)
+        assertEquals("Every room is read.", state.description)
     }
 }

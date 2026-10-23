@@ -1,12 +1,15 @@
 package dev.supermessage.kit
 
 import dev.supermessage.kit.StubCore
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -133,6 +136,37 @@ class CoreClientTest {
         assertEquals(64, core.connectionStateCallCount)
     }
 
+    /**
+     * a caller on an unconfined dispatcher comes back on the thread it named, after a value and
+     * after an exception alike, not on the worker that ran the call
+     *
+     * The unconfined caller stands in for a Compose UI test's effects: without `resumeOn` they
+     * resume on the worker, which then draws a frame with no `Choreographer` (see [CoreClient]).
+     */
+    @Test
+    fun aCallerComesBackOnTheThreadItNamed() = runBlocking {
+        val worker = Executors.newSingleThreadExecutor { Thread(it, "core-worker") }.asCoroutineDispatcher()
+        val home = Executors.newSingleThreadExecutor { Thread(it, "home") }.asCoroutineDispatcher()
+        try {
+            val core = FakeCore().apply { turnFails = true }
+            val client = CoreClient(core = core, dispatcher = worker, resumeOn = home)
+            val afterValue = withContext(Dispatchers.Unconfined) {
+                client.connectionState()
+                threadName()
+            }
+            val afterFailure = withContext(Dispatchers.Unconfined) {
+                runCatching { client.turn("!a:x") }
+                threadName()
+            }
+            assertEquals("the call ran on the worker", "core-worker", core.lastThread)
+            assertEquals("home", afterValue)
+            assertEquals("home", afterFailure)
+        } finally {
+            worker.close()
+            home.close()
+        }
+    }
+
     /** a default-constructed client uses `Dispatchers.IO`, not the cooperative pool */
     @Test
     fun defaultDispatcherIsIO() {
@@ -207,8 +241,15 @@ class CoreClientTest {
         val turnAsks = mutableListOf<String>()
         var turnAnswer: uniffi.supermessage_core.TurnSnapshot? = null
 
+        var turnFails = false
+
+        /** The thread the last call ran on. */
+        @Volatile var lastThread: String? = null
+
         override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? {
             turnAsks += roomId
+            lastThread = threadName()
+            if (turnFails) throw IllegalStateException("offline")
             return turnAnswer
         }
 
@@ -220,9 +261,13 @@ class CoreClientTest {
 
         override fun connectionState(): ConnectionState {
             block()
+            lastThread = threadName()
             _connectionStateCallCount.incrementAndGet()
             return ConnectionState(state = "offline", message = null)
         }
 
     }
 }
+
+/** A thread's own name, without the ` @coroutine#n` the coroutines debug agent appends. */
+private fun threadName(): String = Thread.currentThread().name.substringBefore(" @")

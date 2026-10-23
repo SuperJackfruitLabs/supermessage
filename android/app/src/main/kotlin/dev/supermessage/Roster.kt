@@ -20,15 +20,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.RelativeTime
+import dev.supermessage.kit.RosterArrangement
 import java.time.Instant
+import uniffi.supermessage_core.RosterFilter
 import uniffi.supermessage_core.RosterRow
 import uniffi.supermessage_core.RosterSection
+import uniffi.supermessage_ffi.spaceDisplayName
 
 /**
  * The roster, laid out the way `apple/Supermessage/Rooms/RoomListView.swift`
@@ -78,30 +83,35 @@ fun Roster(
     /** The swipe buttons from the trailing edge, or none for this row. */
     trailingSwipes: (RosterRow) -> List<SwipeAction> = { emptyList() },
     modifier: Modifier = Modifier,
+    /** The chip in force. [sections] are the whole arrangement; the chip narrows them here. */
+    filter: RosterFilter = RosterFilter.ALL,
+    onFilter: (RosterFilter) -> Unit = {},
+    /** Whether the roster has been read at all: an unread roster is not an empty account. */
+    loaded: Boolean = true,
+    /** The core's count of invitations withheld from [sections] (`RosterArrangement.hiddenInvitations`). */
+    waitingInvitations: Int = invitations.size,
 ) {
+    // The chips count the whole arrangement, so "Unread 2" stays 2 once it is chosen.
+    val chips = remember(sections) { RosterArrangement.filterChips(sections) }
+    val shown = remember(sections, filter) { RosterArrangement.filterSections(sections, filter) }
+    // Whether the account has rooms at all, invitations included (iOS `!session.rooms.rooms.isEmpty`).
+    val hasRooms = invitations.isNotEmpty() || sections.any { it.rows.isNotEmpty() }
+    // A space or host section is named the way a person would say it (`spaceDisplayName`).
+    val titles = remember(shown) { shown.associate { it.id to it.title?.let(::spaceDisplayName) } }
+
     @Composable
     fun RosterEntry(entry: RosterRow) {
         val roomId = entry.row.room.id
         SwipeActionsRow(leading = leadingSwipe(entry), trailing = trailingSwipes(entry)) { swipeSemantics ->
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(swipeSemantics)
-                    .clickable(onClickLabel = "Open ${entry.row.identity.name}") { onOpenRoom(roomId) }
-                    .padding(horizontal = 16.dp)
-                    .testTag("roster-row"),
-            ) {
-                RoomRow(
-                    row = entry.row,
-                    avatarUri = avatarUri(roomId),
-                    state = entry.state,
-                    `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
-                    showsState = showsState,
-                    describesAgent = entry.describesAgent,
-                    style = entry.avatar,
-                    onOpenInfo = { onOpenInfo(roomId) },
-                )
-            }
+            RosterEntryRow(
+                entry = entry,
+                now = now,
+                avatarUri = avatarUri(roomId),
+                showsState = showsState,
+                onOpenRoom = { onOpenRoom(roomId) },
+                onOpenInfo = { onOpenInfo(roomId) },
+                modifier = swipeSemantics,
+            )
         }
 
         // Mirrors RoomListView.swift's `.task { await session.avatars.load(...) }`
@@ -111,7 +121,12 @@ fun Roster(
         LaunchedEffect(roomId) { onLoadAvatar(roomId) }
     }
 
-    LazyColumn(modifier = modifier.testTag("roster")) {
+    LazyColumn(modifier = modifier.testTag("roster-list")) {
+        // Inside the scroll content on purpose: here when the reader arrives, gone
+        // when they scroll, and above the invitations row (`RoomListView.swift:101-120`).
+        if (hasRooms) {
+            item(key = "filter-chips") { FilterChips(chips = chips, selected = filter, onSelect = onFilter) }
+        }
         // Invitations are one row that opens in place (`RoomListView.swift:122-136`),
         // not a preference: the core's sections never carry them, and the open
         // state is deliberately not remembered.
@@ -124,8 +139,8 @@ fun Roster(
             }
         }
 
-        for (section in sections) {
-            val title = section.title
+        for (section in shown) {
+            val title = titles[section.id]
             if (title != null) {
                 stickyHeader(key = "header-${section.id}") {
                     SectionHeader(title = title, detail = section.detail, attention = section.attention)
@@ -134,6 +149,92 @@ fun Roster(
 
             items(section.rows, key = { it.row.room.id }) { entry -> RosterEntry(entry) }
         }
+
+        // What the list is empty of, in iOS's order (`RoomListView.swift:179-199`).
+        val empty: (@Composable () -> Unit)? = when {
+            !hasRooms -> if (loaded) {
+                {
+                    ContentUnavailable(
+                        title = "No rooms yet",
+                        description = "Rooms appear here as they sync.",
+                        icon = Glyphs.InboxFilled,
+                        modifier = Modifier.testTag("roster-empty-none"),
+                    )
+                }
+            } else {
+                null
+            }
+            shown.isEmpty() && filter != RosterFilter.ALL -> {
+                {
+                    val words = RosterArrangement.filterEmptyState(filter)
+                    ContentUnavailable(
+                        title = words.title,
+                        description = words.description,
+                        icon = Glyphs.FilterList,
+                        modifier = Modifier.testTag("roster-empty-filter"),
+                        action = {
+                            TextButton(
+                                onClick = { onFilter(RosterFilter.ALL) },
+                                modifier = Modifier.testTag("roster-show-all"),
+                            ) { Text("Show all") }
+                        },
+                    )
+                }
+            }
+            shown.isEmpty() && !invitationsOpen -> {
+                {
+                    ContentUnavailable(
+                        title = "Nothing but invitations",
+                        description = "$waitingInvitations waiting — open Invitations above.",
+                        icon = Icons.Filled.Email,
+                        modifier = Modifier.testTag("roster-empty-invitations"),
+                    )
+                }
+            }
+            else -> null
+        }
+        if (empty != null) {
+            item(key = "empty") {
+                // Under the chips, which stay: the way back from a chip is one of them.
+                Box(Modifier.fillParentMaxWidth().fillParentMaxHeight(if (hasRooms) 0.75f else 1f)) { empty() }
+            }
+        }
+    }
+}
+
+/**
+ * One tappable roster row: the two-line [RoomRow] with the tap that opens the
+ * room. The roster, Needs you and (without the swipes) any other list of
+ * rooms draw it, so a row looks and acts the same wherever it is listed.
+ */
+@Composable
+internal fun RosterEntryRow(
+    entry: RosterRow,
+    now: Instant,
+    avatarUri: String?,
+    showsState: Boolean,
+    onOpenRoom: () -> Unit,
+    onOpenInfo: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(modifier)
+            .clickable(onClickLabel = "Open ${entry.row.identity.name}", onClick = onOpenRoom)
+            .padding(horizontal = 16.dp)
+            .testTag("roster-row"),
+    ) {
+        RoomRow(
+            row = entry.row,
+            avatarUri = avatarUri,
+            state = entry.state,
+            `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
+            showsState = showsState,
+            describesAgent = entry.describesAgent,
+            style = entry.avatar,
+            onOpenInfo = onOpenInfo,
+        )
     }
 }
 

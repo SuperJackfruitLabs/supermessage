@@ -43,6 +43,18 @@ class RoomsStore(
     private val _rooms = MutableStateFlow<List<RoomRow>>(emptyList())
     val rooms: StateFlow<List<RoomRow>> = _rooms.asStateFlow()
 
+    /**
+     * Whether the roster has been read since this sign-in: false until the
+     * first snapshot or diff lands, false again after [clear].
+     *
+     * [rooms] starts as an empty list, which is also what a read account with
+     * no rooms looks like. A screen that says "No rooms yet" or "You're all
+     * caught up" must wait for this first, or it says so to every account for
+     * the moment before its rooms arrive.
+     */
+    private val _loaded = MutableStateFlow(false)
+    val loaded: StateFlow<Boolean> = _loaded.asStateFlow()
+
     private val _selectedId = MutableStateFlow<String?>(null)
     val selectedId: StateFlow<String?> = _selectedId.asStateFlow()
 
@@ -65,7 +77,10 @@ class RoomsStore(
                 // `accepts` filter is left at its default.
                 Snapshot(subject = "", seq = snapshot.seq, items = snapshot.rooms)
             },
-            onUpdate = { _rooms.value = it },
+            onUpdate = {
+                _rooms.value = it
+                _loaded.value = true
+            },
         )
 
     fun handle(envelope: RoomDiffEnvelope) {
@@ -99,12 +114,14 @@ class RoomsStore(
     fun row(roomId: String): RoomRow? = _rooms.value.firstOrNull { it.room.id == roomId }
 
     /**
-     * Mark [roomId] read, reporting whether the core accepted it, so a swipe
-     * plays its success haptic only for a change that landed. (The core can
-     * only mark the open room today; for any other it refuses, as on iOS.)
+     * Mark [roomId] read — any room, open or not (the roster's swipe) — reporting whether the
+     * call went through. `true` whenever it does not throw, whatever the core answers about
+     * there being something newer to acknowledge: iOS ignores that answer
+     * (`Session.swift:72`, `_ = try await ...`) and plays its success haptic regardless.
+     * `false` only for a refusal.
      */
     suspend fun markRead(roomId: String): Boolean = try {
-        client.markRoomRead(roomId)
+        client.markRoomReadFromList(roomId)
         true
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
@@ -119,8 +136,17 @@ class RoomsStore(
     val selectedName: String?
         get() = selectedRow?.identity?.name ?: selectedNameFallback
 
+    /**
+     * The space is changing: a roster read already in flight describes the
+     * old one, and must not land over the new one.
+     */
+    fun supersede() {
+        sync.supersede()
+    }
+
     fun clear() {
         _rooms.value = emptyList()
+        _loaded.value = false
         _selectedId.value = null
         selectedNameFallback = null
         sync.stop()

@@ -9,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import uniffi.supermessage_core.RosterFilter
 
 class RosterPreferencesTest {
 
@@ -56,5 +57,22 @@ class RosterPreferencesTest {
         val p = prefs(this)
         p.setRawViewForTest("NotAChoice")
         assertEquals(RosterChoice.WAITING, p.view.first())
+    }
+
+    /** The chip chosen is the chip found next launch, through a fresh instance over the same store. */
+    @Test
+    fun theChipIsRemembered() = runTest {
+        val store = PreferenceDataStoreFactory.create(scope = this) { tmp.newFile("chip.preferences_pb") }
+        assertEquals(RosterFilter.ALL, RosterPreferences(store).filter.first())
+        RosterPreferences(store).setFilter(RosterFilter.UNREAD)
+        assertEquals(RosterFilter.UNREAD, RosterPreferences(store).filter.first())
+    }
+
+    /** A chip an older build stored but this one does not offer reads as All, never as a hidden narrowing. */
+    @Test
+    fun aStoredAgentsChipReadsAsAll() = runTest {
+        val p = prefs(this)
+        p.setRawFilterForTest("agents")
+        assertEquals(RosterFilter.ALL, p.filter.first())
     }
 }
