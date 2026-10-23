@@ -1,5 +1,7 @@
 # Parity gap analysis
 
+> **Superseded in part, 2026-10-23:** for what the desktop and Android clients do today against iOS, read the [2026-10-23 parity verification](research/2026-10-23-ios-parity-verification/README.md); the comparison with other Matrix clients below has not been re-assessed.
+
 **Status:** Assessment, 14 Aug 2026, written against commit `b7a1278` on `main`. **It is a
 record of that day and has not been updated** — the convention in `docs/README.md` is that a
 dated assessment is never edited to look current. The drift note below is the exception, because
