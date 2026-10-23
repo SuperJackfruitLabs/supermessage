@@ -1138,6 +1138,7 @@ class RosterReachabilityTest {
         override fun roomsSnapshot(): RoomsSnapshot = roomsSnapshotResult()
         override fun spacesList(): List<SpaceSummary> = spacesListResult()
         override fun account(): AccountDto = accountResult()
+        override fun ignoredUsers(): List<uniffi.supermessage_core.RoomMemberDto> = emptyList()
         override fun knownPeople(): List<PersonDto> = knownPeopleResult()
 
         // Reached whenever a room is opened (`Session.open` ->
