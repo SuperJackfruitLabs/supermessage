@@ -1218,6 +1218,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1299,6 +1301,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_mark_room_read(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_mark_room_read_from_list(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     fun uniffi_supermessage_ffi_fn_method_core_media_audio(`ptr`: Pointer,`eventId`: RustBuffer.ByValue,`opusInCaf`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_media_fetch(`ptr`: Pointer,`eventId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1825,6 +1829,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_mark_room_read(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_mark_room_read_from_list(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_media_audio(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_media_fetch(
@@ -2221,6 +2227,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_mark_room_read() != 2656.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_mark_room_read_from_list() != 18301.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_media_audio() != 15242.toShort()) {
@@ -2978,6 +2987,15 @@ public interface CoreInterface {
      * Mark the room read up to its latest event.
      */
     fun `markRoomRead`(`roomId`: kotlin.String)
+    
+    /**
+     * Mark `room_id` read up to its latest event, whether or not it is the
+     * open room: the roster's swipe. Returns whether a receipt was sent
+     * (`false` when there was nothing newer to acknowledge).
+     *
+     * `mark_room_read` above is for the open room and refuses any other.
+     */
+    fun `markRoomReadFromList`(`roomId`: kotlin.String): kotlin.Boolean
     
     /**
      * An audio message's file, fetched, decrypted, and ready for this host's
@@ -3835,6 +3853,26 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 }
     }
     
+    
+
+    
+    /**
+     * Mark `room_id` read up to its latest event, whether or not it is the
+     * open room: the roster's swipe. Returns whether a receipt was sent
+     * (`false` when there was nothing newer to acknowledge).
+     *
+     * `mark_room_read` above is for the open room and refuses any other.
+     */
+    @Throws(FfiException::class)override fun `markRoomReadFromList`(`roomId`: kotlin.String): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_mark_room_read_from_list(
+        it, FfiConverterString.lower(`roomId`),_status)
+}
+    }
+    )
+    }
     
 
     
