@@ -147,13 +147,13 @@ fun SearchPanel(
     // starts another; an older answer arriving after it must not overwrite it.
     val latest = remember { intArrayOf(0) }
 
-    suspend fun run() {
+    suspend fun run(inRoom: Boolean = narrowed) {
         val query = term.trim()
         if (query.isEmpty()) return
         val mine = ++latest[0]
         state = SearchState.Searching(query)
         val outcome: SearchState = try {
-            val results = search(query, if (narrowed) scope?.roomId else null)
+            val results = search(query, if (inRoom) scope?.roomId else null)
             if (results.isEmpty()) SearchState.Empty(query) else SearchState.Found(results)
         } catch (e: CancellationException) {
             throw e
@@ -165,12 +165,12 @@ fun SearchPanel(
         if (mine == latest[0]) state = outcome
     }
 
-    fun rerunIfAlreadyAsked() {
+    fun rerunIfAlreadyAsked(inRoom: Boolean) {
         // Changing where to look re-asks rather than leaving the old
         // scope's results under the new scope's label — matching the guard
         // on `SearchPanel.swift`'s own `onChange(of: narrowed)`.
         if (state.query.isEmpty() && term.isBlank()) return
-        coroutineScope.launch { run() }
+        coroutineScope.launch { run(inRoom) }
     }
 
     // Coming back to a term the caller kept: ask again, so its results are here too.
@@ -218,13 +218,13 @@ fun SearchPanel(
                     label = scope.name,
                     selected = narrowed,
                     testTag = "search-scope-room",
-                    onClick = { if (!narrowed) { setNarrowed(true); rerunIfAlreadyAsked() } },
+                    onClick = { if (!narrowed) { setNarrowed(true); rerunIfAlreadyAsked(true) } },
                 )
                 ScopeChip(
                     label = "All rooms",
                     selected = !narrowed,
                     testTag = "search-scope-all",
-                    onClick = { if (narrowed) { setNarrowed(false); rerunIfAlreadyAsked() } },
+                    onClick = { if (narrowed) { setNarrowed(false); rerunIfAlreadyAsked(false) } },
                 )
             }
         }
