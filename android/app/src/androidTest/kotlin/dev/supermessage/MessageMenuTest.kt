@@ -87,7 +87,6 @@ class MessageMenuTest {
                 Timeline(
                     rows = listOf(target),
                     revision = 0uL,
-                    typingLine = null,
                     isPaginating = false,
                     canPaginate = false,
                     onPaginate = {},

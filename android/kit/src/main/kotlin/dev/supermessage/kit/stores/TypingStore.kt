@@ -3,7 +3,9 @@ package dev.supermessage.kit.stores
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.TypingUserDto
+import uniffi.supermessage_core.TypingView
 import uniffi.supermessage_ffi.typingView
 
 /**
@@ -46,6 +48,7 @@ class TypingStore {
     fun handle(roomId: String, users: List<TypingUserDto>) {
         if (roomId != this.roomId) return
         _typers.value = users.map { Typer(it.userId, it.label) }
+        rebuildView()
     }
 
     /**
@@ -70,24 +73,70 @@ class TypingStore {
     fun messagesArrived(senderIds: List<String>) {
         if (_typers.value.isEmpty()) return
         _typers.value = _typers.value.filterNot { senderIds.contains(it.userId) }
+        rebuildView()
     }
 
     fun focus(roomId: String?) {
         this.roomId = roomId
         _typers.value = emptyList()
+        // Focusing nothing (signing out, or `closeRoom()`) clears every cast:
+        // nothing from that account may survive into the next one. The pane
+        // reloads its room's cast when it opens, so closing a room loses nothing.
+        if (roomId == null) casts.clear()
+        rebuildView()
     }
 
+    // -- Who is who ----------------------------------------------------------
+
     /**
-     * The line to show, or `null` when nobody is typing.
+     * The casts the panes have loaded, by room. Keyed by room and not cleared
+     * by a room switch: the pane's load can answer before or after [focus]
+     * points here, and a cast for a room that is not focused must neither
+     * wait for it nor leak into the one that is.
+     */
+    private val casts = mutableMapOf<String, RoomCast>()
+
+    /**
+     * Learn who is who in [roomId], so an agent typing is named the way the
+     * header names it and leaves the people's line alone.
+     */
+    fun recognise(cast: RoomCast, roomId: String) {
+        casts[roomId] = cast
+        if (roomId == this.roomId) rebuildView()
+    }
+
+    private val _view = MutableStateFlow(TypingView(line = null, agents = emptyList()))
+
+    /**
+     * What to show for [typers], from **one** `typingView` call per change:
+     * the line and the agents are two halves of the same answer and must not
+     * disagree. Observable, because a cast arriving changes it with no change
+     * to [typers].
+     */
+    val view: StateFlow<TypingView> = _view.asStateFlow()
+
+    /** The agents whose typing notice is up, by the name the header gives them. */
+    val typingAgents: List<String> get() = _view.value.agents
+
+    /**
+     * The line to show, or `null` when nobody other than an agent is typing.
      *
      * Names rather than a count: in a room of agents, *which* one is about
      * to speak is the useful half. The wording is the core's (`typing_view`);
-     * this host no longer keeps its own copy of the rule.
+     * this host keeps no copy of the rule.
      */
-    val line: String?
-        get() = typingView(
+    val line: String? get() = _view.value.line
+
+    private fun rebuildView() {
+        _view.value = compute()
+    }
+
+    private fun compute(): TypingView {
+        val cast = roomId?.let { casts[it] }
+        return typingView(
             _typers.value.map { TypingUserDto(it.userId, null, it.label) },
-            emptyList(),
-            null,
-        ).line
+            cast?.agentIds.orEmpty(),
+            cast?.counterpart,
+        )
+    }
 }

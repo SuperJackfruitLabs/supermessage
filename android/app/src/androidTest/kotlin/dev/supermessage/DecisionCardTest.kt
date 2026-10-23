@@ -587,7 +587,6 @@ class DecisionCardTest {
                     Timeline(
                         rows = rows.reversed(),
                         revision = 0uL,
-                        typingLine = null,
                         isPaginating = false,
                         canPaginate = false,
                         onPaginate = {},
