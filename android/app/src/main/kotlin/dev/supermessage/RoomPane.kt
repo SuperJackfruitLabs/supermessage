@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import uniffi.supermessage_ffi.roomStatus
 import dev.supermessage.kit.MentionCast
 import dev.supermessage.kit.ReportSubject
 import dev.supermessage.kit.RosterArrangement
@@ -91,8 +92,16 @@ internal fun RoomPane(
     // invitation, say nothing (iOS `RoomScreen.swift:116-123`). Reset on every
     // room change, so a count never outlives the room it was fetched for
     // (`RoomScreen.swift:35-39`).
-    val describesAgent = remember(roomId, rooms, now) {
-        roomId?.let { RosterArrangement.rosterRow(it, rooms, now)?.describesAgent } ?: false
+    val rosterRow = remember(roomId, rooms, now) {
+        roomId?.let { RosterArrangement.rosterRow(it, rooms, now) }
+    }
+    val describesAgent = rosterRow?.describesAgent ?: false
+    // The header's status is the core's precedence over the roster's state and
+    // the live turn (iOS `RoomScreen.swift:74-84`); `now` ticking re-reads the
+    // state, so Active drifts to Idle to Quiet while the reader stays.
+    val turnInProgress by session.live.inProgress.collectAsStateWithLifecycle()
+    val status = if (isInvitation) null else rosterRow?.let {
+        roomStatus(it.state, it.describesAgent, turnInProgress)
     }
     // Keyed by the room, so a new room starts with no count on its very first
     // frame instead of borrowing the last room's until an effect runs.
@@ -120,7 +129,7 @@ internal fun RoomPane(
         }
     } else if (isInvitation) {
         Column(modifier = modifier.fillMaxSize().testTag("pane-timeline")) {
-            RoomHeader(currentRow, memberCount = null, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
+            RoomHeader(currentRow, status = null, memberCount = null, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
             InvitationEmptyTimeline(modifier = Modifier.weight(1f).fillMaxWidth())
             InvitationView(
                 roomId = currentRoomId,
@@ -212,7 +221,7 @@ internal fun RoomPane(
 
         Column(modifier = modifier.fillMaxSize().testTag("pane-timeline")) {
             currentRow?.let {
-                RoomHeader(it, memberCount = if (describesAgent || isInvitation) null else memberCount, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
+                RoomHeader(it, status = status, memberCount = if (describesAgent || isInvitation) null else memberCount, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
             }
             // The note that is playing belongs to this room and
             // this pane: leaving either stops it (the key is the
