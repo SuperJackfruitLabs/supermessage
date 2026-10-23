@@ -933,23 +933,29 @@ pub async fn spawn_room_list(
 /// `FocusedTimeline::mark_read`, which is also what [`crate::session::Session::mark_room_read`]
 /// delegates to when `room_id` is the open room.
 ///
-/// The SDK timeline built here is the same one `mark_read` asks, so "latest
-/// event" means the same thing on both paths; it is dropped on return and
-/// never becomes the focused timeline.
+/// The SDK timeline is built with [`crate::timeline::build_sdk_timeline`], the
+/// builder the focused path uses, so both paths are configured alike. (In
+/// matrix-sdk-ui 0.18 `Timeline::mark_as_read` takes the newest remote event
+/// "even if it's not visible", so the event filter does not change which
+/// event is picked; sharing the builder keeps that from depending on it.) The
+/// timeline is dropped as soon as the receipt is sent and never becomes the
+/// focused timeline. Building it is not cheap (it runs on the serial core
+/// queue); a direct event-cache read would be cheaper, so it is a later
+/// optimisation.
 pub(crate) async fn mark_room_read(client: &matrix_sdk::Client, room_id: &str) -> CoreResult<bool> {
     let parsed =
         matrix_sdk::ruma::RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
     let room = client
         .get_room(&parsed)
         .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
-    let timeline = room
-        .timeline()
-        .await
-        .map_err(|e| CoreError::Protocol(e.to_string()))?;
-    timeline
+    let timeline = crate::timeline::build_sdk_timeline(&room).await?;
+    let sent = timeline
         .mark_as_read(matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType::Read)
         .await
-        .map_err(|e| CoreError::Protocol(e.to_string()))
+        .map_err(|e| CoreError::Protocol(e.to_string()));
+    // Release the timeline's tasks and subscriptions now, not at scope end.
+    drop(timeline);
+    sent
 }
 
 #[cfg(test)]
@@ -1701,5 +1707,102 @@ mod tests {
             .expect_err("an unknown room cannot be marked read");
 
         assert!(matches!(err, CoreError::Protocol(_)), "{err:?}");
+    }
+
+    /// In an agent room the newest event is often a Superpipeline card, which
+    /// the SDK's default filter drops. The receipt must name the card, as the
+    /// focused path's does.
+    ///
+    /// Mutation (run, NOT failing): reverting `mark_room_read` to
+    /// `room.timeline()` still passes, because matrix-sdk-ui 0.18's
+    /// `Timeline::mark_as_read` uses `latest_event_id`, which reads every
+    /// remote event "even if it's not visible". So this is a regression guard
+    /// for that SDK behaviour, not proof of the filter.
+    #[tokio::test]
+    async fn marking_a_room_whose_latest_event_is_a_card_sends_the_receipt_on_the_card() {
+        use matrix_sdk::ruma::{
+            api::client::receipt::create_receipt::v3::ReceiptType, event_id, room_id, user_id,
+        };
+        use matrix_sdk::test_utils::mocks::MatrixMockServer;
+        use matrix_sdk_test::{event_factory::EventFactory, JoinedRoomBuilder};
+
+        let server = MatrixMockServer::new().await;
+        let room = room_id!("!agentroom:example.org");
+        let client = server.client_builder().build().await;
+        client.event_cache().subscribe().unwrap();
+        let f = EventFactory::new().room(room);
+        let card = matrix_sdk::ruma::serde::Raw::new(&serde_json::json!({
+            "type": "dev.superpipeline.card",
+            "event_id": "$card",
+            "sender": "@bob:example.org",
+            "origin_server_ts": 1_700_000_000_100_u64,
+            "content": { "body": "Card: review", "card_id": "c1" },
+        }))
+        .unwrap()
+        .cast_unchecked();
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(
+                    JoinedRoomBuilder::new(room)
+                        .add_timeline_event(
+                            f.text_msg("hello")
+                                .sender(user_id!("@bob:example.org"))
+                                .event_id(event_id!("$earlier")),
+                        )
+                        .add_timeline_event(card),
+                );
+            })
+            .await;
+        server
+            .mock_send_receipt(ReceiptType::Read)
+            .ok()
+            .expect(1)
+            .mount()
+            .await;
+        server
+            .mock_set_room_account_data(matrix_sdk::ruma::events::RoomAccountDataEventType::from(
+                "m.marked_unread",
+            ))
+            .ok()
+            .mount()
+            .await;
+
+        assert!(mark_room_read(&client, room.as_str()).await.unwrap());
+
+        let requests = server.server().received_requests().await.unwrap();
+        let receipt = requests
+            .iter()
+            .find(|r| r.url.path().contains("/receipt/"))
+            .expect("a receipt request");
+        assert!(
+            receipt.url.path().ends_with("/m.read/%24card")
+                || receipt.url.path().ends_with("/m.read/$card"),
+            "the receipt names the newest event, the card: {}",
+            receipt.url.path()
+        );
+    }
+
+    /// A left room with nothing in it has no event to point at, so nothing is
+    /// sent and the answer is `false`, not an error.
+    #[tokio::test]
+    async fn marking_a_left_room_with_no_events_sends_nothing() {
+        use matrix_sdk::ruma::room_id;
+        use matrix_sdk::test_utils::mocks::MatrixMockServer;
+        use matrix_sdk_test::LeftRoomBuilder;
+
+        let server = MatrixMockServer::new().await;
+        let room = room_id!("!left:example.org");
+        let client = server.client_builder().build().await;
+        client.event_cache().subscribe().unwrap();
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_left_room(LeftRoomBuilder::new(room));
+            })
+            .await;
+
+        let answer = mark_room_read(&client, room.as_str()).await;
+        assert!(matches!(answer, Ok(false)), "{answer:?}");
     }
 }

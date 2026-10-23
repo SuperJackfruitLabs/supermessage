@@ -57,10 +57,10 @@ struct SafetyStoreTests {
         #expect(after.hiddenEvents.isEmpty, "sign-out left hidden ids behind")
     }
 
-    // Mutation seen failing (to be confirmed by the `ios` CI job; no Swift
-    // toolchain here): making `bind` load `Self.legacyKey` instead of
-    // `Self.key(for: owner)` fails this test, since the second account then
-    // sees `$a`.
+    // Mutation (not run locally; iOS can't build here): making `bind` load
+    // `Self.legacyKey` instead of `Self.key(for: owner)` should fail the final
+    // `returning` assertion (`$a` lost), not the second account's first one,
+    // since the legacy key is empty there.
     @Test("another account sees nothing of the first one's hidden messages")
     func anotherAccountSeesNothing() throws {
         let (defaults, cleanup) = try scratchDefaults()
@@ -81,7 +81,7 @@ struct SafetyStoreTests {
         #expect(returning.hiddenEvents == ["$a"], "the first account lost, or gained, ids")
     }
 
-    // Mutation seen failing (CI): dropping the `removeObject(forKey: legacyKey)`
+    // Mutation (not run locally; iOS can't build here): dropping the `removeObject(forKey: legacyKey)`
     // in `bind` fails the second bind's assertion (the old ids are adopted
     // again by the account that restores next).
     @Test("the device-wide set an older build kept is adopted once, by the restored account")

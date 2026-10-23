@@ -2541,8 +2541,9 @@ mod tests {
     /// Marking a room read needs an account; signed out it refuses and says
     /// why, rather than looking like a room that was already read.
     ///
-    /// Mutation seen failing: making `mark_room_read` return `Ok(false)`
-    /// before `require_client` fails this test (it answers `Ok`).
+    /// Mutation seen failing (run): returning `Ok(false)` at the top of
+    /// `mark_room_read`, before `require_client`, fails this test with
+    /// `no account, no receipt: false`.
     #[tokio::test]
     async fn marking_a_room_read_without_a_session_is_not_ready() {
         let session = Session::new(
