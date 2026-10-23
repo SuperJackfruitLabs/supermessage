@@ -81,7 +81,7 @@ class StreamingStutterTest {
         return null
     }
 
-    private class Sample(val historyTop: Float, val cardHeight: Float)
+    private class Sample(val frameNanos: Long, val historyTop: Float, val cardHeight: Float)
 
     @Test
     fun theHistoryDoesNotStutterWhileTheCardGrows() {
@@ -117,13 +117,13 @@ class StreamingStutterTest {
                 }
             }
             val decor = activity.window.decorView
-            callback = Choreographer.FrameCallback {
+            callback = Choreographer.FrameCallback { frameNanos ->
                 if (recording) {
                     val root = rootForTest(decor)?.semanticsOwner?.unmergedRootSemanticsNode
                     val history = root?.let { find(it, "row-\$m12") }
                     val card = root?.let { find(it, "live-turn") }
                     if (history != null && card != null) {
-                        samples += Sample(history.boundsInRoot.top, card.size.height.toFloat())
+                        samples += Sample(frameNanos, history.boundsInRoot.top, card.size.height.toFloat())
                     }
                     Choreographer.getInstance().postFrameCallback(callback)
                 }
@@ -147,26 +147,39 @@ class StreamingStutterTest {
         val p50 = sorted[sorted.size / 2]
         val p95 = sorted[(sorted.size * 95) / 100]
 
-        val ys = samples.map { it.historyTop }
-        val heights = samples.map { it.cardHeight }
+        // Pair each sample with the one before it and keep only frames of ordinary length: the
+        // glide is clocked by frame time, so a single slow frame legitimately moves the history
+        // further in that frame without any stutter. (Slow frames are counted on their own below.)
+        val pairs = samples.zipWithNext().filter { (a, b) -> b.frameNanos - a.frameNanos <= SLOW_FRAME_NANOS }
         // Only while the card is not shrinking: the glide is for growth, as iOS's is (a line of
         // status text going away when the answer's first words show is a step, not a glide).
-        val steps = ys.indices.drop(1).filter { heights[it] >= heights[it - 1] }.map { kotlin.math.abs(ys[it] - ys[it - 1]) }
-        val growths = heights.zipWithNext { a, b -> b - a }.filter { it > 0.5f }
+        val steps = pairs.filter { (a, b) -> b.cardHeight >= a.cardHeight }.map { (a, b) -> kotlin.math.abs(b.historyTop - a.historyTop) }
+        val growths = pairs.map { (a, b) -> b.cardHeight - a.cardHeight }.filter { it > 0.5f }
         val biggestStep = steps.max()
         val biggestGrowth = growths.max()
+        val slowFrames = frames.count { it > SLOW_FRAME_NANOS }
         android.util.Log.i(
             "StreamingStutter",
-            "frames=${frames.size} p50=${ms(p50)}ms p95=${ms(p95)}ms max=${ms(longest)}ms; " +
+            "frames=${frames.size} p50=${ms(p50)}ms p95=${ms(p95)}ms max=${ms(longest)}ms slow(>60ms)=$slowFrames; " +
                 "samples=${samples.size} growths=${growths.size} biggestGrowth=${biggestGrowth}px biggestHistoryStep=${biggestStep}px",
         )
 
         assertTrue("saw only ${frames.size} frames", frames.size > 100)
         assertTrue("the card must have grown for this to mean anything: $growths", growths.size >= 3 && biggestGrowth > 20f)
-        assertTrue(
-            "a long frame: ${ms(longest)} ms (p50 ${ms(p50)}, p95 ${ms(p95)})",
-            longest < LONG_FRAME_NANOS,
-        )
+        assertTrue("a hang: ${ms(longest)} ms (p50 ${ms(p50)}, p95 ${ms(p95)})", longest < LONG_FRAME_NANOS)
+        // The 150 ms cap alone passes a three-frame hitch. A hitch is slow frames in a row, so the
+        // longest run of frames over 60 ms is bounded, and slow frames overall must stay a small
+        // share. The software-GPU AVD has p50 ~28 ms and p95 ~46 ms; frames over 50 ms were 1-15 in
+        // ~320, in clusters of up to 3, so the line is 60 ms; at most 8 % of frames may be over it.
+        var run = 0
+        var longestRun = 0
+        for (f in frames) {
+            run = if (f > SLOW_FRAME_NANOS) run + 1 else 0
+            longestRun = maxOf(longestRun, run)
+        }
+        val allowed = frames.size * 8 / 100
+        assertTrue("$longestRun slow frames in a row (p50 ${ms(p50)}, p95 ${ms(p95)})", longestRun <= 2)
+        assertTrue("$slowFrames frames over 60 ms, at most $allowed (p50 ${ms(p50)}, p95 ${ms(p95)})", slowFrames <= allowed)
         assertTrue(
             "the history jumped: moved $biggestStep px in one frame when the card grew by at most $biggestGrowth px",
             biggestStep < biggestGrowth * 0.5f,
@@ -176,5 +189,8 @@ class StreamingStutterTest {
     private companion object {
         /** A frame this long is a visible hitch: nine 60 Hz frames (the emulator's own frames are ~27 ms at the median). */
         const val LONG_FRAME_NANOS = 150_000_000L
+
+        /** Above this (about four 60 Hz frames, and past this AVD's p95 of ~46 ms) a frame is slow: the step bound ignores it, and at most two may occur. */
+        const val SLOW_FRAME_NANOS = 60_000_000L
     }
 }

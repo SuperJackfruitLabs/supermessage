@@ -64,11 +64,17 @@ import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.DisplayRow
 import dev.supermessage.kit.TimelineAnimation
 import dev.supermessage.kit.displayRows
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
-import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.Measurable
+import androidx.compose.ui.layout.MeasureResult
+import androidx.compose.ui.layout.MeasureScope
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.node.LayoutModifierNode
+import androidx.compose.ui.node.ModifierNodeElement
+import androidx.compose.ui.node.invalidatePlacement
+import androidx.compose.ui.unit.Constraints
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import dev.supermessage.kit.HistoryGlide
 import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.runtime.withFrameNanos
@@ -437,9 +443,8 @@ fun Timeline(
     // in the draw phase (a layer block), never in composition or layout.
     val glideDriver = remember { GlideDriver() }
     LaunchedEffect(glideDriver) { glideDriver.run() }
-    LaunchedEffect(streaming) { if (!streaming) glideDriver.reset() }
-    val glideLayer = remember(glideDriver) { Modifier.graphicsLayer { translationY = glideDriver.offset } }
-
+    // No reset when the turn ends: a glide under way finishes, so the history
+    // never snaps by what was left of it.
     // Grouping applied here, the row's own header rendered by TimelineRow.
     // Exhaustive over DisplayRow — no `else` — so a third variant added later
     // is a compile error here rather than a blank row.
@@ -555,7 +560,7 @@ fun Timeline(
     // spring on top of it would be a second motion for the same move.
     @Composable
     fun androidx.compose.foundation.lazy.LazyItemScope.rowMotion(id: String): Modifier {
-        if (!animatesThisUpdate || streaming) return glideLayer
+        if (!animatesThisUpdate || streaming) return Modifier.glided(glideDriver)
         return Modifier
             .animateItem(
                 fadeInSpec = null,
@@ -563,12 +568,13 @@ fun Timeline(
                 fadeOutSpec = motion(reduceMotion, tween<Float>(150)),
             )
             .arrivalRise(arrivals, id, reduceMotion)
-            .then(glideLayer)
+            .glided(glideDriver)
     }
 
     @Composable
     fun LiveTurnCell() {
-        var lastHeight by remember { mutableIntStateOf(0) }
+        // Plain, not state: written while the card is measured.
+        val lastHeight = remember { IntArray(1) }
         LiveTurnCard(
             summary = liveSummary,
             steps = liveSteps,
@@ -579,18 +585,27 @@ fun Timeline(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
-                .onSizeChanged { size ->
-                    // The card grew: the list has already laid out (without
-                    // animation), so the history is draw back where it was and
-                    // glides. Not on first appearance, and only at the newest
-                    // message: scrolled back the list keeps the reader's place.
-                    val grew = size.height - lastHeight
-                    val first = lastHeight == 0
-                    lastHeight = size.height
-                    val atNewest = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+                // Detected while the card is *measured*, not in `onSizeChanged`: that
+                // callback fires after the list has already placed its rows, which
+                // is a frame too late for the offset to reach them. Measure runs
+                // before every row's placement, which reads the offset.
+                .layout { measurable, constraints ->
+                    val placeable = measurable.measure(constraints)
+                    val grew = placeable.height - lastHeight[0]
+                    val first = lastHeight[0] == 0
+                    lastHeight[0] = placeable.height
+                    // Layout must not subscribe to the list's scroll state.
+                    val atNewest = Snapshot.withoutReadObservation {
+                        listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+                    }
+                    // The card grew: the list lays out without animation, so the
+                    // history is put back where it was and glides. Not on first
+                    // appearance, and only at the newest message: scrolled back the
+                    // list keeps the reader's place.
                     if (!first && grew > 0.5f && streaming && !reduceMotion && atNewest) glideDriver.grew(grew.toFloat())
+                    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
                 }
-                .then(glideLayer),
+                .glided(glideDriver),
         )
     }
 
@@ -833,45 +848,55 @@ internal fun liveWriterName(
 }
 
 /**
- * The history glide's frame loop. [grew] puts the offset in place at once, in
- * the same layout pass that grew the card (so there is no frame where the
- * history has already moved), and [run] eases it away on the frame clock.
+ * The history glide's frame loop. Every glided item is a [GlideNode]; the
+ * driver holds the offset as a plain field and asks each node to **re-place**
+ * (`invalidatePlacement`), which re-runs its layer block with the new offset.
+ * [grew] runs while the card is measured, before the frame is laid out and
+ * drawn, so the history is back where it was in that same frame; nothing here
+ * is snapshot state, so no read in layout is tracked, nothing is written to
+ * composition's state during layout, and no global apply is flushed
+ * mid-measure. The frame loop is woken through a channel.
  */
 internal class GlideDriver {
     private val glide = HistoryGlide()
-    var offset by mutableFloatStateOf(0f)
-        private set
+    private var plainOffset = 0f
+    private val nodes = LinkedHashSet<GlideNode>()
+    private val growths = Channel<Unit>(Channel.CONFLATED)
 
-    /**
-     * Counts growths. The frame loop restarts on every change, so a growth
-     * that arrives as the last glide ends (in the layout of the same frame)
-     * is never left without a loop; a flag that goes false then true again
-     * before the loop looks would be conflated away.
-     */
-    private var epoch by mutableIntStateOf(0)
+    val offset: Float get() = plainOffset
+
+    fun register(node: GlideNode) {
+        nodes += node
+    }
+
+    fun unregister(node: GlideNode) {
+        nodes -= node
+    }
+
+    private fun apply() {
+        for (node in nodes) node.invalidatePlacement()
+    }
 
     fun grew(deltaPx: Float) {
         glide.add(deltaPx)
-        offset += deltaPx
-        epoch++
-        // Called from the layout that grew the card. The layers read `offset`
-        // in the draw phase, and a plain write reaches them on the *next*
-        // main-looper turn: a frame in which the history has already moved and
-        // is not yet drawn back. Publishing now puts the offset in this frame.
-        Snapshot.sendApplyNotifications()
+        plainOffset += deltaPx
+        apply()
+        growths.trySend(Unit)
     }
 
     fun reset() {
         glide.clear()
-        offset = 0f
-        epoch++
+        plainOffset = 0f
+        apply()
+        growths.trySend(Unit)
     }
 
     suspend fun run() {
-        snapshotFlow { epoch }.collectLatest {
+        growths.receiveAsFlow().collectLatest {
             while (true) {
                 val over = withFrameNanos { now ->
-                    offset = glide.offsetAt(now)
+                    plainOffset = glide.offsetAt(now)
+                    apply()
                     !glide.isActive
                 }
                 if (over) break
@@ -879,3 +904,25 @@ internal class GlideDriver {
         }
     }
 }
+
+internal class GlideNode(private val driver: GlideDriver) : Modifier.Node(), LayoutModifierNode {
+    override fun onAttach() = driver.register(this)
+    override fun onDetach() = driver.unregister(this)
+
+    override fun MeasureScope.measure(measurable: Measurable, constraints: Constraints): MeasureResult {
+        val placeable = measurable.measure(constraints)
+        return layout(placeable.width, placeable.height) {
+            // A fresh block each placement: it carries this frame's offset.
+            val y = driver.offset
+            placeable.placeWithLayer(0, 0) { translationY = y }
+        }
+    }
+}
+
+private data class GlideElement(val driver: GlideDriver) : ModifierNodeElement<GlideNode>() {
+    override fun create() = GlideNode(driver)
+    override fun update(node: GlideNode) = Unit
+}
+
+/** Draws this item at the [driver]'s offset; see [GlideDriver]. */
+internal fun Modifier.glided(driver: GlideDriver): Modifier = this.then(GlideElement(driver))
