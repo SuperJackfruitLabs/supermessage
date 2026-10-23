@@ -58,6 +58,7 @@
   import {
     roomAvatar,
     roomInfo,
+    markRoomReadFromList,
     rosterHiddenInvitations,
     rosterSections,
     spaceDisplayName,
@@ -142,7 +143,13 @@
     const roomId = menu?.roomId;
     closeMenu();
     if (!roomId) return;
-    if (id === "mute" || id === "pin") {
+    if (id === "markRead") {
+      // A public read receipt on the room's latest event, for a row that may not be open.
+      await markRoomReadFromList(roomId).catch((err: unknown) => {
+        console.error("mark read failed", err);
+        settingFailure = "Couldn't mark that room read. Try again.";
+      });
+    } else if (id === "mute" || id === "pin") {
       const outcome = await roomSettingsWrites.run<unknown>(roomId, () =>
         id === "mute" ? toggleMute(roomId) : togglePin(roomId),
       );

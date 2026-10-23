@@ -353,7 +353,7 @@ pub async fn mark_room_read(
 #[tauri::command]
 pub async fn mark_room_read_from_list(
     room_id: String,
-    session: State<'_, Arc<Session>>,
+    session: State<'_, Session>,
 ) -> Result<bool, CoreError> {
     session.mark_room_read(&room_id).await
 }
