@@ -39,20 +39,28 @@ class AnswerDecisionActionTest {
     private val store = WidgetFixtures.Memory()
     private val feed = WidgetFixtures.feed(store)
 
-    private class Recording(val userId: String = "@me:x") : StubCore() {
+    private open class Recording(val userId: String = "@me:x", val refuses: Boolean = false) : StubCore() {
         val calls: MutableList<String> = Collections.synchronizedList(mutableListOf())
         override fun restoreSessionQuietly(): Boolean = true.also { calls += "restore" }
         override fun account(): AccountDto = AccountDto(userId = userId, homeserver = "https://x")
         override fun sendPermissionAnswer(roomId: String, optionId: String) {
             calls += "permission $roomId $optionId"
+            if (refuses) throw IllegalStateException("refused")
         }
 
         override fun sendGateDecisionTo(
             roomId: String, gateId: String, optionId: String, comment: String?, inReplyTo: String, prompt: String,
         ) {
             calls += "gate $roomId $gateId $optionId $comment $inReplyTo $prompt"
+            if (refuses) throw IllegalStateException("refused")
         }
     }
+
+    init {
+        shadowOf(app).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private val manager = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     private val core = Recording()
     private val opened = mutableListOf<Intent>()
@@ -69,6 +77,8 @@ class AnswerDecisionActionTest {
         event: String = "\$g",
         option: String = "approve",
         core: Recording = this.core,
+        scope: kotlinx.coroutines.CoroutineScope = AppCore.scope,
+        budgetMs: Long = dev.supermessage.notify.NotificationActionReceiver.BUDGET_MS,
     ) = runBlocking {
         AnswerFromWidget.run(
             app, room, event, option,
@@ -77,6 +87,8 @@ class AnswerDecisionActionTest {
             core = { core },
             account = { account },
             reload = {},
+            scope = scope,
+            budgetMs = budgetMs,
         )
     }
 
@@ -127,7 +139,6 @@ class AnswerDecisionActionTest {
         assertEquals(WidgetAnswering.Outcome.FAILED, tap(core = other))
         assertEquals("the session was restored and checked, not used", listOf("restore"), other.calls.filter { it == "restore" || it.startsWith("gate") })
         assertNull("owed again", feed.view(NOW).decisions.single().decision.answered)
-        val manager = app.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         assertTrue("and no word about it", shadowOf(manager).allNotifications.isEmpty())
     }
 
@@ -158,5 +169,72 @@ class AnswerDecisionActionTest {
         val answered = AppCore.widgets(app).view().decisions.single().decision.answered
         assertNotNull(answered)
         assertEquals("Sent: Allow once", answered!!.line)
+    }
+
+    private fun failureNotice(room: String = "!b:hs") = shadowOf(manager).getNotification("$room#answer-failed", 1)
+
+    /** I1: "Your answer wasn't sent" is M6's failure notice: the Messages channel, never amber. */
+    @Test
+    fun aFailedWidgetAnswerSaysSoWithoutAmber() = runBlocking {
+        feed.apply(WidgetFixtures.gate())
+        keyguard.setKeyguardLocked(false)
+        assertEquals(WidgetAnswering.Outcome.FAILED, tap(core = Recording(refuses = true)))
+        val notice = checkNotNull(failureNotice()) { "the reader is told" }
+        assertEquals("Your answer wasn't sent", notice.extras.getCharSequence(android.app.Notification.EXTRA_TITLE).toString())
+        assertEquals("not the interrupting decisions channel", "messages", notice.channelId)
+        assertEquals("not amber", android.app.Notification.COLOR_DEFAULT, notice.color)
+    }
+
+    /** I1: a send under way at sign-out that then fails says nothing: its account left. */
+    @Test(timeout = 15_000)
+    fun aLateFailureAfterSignOutSaysNothing() {
+        runBlocking { feed.apply(WidgetFixtures.gate()) }
+        keyguard.setKeyguardLocked(false)
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val core = object : Recording(refuses = true) {
+            @Volatile var signedOut = false
+            private val restores = java.util.concurrent.atomic.AtomicInteger()
+            override fun restoreSessionQuietly(): Boolean {
+                calls += "restore"
+                // The answer's own restore is held past the budget; the check after it is not.
+                if (restores.getAndIncrement() == 0) {
+                    gate.await()
+                    return true
+                }
+                return !signedOut
+            }
+        }
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+        assertEquals(WidgetAnswering.Outcome.PENDING, tap(core = core, scope = scope, budgetMs = 200))
+        core.signedOut = true
+        gate.countDown()
+        val parent = scope.coroutineContext[kotlinx.coroutines.Job]!!
+        runBlocking { while (parent.children.any()) parent.children.forEach { it.join() } }
+        assertTrue("it was tried, and refused", core.calls.any { it.startsWith("gate") })
+        assertNull("its account left: nothing goes up", failureNotice())
+    }
+
+    /** I4: the decision's notification (posted under its event id) goes once the widget's answer lands. */
+    @Test
+    fun aLandedWidgetAnswerWithdrawsTheDecisionsNotification() = runBlocking {
+        feed.apply(WidgetFixtures.gate())
+        dev.supermessage.notify.AndroidPoster(app, accountId = "@me:x").post(
+            uniffi.supermessage_ffi.plannedFromDecided(WidgetFixtures.gate()),
+        )
+        assertNotNull("the decision's notification is up", shadowOf(manager).getNotification("\$g", 1))
+        keyguard.setKeyguardLocked(false)
+        assertEquals(WidgetAnswering.Outcome.SENT, tap())
+        assertNull("its buttons cannot send a second answer", shadowOf(manager).getNotification("\$g", 1))
+    }
+
+    @Test
+    fun aFailedWidgetAnswerLeavesTheNotification() = runBlocking {
+        feed.apply(WidgetFixtures.gate())
+        dev.supermessage.notify.AndroidPoster(app, accountId = "@me:x").post(
+            uniffi.supermessage_ffi.plannedFromDecided(WidgetFixtures.gate()),
+        )
+        keyguard.setKeyguardLocked(false)
+        assertEquals(WidgetAnswering.Outcome.FAILED, tap(core = Recording(refuses = true)))
+        assertNotNull("nothing was sent: it may still be answered there", shadowOf(manager).getNotification("\$g", 1))
     }
 }

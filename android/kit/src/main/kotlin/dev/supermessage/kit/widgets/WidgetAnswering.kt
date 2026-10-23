@@ -2,13 +2,33 @@ package dev.supermessage.kit.widgets
 
 import dev.supermessage.kit.notify.NotificationAnswering
 import dev.supermessage.kit.notify.NotificationAnswerer
-import dev.supermessage.kit.notify.Poster
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import uniffi.supermessage_core.PlannedNotification
 import uniffi.supermessage_ffi.answerFailedNotification
 import uniffi.supermessage_ffi.notificationAnswerForWidget
+
+/**
+ * The decisions whose answer is being sent right now, from either surface: a widget's button
+ * or the decision's notification. Process-wide and keyed by the decision (room and event), so
+ * the one surface cannot send a second answer while the other's is under way. Once an answer
+ * lands, each surface withdraws the other's offer (the widget's mark, the notification); once
+ * it fails, the decision may be answered again from either.
+ */
+object DecisionAnswersUnderWay {
+    private val underWay: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    private fun key(roomId: String, eventId: String) = "$roomId|$eventId"
+
+    /** True when nothing else is answering this decision, and from now on this is. */
+    fun claim(roomId: String, eventId: String): Boolean = underWay.add(key(roomId, eventId))
+
+    fun release(roomId: String, eventId: String) {
+        underWay.remove(key(roomId, eventId))
+    }
+}
 
 /**
  * A widget's Allow / Reject / Approve button, answered with no room open
@@ -45,15 +65,14 @@ object WidgetAnswering {
         PENDING,
     }
 
-    /** The decisions whose answer is under way, process-wide: a double tap sends once. */
-    private val inFlight: MutableSet<String> = ConcurrentHashMap.newKeySet()
-
     /**
      * Answer, and say how it went.
      *
      * @param budgetMs how long to wait for the send; it is not cancelled when it runs out ([scope] owns it).
      * @param reload called whenever the snapshot changed, so the widgets redraw from it.
      * @param failedNotice where "Your answer wasn't sent" goes when the send fails, now or later.
+     * @param sent called once the answer has landed, now or later: the decision's other offers
+     *   (its notification) are withdrawn then.
      */
     suspend fun answer(
         roomId: String,
@@ -64,12 +83,13 @@ object WidgetAnswering {
         budgetMs: Long,
         scope: CoroutineScope,
         reload: suspend () -> Unit,
-        failedNotice: Poster,
+        failedNotice: suspend (PlannedNotification) -> Unit,
+        sent: suspend () -> Unit = {},
     ): Outcome {
-        val key = "$roomId|$eventId"
         // The snapshot's mark is the real guard; this closes the gap between reading
-        // "owed" and marking it, where a second tap would also read "owed".
-        if (!inFlight.add(key)) return Outcome.NOT_OWED
+        // "owed" and marking it, where a second tap would also read "owed", and keeps
+        // the decision's notification from answering it while this answer is under way.
+        if (!DecisionAnswersUnderWay.claim(roomId, eventId)) return Outcome.NOT_OWED
         var handedOn = false
         try {
             val owed = feed.answer(roomId, eventId, optionId)
@@ -84,10 +104,13 @@ object WidgetAnswering {
 
             suspend fun failed() {
                 if (feed.clearAnswer(roomId, eventId)) reload()
-                failedNotice.post(answerFailedNotification(roomId))
+                failedNotice(answerFailedNotification(roomId))
             }
             return when (landed) {
-                true -> Outcome.SENT
+                true -> {
+                    sent()
+                    Outcome.SENT
+                }
                 false -> {
                     failed()
                     Outcome.FAILED
@@ -96,16 +119,16 @@ object WidgetAnswering {
                     handedOn = true
                     scope.launch {
                         try {
-                            if (!work.await()) failed()
+                            if (work.await()) sent() else failed()
                         } finally {
-                            inFlight.remove(key)
+                            DecisionAnswersUnderWay.release(roomId, eventId)
                         }
                     }
                     Outcome.PENDING
                 }
             }
         } finally {
-            if (!handedOn) inFlight.remove(key)
+            if (!handedOn) DecisionAnswersUnderWay.release(roomId, eventId)
         }
     }
 }

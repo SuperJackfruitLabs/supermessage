@@ -10,14 +10,15 @@ import androidx.glance.action.ActionParameters
 import androidx.glance.appwidget.action.ActionCallback
 import dev.supermessage.AppCore
 import dev.supermessage.MainActivity
-import dev.supermessage.kit.notify.Poster
 import dev.supermessage.kit.widgets.WidgetAnswering
 import dev.supermessage.kit.widgets.WidgetFeed
 import dev.supermessage.notify.AccountScopedAnswering
 import dev.supermessage.notify.AndroidPoster
 import dev.supermessage.notify.LazyCoreAnswering
 import dev.supermessage.notify.NotificationActionReceiver
+import dev.supermessage.notify.stillSignedInAs
 import kotlinx.coroutines.CoroutineScope
+import uniffi.supermessage_core.PlannedNotification
 import uniffi.supermessage_ffi.CoreInterface
 
 /**
@@ -56,6 +57,12 @@ class AnswerDecisionAction : ActionCallback {
  *   notification answer's [NotificationActionReceiver.BUDGET_MS], counted from the tap.
  * - **Never another account's.** The stamp of the account the snapshot was written for must
  *   equal the signed-in account; no stamp counts as no match.
+ * - **"Your answer wasn't sent"** is M6's failure notice ([AndroidPoster.postFailure]: not amber,
+ *   not on the decisions channel), and only while the stamp's account is still the one signed
+ *   in: a send that fails after sign-out says nothing to the next reader.
+ * - **Once it lands, the decision's notification goes**, so its buttons cannot send a second
+ *   answer; while it is under way the notification's answer is refused
+ *   ([dev.supermessage.kit.widgets.DecisionAnswersUnderWay]).
  */
 internal object AnswerFromWidget {
     suspend fun run(
@@ -73,7 +80,8 @@ internal object AnswerFromWidget {
         scope: CoroutineScope = AppCore.scope,
         budgetMs: Long = NotificationActionReceiver.BUDGET_MS,
         reload: suspend () -> Unit = { AppCore.widgetRedraw(context).after(true) },
-        poster: (String?) -> Poster = { id -> Poster(AndroidPoster(context, accountId = id)::post) },
+        failure: (String?) -> (PlannedNotification) -> Unit = { id -> AndroidPoster(context, accountId = id)::postFailure },
+        withdraw: (eventId: String) -> Unit = { AndroidPoster.cancelDecision(context, it) },
     ): WidgetAnswering.Outcome? {
         if (locked()) {
             // Starting an Activity from here can be refused (background-start rules, no handler):
@@ -88,14 +96,16 @@ internal object AnswerFromWidget {
         val expected = account()
         val client = LazyCoreAnswering(core)
         val guarded = AccountScopedAnswering(client, expected) { client.account().userId }
-        val notice = poster(expected)
+        val notice = failure(expected)
         return WidgetAnswering.answer(
             roomId, eventId, optionId, feed, guarded,
             budgetMs = (budgetMs - (clock() - startedAt)).coerceAtLeast(0),
             scope = scope,
             reload = reload,
-            // Another account's decision is dropped without a word, as a notification's is.
-            failedNotice = Poster { if (!guarded.refusedOtherAccount) notice.post(it) },
+            // Another account's decision is dropped without a word, as a notification's is; and
+            // once the account has signed out (sign-out withdrew everything), nothing goes up for it.
+            failedNotice = { if (!guarded.refusedOtherAccount && stillSignedInAs(client, expected)) notice(it) },
+            sent = { withdraw(eventId) },
         )
     }
 

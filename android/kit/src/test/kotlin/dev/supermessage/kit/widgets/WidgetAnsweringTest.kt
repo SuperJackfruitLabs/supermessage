@@ -1,7 +1,6 @@
 package dev.supermessage.kit.widgets
 
 import dev.supermessage.kit.notify.NotificationAnswering
-import dev.supermessage.kit.notify.Poster
 import dev.supermessage.kit.widgets.WidgetFixtures.NOW
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
@@ -74,9 +73,12 @@ class WidgetAnsweringTest {
     ) = runBlocking {
         WidgetAnswering.answer(
             room, event, option, feed, client, budgetMs, scope,
-            reload = { reloads.incrementAndGet() }, failedNotice = Poster { notices += it },
+            reload = { reloads.incrementAndGet() }, failedNotice = { notices += it }, sent = { landed.incrementAndGet() },
         )
     }
+
+    /** How many times the answer was reported landed (the decision's notification is withdrawn then). */
+    private val landed = AtomicInteger()
 
     private fun decision(event: String) = feed.view(NOW).decisions.map { it.decision }.single { it.eventId == event }
 
@@ -184,7 +186,7 @@ class WidgetAnsweringTest {
                     start.await()
                     WidgetAnswering.answer(
                         "!r:hs", event, "Allow once", feed, client, 5_000, scope,
-                        reload = {}, failedNotice = Poster { notices += it },
+                        reload = {}, failedNotice = { notices += it },
                     )
                 }
             }
@@ -192,5 +194,50 @@ class WidgetAnsweringTest {
             val results = outcomes.awaitAll()
             assertEquals("exactly one sent ($results)", 1, client.calls.count { it.startsWith("permission") })
         }
+    }
+
+    /** I4: once the answer lands, the decision's other offer (its notification) is withdrawn. */
+    @Test(timeout = 60_000)
+    fun aLandedAnswerIsReportedSoTheNotificationGoes() = runBlocking {
+        feed.apply(WidgetFixtures.permission())
+        assertEquals(WidgetAnswering.Outcome.SENT, answer("!r:hs", "\$p", "Allow once", Client()))
+        assertEquals(1, landed.get())
+    }
+
+    @Test(timeout = 60_000)
+    fun aFailedAnswerIsNotReportedLanded() = runBlocking {
+        feed.apply(WidgetFixtures.permission())
+        assertEquals(WidgetAnswering.Outcome.FAILED, answer("!r:hs", "\$p", "Allow once", Client(fails = true)))
+        assertEquals("the notification stays: nothing was sent", 0, landed.get())
+    }
+
+    @Test(timeout = 60_000)
+    fun aLateLandingIsReportedToo() = runBlocking {
+        feed.apply(WidgetFixtures.permission())
+        val hold = CompletableDeferred<Unit>()
+        assertEquals(WidgetAnswering.Outcome.PENDING, answer("!r:hs", "\$p", "Allow once", Client(hold = hold), budgetMs = 100))
+        assertEquals(0, landed.get())
+        hold.complete(Unit)
+        val deadline = System.currentTimeMillis() + 10_000
+        while (landed.get() == 0) {
+            check(System.currentTimeMillis() < deadline) { "the late landing was never reported" }
+            Thread.sleep(20)
+        }
+    }
+
+    /** I4: the decision's notification is answering it: the widget sends nothing meanwhile. */
+    @Test(timeout = 60_000)
+    fun aDecisionAnsweredFromItsNotificationIsNotSentAgainFromTheWidget() = runBlocking {
+        feed.apply(WidgetFixtures.permission())
+        assertTrue(DecisionAnswersUnderWay.claim("!r:hs", "\$p"))
+        try {
+            val client = Client()
+            assertEquals(WidgetAnswering.Outcome.NOT_OWED, answer("!r:hs", "\$p", "Allow once", client))
+            assertTrue("nothing went to the room", client.calls.isEmpty())
+        } finally {
+            DecisionAnswersUnderWay.release("!r:hs", "\$p")
+        }
+        // Once that answer is done (here: it failed), the widget may answer.
+        assertEquals(WidgetAnswering.Outcome.SENT, answer("!r:hs", "\$p", "Allow once", Client()))
     }
 }

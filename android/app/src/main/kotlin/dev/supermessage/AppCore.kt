@@ -191,6 +191,15 @@ object AppCore {
     }
 
     /**
+     * A decision answered from its notification has landed: the widgets mark it sent (the
+     * core's `mark_answered`, as a widget's own answer does), so they no longer offer it.
+     */
+    internal suspend fun widgetsAnswered(context: Context, roomId: String, eventId: String, optionId: String) {
+        val reload = widgetWriter(context).markAnswered(roomId, eventId, optionId)
+        widgetRedraw(context).after(reload)
+    }
+
+    /**
      * Called when a decision card's answer has landed from the app, with the
      * room, event and option: the widgets stop offering it. The process's
      * [WidgetPublisher] sets it when it is made.
