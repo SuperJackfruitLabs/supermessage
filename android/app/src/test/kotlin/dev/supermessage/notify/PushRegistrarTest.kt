@@ -181,7 +181,39 @@ class PushRegistrarTest {
     fun noDistributorSaysSo() {
         runBlocking { registrar.noDistributor() }
         assertEquals(PushStatus.NoDistributor, registrar.status.value)
-        assertEquals(emptyList<String>(), core.calls.toList())
+        assertEquals("the stored pusher goes", listOf("unregister"), core.calls.toList())
+    }
+
+    /**
+     * A process that was killed and restarted has nothing in memory, but the
+     * core persisted the pusher; every path that ends push must still ask the
+     * core to remove it (it is a no-op when none is stored).
+     */
+    private fun coldRegistrar() = PushRegistrar(
+        core = { core },
+        unregisterDistributor = { distributorUnregistered++ },
+        probe = { url -> probed += url; answer },
+        coordinator = { coordinator },
+    )
+
+    @Test
+    fun aColdRegistrarRemovesTheStoredPusherWhenTheDistributorUnregisters() {
+        runBlocking { coldRegistrar().unregistered() }
+        assertEquals(listOf("unregister"), core.calls.toList())
+    }
+
+    @Test
+    fun aColdRegistrarRemovesTheStoredPusherWhenThereIsNoDistributor() {
+        runBlocking { coldRegistrar().noDistributor() }
+        assertEquals(listOf("unregister"), core.calls.toList())
+    }
+
+    @Test
+    fun aColdRegistrarRemovesTheStoredPusherWhenTheServerHasNoMatrixGateway() {
+        answer = """{"unifiedpush":{"version":1}}"""
+        runBlocking { coldRegistrar().newEndpoint(ntfy, distributor = "ntfy") }
+        assertEquals(listOf("unregister"), core.calls.toList())
+        assertEquals(emptyList<PushRegistration>(), core.registered.toList())
     }
 
     private fun room(unread: Long) = RoomRow(

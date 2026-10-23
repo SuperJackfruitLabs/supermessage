@@ -94,6 +94,9 @@ internal class PushRegistrar(
             ?.takeIf { url -> probe.get(url)?.let(PushGateway::isMatrixGateway) == true }
         if (mine != generation) return@withLock
         if (gateway == null) {
+            // The core works from its persisted pusher, so this removes one a
+            // previous process registered too; it is a no-op when none is stored.
+            attempt { client.unregisterPusher(); true }
             forget()
             _status.value = PushStatus.NoMatrixGateway
             return@withLock
@@ -122,6 +125,7 @@ internal class PushRegistrar(
 
     /** No distributor on the device, or none the reader picked. Local notifications only. */
     suspend fun noDistributor(): Unit = lock.withLock {
+        removeStoredPusher()
         forget()
         _status.value = PushStatus.NoDistributor
     }
@@ -132,10 +136,7 @@ internal class PushRegistrar(
      * removed through the core; the next endpoint registers afresh.
      */
     suspend fun unregistered(): Unit = lock.withLock {
-        if (registeredEndpoint != null) {
-            val client = withContext(Dispatchers.IO) { CoreClient(core()) }
-            attempt { client.restoreSessionQuietly() && run { client.unregisterPusher(); true } }
-        }
+        removeStoredPusher()
         forget()
         _status.value = PushStatus.NoDistributor
     }
@@ -156,6 +157,17 @@ internal class PushRegistrar(
         unregisterDistributor()
         forget()
         _status.value = null
+    }
+
+    /**
+     * Ask the core to remove this device's pusher. It reads the pusher it
+     * persisted (`C/session.rs:1394-1398`) and does nothing when there is none,
+     * so no in-memory state is consulted: a cold process still removes what an
+     * earlier one registered.
+     */
+    private suspend fun removeStoredPusher() {
+        val client = withContext(Dispatchers.IO) { CoreClient(core()) }
+        attempt { client.restoreSessionQuietly() && run { client.unregisterPusher(); true } }
     }
 
     private fun forget() {
