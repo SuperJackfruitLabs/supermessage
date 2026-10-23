@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.DisplayRow
 import dev.supermessage.kit.TimelineAnimation
+import dev.supermessage.kit.TimelineFollow
 import dev.supermessage.kit.displayRows
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.layout.Measurable
@@ -102,8 +103,11 @@ import uniffi.supermessage_core.TurnStep
  *
  * - *Am I at the newest message?* is `firstVisibleItemIndex == 0 &&
  *   firstVisibleItemScrollOffset == 0` — exact, not a tuned threshold.
- * - *A message arrives.* It lands at index 0, off the far end of the scroll.
- *   Nothing on screen moves, so there is nothing to correct.
+ * - *A message arrives.* It lands at index 0, the bottom. A reader at the
+ *   newest sees it there: the list is asked back to index 0 when what stands
+ *   there changes ([LazyListState.requestScrollToItem]), because `LazyColumn`
+ *   would otherwise keep its place by the old first item's key and lay the new
+ *   one below the screen. A reader scrolled back is not moved.
  * - *History prepends.* It lands at the tail, also off the far end. The
  *   reading position is untouched.
  *
@@ -351,6 +355,34 @@ fun Timeline(
         derivedStateOf {
             listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
         }
+    }
+
+    // Following the tail. `LazyColumn` keeps its place by the *key* of its first
+    // visible item, so a new item put in front of it (a new row, the reader's own
+    // echo, the live card arriving) does not become the first visible item: the
+    // list stays on the old one and lays the new one below it, into the bottom
+    // reserve and off the screen, and the reader is no longer at the newest. iOS's
+    // inverted collection view keeps its offset instead, so there the new item is
+    // simply in view. A reader at the newest (within `TimelineFollow`'s threshold, so
+    // a nudge does not count as leaving) is therefore asked back to index 0 whenever
+    // what stands there changes, before that change is measured. A reader scrolled
+    // back keeps their place. Growth of the item already at index 0 (the card
+    // streaming) needs nothing: the inverted list grows it upward from the bottom.
+    val pxPerDp = LocalDensity.current.density
+    val follows by remember(pxPerDp) {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0 &&
+                TimelineFollow.shouldRepin(listState.firstVisibleItemScrollOffset / pxPerDp, grew = true)
+        }
+    }
+    // What stands at index 0: the live card while a turn streams, else the newest row.
+    val newestKey: String? = if (streaming) "live-turn" else newestFirst.firstOrNull()?.id
+    // In composition, as `requestScrollToItem` is meant to be called: it takes effect in
+    // this very change's measure pass, so the new item is never drawn off screen first.
+    // `follows` still describes the list as last measured, before this change.
+    remember(newestKey) {
+        if (follows) listState.requestScrollToItem(0)
+        newestKey
     }
 
     // Rule 2 (`TimelineAnimation.animates`): animate an arrival, and nothing
