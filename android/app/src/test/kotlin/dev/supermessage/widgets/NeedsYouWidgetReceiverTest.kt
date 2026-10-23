@@ -55,6 +55,24 @@ class NeedsYouWidgetReceiverTest {
 
     private val receiver = NeedsYouWidgetReceiver()
 
+    /**
+     * Glance's `onUpdate` (and `onReceive`) call `goAsync()` and finish what it returns. A real broadcast
+     * carries a PendingResult; a callback called straight from a test carries none, and Glance's
+     * `finish()` then threw on a background thread, after the test, into whichever `runTest`
+     * started next (`UncaughtExceptionsBeforeTest`). So each such call is handed one, as the system does.
+     * (`goAsync` gives it out once, so our own `armOffMain` still finds none: the arm's WorkManager
+     * hold. `onEnabled` and `onDisabled` take none from Glance, so those are called bare.)
+     */
+    private fun <R : android.content.BroadcastReceiver> R.inBroadcast(): R = apply {
+        val create = org.robolectric.shadows.ShadowBroadcastPendingResult::class.java.getDeclaredMethod(
+            "create", Int::class.javaPrimitiveType, String::class.java, android.os.Bundle::class.java, Boolean::class.javaPrimitiveType,
+        ).apply { isAccessible = true }
+        android.content.BroadcastReceiver::class.java
+            .getDeclaredMethod("setPendingResult", android.content.BroadcastReceiver.PendingResult::class.java)
+            .apply { isAccessible = true }
+            .invoke(this, create.invoke(null, 0, null, null, false))
+    }
+
     /** The receivers arm off the main thread: wait for what they set. */
     private fun await(what: String, condition: () -> Boolean) {
         val until = System.nanoTime() + 10_000_000_000L
@@ -81,8 +99,8 @@ class NeedsYouWidgetReceiverTest {
             WidgetRedraw(app, nextChangeMs = { threads += Thread.currentThread(); now + 60_000 }, now = { now }, widgets = { emptyList() }, placed = { true }),
         )
         receiver.onEnabled(app)
-        receiver.onUpdate(app, AppWidgetManager.getInstance(app), intArrayOf(7))
-        AgentsWidgetReceiver().onUpdate(app, AppWidgetManager.getInstance(app), intArrayOf(8))
+        receiver.inBroadcast().onUpdate(app, AppWidgetManager.getInstance(app), intArrayOf(7))
+        AgentsWidgetReceiver().inBroadcast().onUpdate(app, AppWidgetManager.getInstance(app), intArrayOf(8))
         await("three arms") { threads.size >= 3 }
         val main = android.os.Looper.getMainLooper().thread
         armHold = realHold
@@ -126,8 +144,13 @@ class NeedsYouWidgetReceiverTest {
             null,
             WidgetRedraw(app, nextChangeMs = { now + 60_000 }, now = { now }, widgets = { emptyList() }, placed = { true }),
         )
-        // The launcher's (and the system's, after boot) own broadcast, through the manifest's receiver.
-        app.sendBroadcast(
+        // The launcher's (and the system's, after boot) own broadcast, through the provider's
+        // onReceive. A real one carries a PendingResult for goAsync(); Robolectric's delivered
+        // broadcast carries none, and Glance's finish() then threw on a background thread, after
+        // this test, into whichever runTest started next. So hand it one, as the system does.
+        val update = NeedsYouWidgetReceiver().inBroadcast()
+        update.onReceive(
+            app,
             android.content.Intent(AppWidgetManager.ACTION_APPWIDGET_UPDATE)
                 .setClass(app, NeedsYouWidgetReceiver::class.java)
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, intArrayOf(7)),
