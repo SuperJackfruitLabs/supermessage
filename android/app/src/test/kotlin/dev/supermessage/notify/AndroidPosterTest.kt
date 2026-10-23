@@ -101,4 +101,14 @@ class AndroidPosterTest {
         poster.post(note())
         assertTrue(shadowOf(manager).allNotifications.isEmpty())
     }
+
+    @Test
+    fun theTapReusesTheRunningActivity() {
+        poster.post(note())
+        val intent = shadowOf(shown("\$e1").contentIntent).savedIntent
+        assertTrue(
+            "CLEAR_TOP alone finishes and rebuilds a standard-mode Activity",
+            intent.flags and android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP != 0,
+        )
+    }
 }

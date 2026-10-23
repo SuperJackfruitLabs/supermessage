@@ -69,7 +69,11 @@ internal class AndroidPoster(
 
     private fun openRoom(note: PlannedNotification): PendingIntent {
         val intent = Intent(Intent.ACTION_VIEW, openRoomUri(note.roomId), context, MainActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            // SINGLE_TOP: without it CLEAR_TOP finishes and rebuilds a standard-mode
+            // Activity, dropping the ViewModel, the feed and the Session.
+            .addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP,
+            )
             .putExtra(EXTRA_ROOM, note.roomId)
             .putExtra(EXTRA_EVENT, note.eventId)
             .putExtra(EXTRA_ACCOUNT, accountId)
