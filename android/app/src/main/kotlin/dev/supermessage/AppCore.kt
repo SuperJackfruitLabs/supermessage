@@ -6,7 +6,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import dev.supermessage.kit.notify.NotificationCoordinator
+import dev.supermessage.kit.widgets.WidgetFeed
+import dev.supermessage.kit.widgets.WidgetWriting
 import dev.supermessage.notify.PushRegistrar
+import dev.supermessage.widgets.FileSnapshotStore
+import dev.supermessage.widgets.WidgetRedraw
+import uniffi.supermessage_core.NotificationDto
 import org.unifiedpush.android.connector.INSTANCE_DEFAULT
 import org.unifiedpush.android.connector.UnifiedPush
 import uniffi.supermessage_ffi.Core
@@ -70,6 +75,56 @@ object AppCore {
         }
     }
 
+    @Volatile
+    private var widgetFeed: WidgetFeed? = null
+
+    @Volatile
+    private var widgetWriting: WidgetWriting? = null
+
+    @Volatile
+    private var widgetRedraw: WidgetRedraw? = null
+
+    /**
+     * The one writer of the widgets' snapshot (`filesDir/widgets/snapshot.json`):
+     * the roster, the open room, every push and every widget button merge
+     * through it, under its one lock. Android has one process, so one [WidgetFeed]
+     * is the whole of what iOS's file lock across processes is for.
+     */
+    internal fun widgets(context: Context): WidgetFeed {
+        widgetFeed?.let { return it }
+        val app = context.applicationContext
+        return synchronized(lock) {
+            widgetFeed ?: WidgetFeed(FileSnapshotStore.inside(app.filesDir)).also { widgetFeed = it }
+        }
+    }
+
+    /** The feed as the writers use it: [widgets], or a recording stand-in in a test. */
+    internal fun widgetWriter(context: Context): WidgetWriting = widgetWriting ?: widgets(context)
+
+    /** When the widgets are drawn again, from the snapshot [widgets] holds. */
+    internal fun widgetRedraw(context: Context): WidgetRedraw {
+        widgetRedraw?.let { return it }
+        val app = context.applicationContext
+        return synchronized(lock) {
+            widgetRedraw ?: WidgetRedraw(app, nextChangeMs = { widgets(app).view(it).nextChangeMs?.toLong() })
+                .also { widgetRedraw = it }
+        }
+    }
+
+    /** A push the core decided: merged into the snapshot, and the widgets drawn if it is worth it. */
+    internal suspend fun widgetsDecided(context: Context, note: NotificationDto) {
+        val reload = widgetWriter(context).apply(note)
+        widgetRedraw(context).after(reload)
+    }
+
+    /**
+     * Called when a decision card's answer has landed from the app, with the
+     * room, event and option: the widgets stop offering it. The coordinator
+     * sets it while it lives (`PlatformCoordinator.decisionAnswered`).
+     */
+    @Volatile
+    internal var decisionAnswered: (roomId: String, eventId: String, optionId: String) -> Unit = { _, _, _ -> }
+
     fun core(context: Context): CoreInterface {
         built?.let { return it }
         return synchronized(lock) {
@@ -84,6 +139,16 @@ object AppCore {
     @VisibleForTesting
     fun installForTest(core: CoreInterface?) {
         synchronized(lock) { built = core }
+    }
+
+    /** Replaces the widgets' writer and redraw (or, with `null`, forgets them). Tests only. */
+    @VisibleForTesting
+    internal fun installWidgetsForTest(writing: WidgetWriting?, redraw: WidgetRedraw? = null) {
+        synchronized(lock) {
+            widgetFeed = null
+            widgetWriting = writing
+            widgetRedraw = redraw
+        }
     }
 
     /** Replaces the registrar (or, with `null`, forgets it). Tests only. */

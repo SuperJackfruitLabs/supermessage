@@ -37,6 +37,9 @@ robolectric = "4.15.1"
 # gson (Apache-2.0), error_prone_annotations (Apache-2.0), jsr305 (BSD-3) and
 # protobuf-java (BSD-3): all permissive (`:app:dependencies`).
 unifiedpush = "3.3.5"
+# M7 Android Task 1: the home-screen widgets (Glance). 1.2.0 is the newest stable;
+# its AAR metadata is checked against compileSdk 36 by :app:checkDebugAarMetadata.
+glance = "1.2.0"
 
 [libraries]
 jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
@@ -84,6 +87,10 @@ roborazzi-preview-scanner = { group = "io.github.takahirom.roborazzi", name = "r
 composable-preview-scanner = { group = "io.github.sergio-sastre.ComposablePreviewScanner", name = "android", version.ref = "composablePreviewScanner" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 unifiedpush-connector = { group = "org.unifiedpush.android", name = "connector", version.ref = "unifiedpush" }
+glance-appwidget = { group = "androidx.glance", name = "glance-appwidget", version.ref = "glance" }
+glance-appwidget-testing = { group = "androidx.glance", name = "glance-appwidget-testing", version.ref = "glance" }
+glance-preview = { group = "androidx.glance", name = "glance-preview", version.ref = "glance" }
+glance-appwidget-preview = { group = "androidx.glance", name = "glance-appwidget-preview", version.ref = "glance" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

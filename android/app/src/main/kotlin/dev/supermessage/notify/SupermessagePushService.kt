@@ -71,9 +71,10 @@ class SupermessagePushService : PushService() {
         const val BUDGET_MS = 20_000L
 
         /**
-         * Every push the core decided, posted or not (a suppressed one too).
-         * M7 Task 1 feeds the widgets from it, as the iOS extension merges
-         * each decided push (`NotificationService.swift:109-112`).
+         * Every push the core decided, posted or not (a suppressed one too), seen
+         * by whoever listens. The widgets' own feed does not depend on it: each
+         * decided push is merged into the snapshot by [AppCore.widgetsDecided],
+         * as the iOS extension merges each one (`NotificationService.swift:118-125`).
          */
         @Volatile
         var onDecided: (NotificationDto) -> Unit = {}
@@ -111,7 +112,7 @@ internal fun deliverPush(
 ): Job = scope.launch {
     // The host parses its own transport and nothing more.
     val push = MatrixPush.parse(bytes) ?: return@launch
-    val work = scope.async { decide(push, core) }
+    val work = scope.async { decide(context, push, core) }
     val outcome = withTimeoutOrNull(budgetMs) { work.await() } ?: PushOutcome.Generic(account = null)
     val live = AppCore.coordinator
     if (live != null && !notificationPresentsRemote(push.roomId, push.eventId, live.context, live.notified.toList())) {
@@ -126,7 +127,7 @@ internal fun deliverPush(
     }
 }
 
-private suspend fun decide(push: MatrixPush, core: () -> CoreInterface): PushOutcome {
+private suspend fun decide(context: Context, push: MatrixPush, core: () -> CoreInterface): PushOutcome {
     var account: String? = null
     return try {
         val client = withContext(Dispatchers.IO) { CoreClient(core()) }
@@ -140,8 +141,15 @@ private suspend fun decide(push: MatrixPush, core: () -> CoreInterface): PushOut
             null
         }
         val note = client.notificationFor(push.roomId, push.eventId)
-        // The widgets' business; it never changes what is posted.
+        // The widgets' business; it never changes what is posted. Merged
+        // before the push is shown, as on iOS, and its failure is its own.
         runCatching { SupermessagePushService.onDecided(note) }
+        try {
+            AppCore.widgetsDecided(context, note)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
         if (note.suppress != null) PushOutcome.Drop else PushOutcome.Show(plannedFromDecided(note), account)
     } catch (e: CancellationException) {
         throw e

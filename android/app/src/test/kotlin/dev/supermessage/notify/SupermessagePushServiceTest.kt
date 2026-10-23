@@ -13,6 +13,7 @@ import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -64,11 +65,46 @@ class SupermessagePushServiceTest {
         }
     }
 
+    /** What the widgets' writer was asked to merge; the real one writes a file. */
+    private class Widgets(val fails: Boolean = false) : dev.supermessage.kit.widgets.WidgetWriting {
+        val notes: MutableList<NotificationDto> = Collections.synchronizedList(mutableListOf())
+        override suspend fun apply(note: NotificationDto): Boolean {
+            if (fails) throw java.io.IOException("disk full")
+            notes += note
+            return true
+        }
+        override suspend fun apply(rows: List<uniffi.supermessage_core.RoomRow>, live: List<uniffi.supermessage_core.WidgetLiveTurn>, asOfMs: Long) = false
+        override suspend fun apply(roomId: String, rows: List<TimelineRow>) = false
+        override suspend fun markAnswered(roomId: String, eventId: String, optionId: String) = false
+        override suspend fun clearAnswer(roomId: String, eventId: String) = false
+        override suspend fun opened() = false
+        override suspend fun signedOut() = false
+        override fun holdsDecision(roomId: String) = false
+    }
+
+    private fun installWidgets(widgets: Widgets): MutableList<Boolean> {
+        val redraws = Collections.synchronizedList(mutableListOf<Boolean>())
+        AppCore.installWidgetsForTest(
+            widgets,
+            object : dev.supermessage.widgets.WidgetRedraw(app, nextChangeMs = { null }, widgets = { emptyList() }) {
+                override suspend fun after(reload: Boolean) { redraws += reload }
+            },
+        )
+        return redraws
+    }
+
     private val decidedSeen = Collections.synchronizedList(mutableListOf<NotificationDto>())
+
+    /** No test writes the real snapshot file unless it means to. */
+    @Before
+    fun noRealWidgets() {
+        installWidgets(Widgets())
+    }
 
     @After
     fun forget() {
         AppCore.installForTest(null)
+        AppCore.installWidgetsForTest(null)
         AppCore.coordinator = null
         SupermessagePushService.onDecided = {}
         manager.cancelAll()
@@ -112,6 +148,31 @@ class SupermessagePushServiceTest {
         assertEquals("Ops", text(note, Notification.EXTRA_SUB_TEXT))
         assertEquals(1, shadowOf(manager).allNotifications.size)
         assertEquals("the hook sees what the core decided", listOf(decided()), decidedSeen.toList())
+    }
+
+    /** `NotificationService.swift:118-125`: each decided push is merged, and the core's `reload` decides the redraw. */
+    @Test
+    fun aDecidedPushIsMergedIntoTheWidgets() {
+        val widgets = Widgets()
+        val redraws = installWidgets(widgets)
+        deliver(Recording(decided(NotificationCategory.GATE)))
+        assertEquals(listOf(decided(NotificationCategory.GATE)), widgets.notes.toList())
+        assertEquals("the redraw follows the merge's reload", listOf(true), redraws.toList())
+    }
+
+    @Test
+    fun aSuppressedPushIsStillMergedIntoTheWidgets() {
+        val widgets = Widgets()
+        installWidgets(widgets)
+        deliver(Recording(decided(suppress = NotificationSuppression.REACTION)))
+        assertEquals(1, widgets.notes.size)
+    }
+
+    @Test
+    fun aFailedWidgetWriteNeverStopsThePushBeingShown() {
+        installWidgets(Widgets(fails = true))
+        deliver(Recording(decided()))
+        assertEquals("Lyra", text(checkNotNull(shown()), Notification.EXTRA_TITLE))
     }
 
     @Test

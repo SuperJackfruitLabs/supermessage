@@ -91,5 +91,13 @@
                 <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
             </intent-filter>
         </service>
+
+        <!--
+          M7 Android Task 1. The widgets' redraw alarms (the next frame, and every
+          15 minutes). Not exported: only this app's own PendingIntents reach it.
+        -->
+        <receiver
+            android:name=".widgets.WidgetRedrawReceiver"
+            android:exported="false" />
     </application>
 </manifest>

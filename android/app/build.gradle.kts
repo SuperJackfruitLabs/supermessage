@@ -174,6 +174,12 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     // Background push (M6 Task 4): the distributor wakes SupermessagePushService.
     implementation(libs.unifiedpush.connector)
+    // The home-screen widgets (M7 Android): Glance draws what the core's
+    // `widgetView` says. The previews are debug-only, like Compose's.
+    implementation(libs.glance.appwidget)
+    debugImplementation(libs.glance.preview)
+    debugImplementation(libs.glance.appwidget.preview)
+    testImplementation(libs.glance.appwidget.testing)
 
     // `StubCore`, which every FakeCore in this module extends. See :kit's
     // build file for why it is a test fixture and not a test source file.

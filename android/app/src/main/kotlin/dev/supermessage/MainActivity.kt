@@ -9,6 +9,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -112,7 +114,13 @@ class MainActivity : ComponentActivity() {
         model.startNotifications()
         // Start and stop of the Activity are the app coming forward and going
         // away (iOS `scenePhase`); the notification lifecycle follows them.
-        lifecycle.addObserver(ScenePhaseObserver { active -> model.notifications.activeChanged(active) })
+        lifecycle.addObserver(
+            ScenePhaseObserver { active ->
+                model.notifications.activeChanged(active)
+                // The widgets' recap starts again on the way in and on the way out.
+                coordinator?.activeChanged(active)
+            },
+        )
         val registrar = AppCore.registrar(this)
         val coordinator = PlatformCoordinator(
             context = this,
@@ -120,7 +128,20 @@ class MainActivity : ComponentActivity() {
             permissionLauncher = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
             askForPush = { askForPush(this, registrar) },
             pushSignedOut = registrar::signedOut,
+            widgets = AppCore.widgetWriter(this),
+            widgetsWritten = AppCore.widgetRedraw(this)::after,
         ).also { coordinator = it }
+        // On the process's scope, so a change after the Activity stops still lands.
+        coordinator.watch(model.session, AppCore.scope)
+        AppCore.decisionAnswered = coordinator::decisionAnswered
+        lifecycle.addObserver(
+            object : DefaultLifecycleObserver {
+                override fun onDestroy(owner: LifecycleOwner) {
+                    coordinator.stopWatching()
+                    AppCore.decisionAnswered = { _, _, _ -> }
+                }
+            },
+        )
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { coordinator.run() }
         }
