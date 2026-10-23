@@ -1184,6 +1184,26 @@ pub fn audio_clock_label(ms: u64) -> String {
     supermessage_core::audio::audio_clock_label(ms)
 }
 
+/// The voice recorder's numbers — see `core::voice_recording::spec`.
+#[uniffi::export]
+pub fn voice_recording_spec() -> supermessage_core::voice_recording::VoiceRecordingSpec {
+    supermessage_core::voice_recording::spec()
+}
+
+/// Meter readings (dBFS) as a waveform of at most `bins` levels between 0 and
+/// 1 — see `core::voice_recording::waveform`.
+#[uniffi::export]
+pub fn voice_waveform(decibels: Vec<f32>, bins: u32) -> Vec<f32> {
+    supermessage_core::voice_recording::waveform(&decibels, bins as usize)
+}
+
+/// Whether a recording is long enough to send — see
+/// `core::voice_recording::long_enough`.
+#[uniffi::export]
+pub fn voice_long_enough(duration_ms: u64) -> bool {
+    supermessage_core::voice_recording::long_enough(duration_ms)
+}
+
 /// "Thought for 12s · 2 steps" — see `core::turn_label::turn_record_label`.
 #[uniffi::export]
 pub fn turn_record_label(thought: bool, steps: u32, elapsed_ms: Option<u64>) -> String {
@@ -1207,6 +1227,16 @@ pub fn turn_duration_label(elapsed_ms: u64) -> String {
 #[uniffi::export]
 pub fn elapsed_label(elapsed_ms: i64) -> String {
     supermessage_core::turn_label::elapsed_label(elapsed_ms)
+}
+
+/// A turn in the Live Activity's words, or `None` for a turn that timed out —
+/// see `core::turn_card::turn_card`.
+#[uniffi::export]
+pub fn turn_card(
+    summary: supermessage_core::turns::TurnSummary,
+    agent_name: String,
+) -> Option<supermessage_core::turn_card::TurnCard> {
+    supermessage_core::turn_card::turn_card(&summary, &agent_name)
 }
 
 /// How many graphemes a message may have before a row says `is_long_read`
