@@ -1,4 +1,5 @@
 import Testing
+import SupermessageFFI
 
 @testable import SupermessageKit
 
