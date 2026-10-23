@@ -2,6 +2,7 @@ package dev.supermessage.kit.notify
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.supermessage_core.NotificationAnswer
@@ -43,9 +44,18 @@ object NotificationAnswerer {
         budgetMs: Long,
         scope: CoroutineScope,
     ): Boolean {
-        val work = scope.async { attempt(answer, client) }
+        val work = start(answer, client, scope)
         return withTimeoutOrNull(budgetMs) { work.await() } ?: false
     }
+
+    /**
+     * Starts the answer in [scope] and hands back the work itself, for a
+     * caller that must tell "not sent" from "not finished yet": a send that
+     * outruns the caller's wait may still land, so it must not be reported
+     * as failed until [Deferred.await] says so.
+     */
+    fun start(answer: NotificationAnswer, client: NotificationAnswering, scope: CoroutineScope): Deferred<Boolean> =
+        scope.async { attempt(answer, client) }
 
     private suspend fun attempt(answer: NotificationAnswer, client: NotificationAnswering): Boolean {
         return try {

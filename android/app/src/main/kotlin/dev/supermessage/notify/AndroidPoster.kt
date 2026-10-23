@@ -112,8 +112,10 @@ internal class AndroidPoster(
             .putExtra(EXTRA_BODY, note.body)
             .putExtra(EXTRA_CATEGORY, note.category.name)
         // A RemoteInput needs the system to fill in the typed text, so only
-        // that action's PendingIntent is mutable.
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+        // that action's PendingIntent is mutable. One-shot: an answer is sent
+        // once, and a second tap (from any process) is refused by the system;
+        // the receiver's own once-per-note guard covers the same in-process.
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_ONE_SHOT or
             (if (spec.textInput != null) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE)
         // Unique per (tag, action), or one note's Approve would stand in for another's.
         val pending = PendingIntent.getBroadcast(context, "${note.id}|${spec.id}".hashCode(), intent, flags)

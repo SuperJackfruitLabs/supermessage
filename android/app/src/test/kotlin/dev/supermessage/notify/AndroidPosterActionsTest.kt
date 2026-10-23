@@ -69,6 +69,17 @@ class AndroidPosterActionsTest {
         assertEquals(emptyList<String>(), titles(NotificationCategory.MESSAGE))
     }
 
+    /** A second send of a used answer is refused by the system too, across processes. */
+    @Test
+    fun anAnswerButtonCanBeUsedOnce() {
+        poster.post(note(NotificationCategory.GATE).copy(id = "\$g"))
+        val gate = shadowOf(manager).getNotification("\$g", 1).actions.toList()
+        assertEquals(3, gate.size)
+        for (action in gate) {
+            assertTrue("${action.title} is not one-shot", shadowOf(action.actionIntent).flags and android.app.PendingIntent.FLAG_ONE_SHOT != 0)
+        }
+    }
+
     @Test
     fun everyAnswerRequiresUnlock() {
         val all = actionsOf(NotificationCategory.PERMISSION).toList()
