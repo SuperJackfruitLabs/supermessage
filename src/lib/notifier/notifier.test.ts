@@ -144,6 +144,24 @@ describe("notifier: focused timeline", () => {
     expect(f.focused.mock.calls[2]![2]).toBe(switchedAt);
   });
 
+  it("rows read while the window was focused are history after it blurs", async () => {
+    const f = fakes();
+    const n = createNotifier(f.deps);
+    n.focusChanged(true);
+    n.selectedChanged("!a:x");
+    vi.advanceTimersByTime(CATCH_UP_MS + 60_000);
+    n.timelineChanged("!a:x", "A");
+    await vi.advanceTimersByTimeAsync(THROTTLE);
+    vi.setSystemTime(Date.now() + 120_000);
+    const blurredAt = Date.now();
+    n.focusChanged(false);
+    vi.setSystemTime(blurredAt + 30_000);
+    n.timelineChanged("!a:x", "A");
+    await vi.advanceTimersByTimeAsync(THROTTLE);
+    // The core is told only rows after the blur are news; everything earlier was on screen.
+    expect(f.focused.mock.calls.at(-1)![2]).toBe(blurredAt);
+  });
+
   it("the focused room in a focused window is passed as open and active", async () => {
     const f = fakes();
     const n = createNotifier(f.deps);

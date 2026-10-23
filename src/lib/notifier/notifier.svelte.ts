@@ -164,6 +164,9 @@ export function createNotifier(deps: NotifierDeps = DEFAULT_DEPS) {
     focusChanged(next: boolean): void {
       focused = next;
       if (next) catchUpUntil = deps.now() + CATCH_UP_MS;
+      // What was on screen while the window had focus was read, not news. The core suppresses the
+      // open room while active and so never marks those rows; `since` is what keeps them quiet.
+      else since = deps.now();
     },
     selectedChanged(roomId: string | null): void {
       selectedId = roomId;
