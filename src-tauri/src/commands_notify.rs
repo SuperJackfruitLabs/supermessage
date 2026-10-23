@@ -137,7 +137,6 @@ pub async fn notification_post(
 }
 
 pub(crate) fn post_planned(poster: &dyn Poster, note: &PlannedNotification) -> Result<(), String> {
-    let info = notification_policy::user_info(note);
     let actions = notification_policy::actions(note.category)
         .into_iter()
         // The notification's own click already opens the room; "Open" as well would
@@ -147,7 +146,6 @@ pub(crate) fn post_planned(poster: &dyn Poster, note: &PlannedNotification) -> R
             id: spec.id,
             title: spec.title,
             text_input: spec.text_input.is_some(),
-            user_info: info.clone(),
         })
         .collect();
     poster.post(&PostedNote {
@@ -156,6 +154,7 @@ pub(crate) fn post_planned(poster: &dyn Poster, note: &PlannedNotification) -> R
         title: note.title.clone(),
         body: body_with_subtitle(note.subtitle.as_deref(), &note.body),
         actions,
+        user_info: notification_policy::user_info(note),
     })
 }
 
@@ -482,19 +481,33 @@ mod tests {
         let ids: Vec<&str> = note.actions.iter().map(|a| a.id.as_str()).collect();
         assert_eq!(ids, ["sm.permission.allowOnce", "sm.permission.reject"]);
         assert_eq!(
-            note.actions[0]
-                .user_info
-                .get("sm.allowOptionId")
-                .map(String::as_str),
-            Some("allow_once")
+            note.user_info,
+            notification_policy::user_info(&planned(NotificationCategory::Permission))
         );
         assert_eq!(
-            note.actions[1]
-                .user_info
-                .get("sm.rejectOptionId")
-                .map(String::as_str),
-            Some("reject")
+            note.user_info.get("sm.allowOptionId").map(String::as_str),
+            Some("allow_once")
         );
+    }
+
+    #[test]
+    fn a_note_without_actions_still_carries_its_room() {
+        // A message has no actions and a decision's only one is the click itself; the
+        // click must still find its room (`notification_policy::response`).
+        for category in [
+            NotificationCategory::Message,
+            NotificationCategory::Decision,
+        ] {
+            let rec = Capturing(Mutex::new(Vec::new()));
+            post_planned(&rec, &planned(category)).unwrap();
+            let posted = rec.0.lock().unwrap();
+            assert!(posted[0].actions.is_empty());
+            assert_eq!(
+                posted[0].user_info.get("sm.roomId").map(String::as_str),
+                Some("!r:x"),
+                "{category:?}"
+            );
+        }
     }
 
     #[test]

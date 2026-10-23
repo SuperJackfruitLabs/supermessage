@@ -415,6 +415,88 @@ mod tests {
         assert!(rec.posted.lock().unwrap().is_empty());
     }
 
+    /// End to end through the real poster's bookkeeping: the core's note is posted through
+    /// `XdgPoster` to a fake server, the reader presses it there, and what the poster
+    /// reports is what `handle` gets, as `spawn_action_consumer` passes it on.
+    #[cfg(target_os = "linux")]
+    async fn press_through_the_poster(
+        rec: &Arc<Recording>,
+        note: &PlannedNotification,
+        action: &str,
+    ) {
+        let (poster, server, mut rx) = crate::notify::fake::poster(true);
+        post_planned(&poster, note).unwrap();
+        server.press(server.last_id(), action);
+        let taken = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("the press is reported")
+            .expect("the channel is open");
+        handle(
+            taken.action_id,
+            info_map(&taken.user_info),
+            &**rec,
+            &**rec,
+            rec.clone(),
+        )
+        .await;
+    }
+
+    #[cfg(target_os = "linux")]
+    fn message_note() -> PlannedNotification {
+        PlannedNotification {
+            id: "!m:x#1700".into(),
+            room_id: "!m:x".into(),
+            event_id: None,
+            title: "Priya".into(),
+            subtitle: None,
+            body: "Lunch?".into(),
+            category: NotificationCategory::Message,
+            permission: None,
+            gate: None,
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn clicking_a_message_note_opens_its_room() {
+        let rec = Arc::new(Recording::default());
+        press_through_the_poster(&rec, &message_note(), "default").await;
+        assert_eq!(*rec.opened.lock().unwrap(), ["!m:x"]);
+        assert!(rec.sent.lock().unwrap().is_empty());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn clicking_a_decision_note_opens_its_room() {
+        let rec = Arc::new(Recording::default());
+        let note = PlannedNotification {
+            id: "!d:x#pending#3".into(),
+            room_id: "!d:x".into(),
+            category: NotificationCategory::Decision,
+            ..message_note()
+        };
+        press_through_the_poster(&rec, &note, "default").await;
+        assert_eq!(*rec.opened.lock().unwrap(), ["!d:x"]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn clicking_the_answer_failed_note_opens_its_room() {
+        let rec = Arc::new(Recording::default());
+        press_through_the_poster(&rec, &notification_policy::answer_failed("!f:x"), "default")
+            .await;
+        assert_eq!(*rec.opened.lock().unwrap(), ["!f:x"]);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn a_button_pressed_on_the_poster_answers_in_its_room() {
+        let rec = Arc::new(Recording::default());
+        press_through_the_poster(&rec, &permission_note(), ACTION_ALLOW_ONCE).await;
+        assert_eq!(*rec.sent.lock().unwrap(), ["permission !r:x allow_once"]);
+        assert!(rec.opened.lock().unwrap().is_empty());
+    }
+
     #[test]
     fn a_press_info_keeps_only_strings() {
         let info = info_map(&serde_json::json!({ "roomId": "!r:x", "n": 3 }));

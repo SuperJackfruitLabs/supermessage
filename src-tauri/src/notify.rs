@@ -31,6 +31,12 @@ pub struct PostedNote {
     pub title: String,
     pub body: String,
     pub actions: Vec<PostedAction>,
+    /// What the core says the note carries (`notification_policy::user_info`): the room,
+    /// the event, and the option ids an answer needs. It is the note's own, whatever its
+    /// actions, as iOS puts it on the content (`LocalNotifier.swift:51`), and it comes back
+    /// with every press, the click on the note itself included.
+    #[serde(default)]
+    pub user_info: HashMap<String, String>,
 }
 
 /// A button the core offered for a note.
@@ -43,11 +49,6 @@ pub struct PostedAction {
     /// desktop notification protocol has no text input, so such an action is
     /// never a button; the reader types it in the app.
     pub text_input: bool,
-    /// What the core says this action carries (`notification_policy::user_info`):
-    /// the room, the event, and the option ids an answer needs. It comes back with
-    /// the press.
-    #[serde(default)]
-    pub user_info: HashMap<String, String>,
 }
 
 /// Where notifications go. Implemented per platform; faked in tests.
@@ -77,7 +78,7 @@ const DEFAULT_ACTION_LABEL: &str = "Open";
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActionTaken {
     pub action_id: String,
-    /// `{ "id": <note id>, "roomId": <room id> }`.
+    /// The note's own info, as the core gave it ([`PostedNote::user_info`]).
     pub user_info: Value,
 }
 
@@ -143,19 +144,16 @@ mod xdg {
     /// is forgotten (a note that old has long been seen).
     const MAX_KNOWN: usize = 256;
 
-    /// What a press reports: the note and room, plus what the core put in the
-    /// note's actions. The core gives every action of a note the same info, so the
-    /// first stands for all of them.
+    /// What a press reports: the note's own info, exactly as the core gave it. A note
+    /// with no actions (every message, a decision) carries it too, so a click on it
+    /// opens its room.
     fn user_info_for(note: &PostedNote) -> Value {
-        let mut info = serde_json::Map::new();
-        if let Some(action) = note.actions.first() {
-            for (k, v) in &action.user_info {
-                info.insert(k.clone(), Value::String(v.clone()));
-            }
-        }
-        info.insert("id".into(), Value::String(note.id.clone()));
-        info.insert("roomId".into(), Value::String(note.room_id.clone()));
-        Value::Object(info)
+        Value::Object(
+            note.user_info
+                .iter()
+                .map(|(k, v)| (k.clone(), Value::String(v.clone())))
+                .collect(),
+        )
     }
 
     /// What the reader did with a notification.
@@ -433,6 +431,134 @@ impl<R: tauri::Runtime> Poster for PluginPoster<R> {
     }
 }
 
+/// A fake notification server for the tests of this file and of `notify_actions`, which
+/// drive the real [`XdgPoster`]'s bookkeeping end to end.
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) mod fake {
+    use super::xdg::{Outcome, XdgBackend, XdgHandle, XdgPoster, XdgRequest};
+    use super::ActionTaken;
+    use std::collections::HashMap;
+    use std::sync::mpsc::{channel, Receiver, Sender};
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    /// A notification server that shows nothing and records everything.
+    pub struct FakeServer {
+        actions: bool,
+        pub next: Mutex<u32>,
+        pub shown: Mutex<Vec<XdgRequest>>,
+        pub closed: Mutex<Vec<u32>>,
+        /// What each blocked `wait` is waiting on: press, or close.
+        gates: Mutex<HashMap<u32, Sender<Outcome>>>,
+        waiters: Mutex<HashMap<u32, Receiver<Outcome>>>,
+        /// Makes `wait` panic, as a failing bus connection can.
+        pub panic_in_wait: std::sync::atomic::AtomicBool,
+    }
+
+    impl FakeServer {
+        pub fn new(actions: bool) -> Arc<Self> {
+            Arc::new(Self {
+                actions,
+                next: Mutex::new(100),
+                shown: Mutex::new(vec![]),
+                closed: Mutex::new(vec![]),
+                gates: Mutex::new(HashMap::new()),
+                waiters: Mutex::new(HashMap::new()),
+                panic_in_wait: std::sync::atomic::AtomicBool::new(false),
+            })
+        }
+        /// The server id of the newest notification shown.
+        pub fn last_id(&self) -> u32 {
+            *self.next.lock().unwrap()
+        }
+        pub fn press(&self, id: u32, action: &str) {
+            if let Some(tx) = self.gates.lock().unwrap().get(&id) {
+                let _ = tx.send(Outcome::Action(action.into()));
+            }
+        }
+    }
+
+    struct FakeHandle {
+        id: u32,
+        server: Arc<FakeServer>,
+    }
+
+    impl XdgHandle for FakeHandle {
+        fn id(&self) -> u32 {
+            self.id
+        }
+        fn close(self: Box<Self>) {
+            self.server.closed.lock().unwrap().push(self.id);
+            if let Some(tx) = self.server.gates.lock().unwrap().get(&self.id) {
+                let _ = tx.send(Outcome::Closed);
+            }
+        }
+    }
+
+    pub struct Backend(Arc<FakeServer>);
+
+    impl XdgBackend for Backend {
+        fn supports_actions(&self) -> bool {
+            self.0.actions
+        }
+        fn show(&self, request: &XdgRequest) -> Result<Box<dyn XdgHandle>, String> {
+            self.0.shown.lock().unwrap().push(request.clone());
+            let id = match request.replaces {
+                Some(id) => id,
+                None => {
+                    let mut next = self.0.next.lock().unwrap();
+                    *next += 1;
+                    *next
+                }
+            };
+            let mut gates = self.0.gates.lock().unwrap();
+            if let std::collections::hash_map::Entry::Vacant(slot) = gates.entry(id) {
+                let (tx, rx) = channel();
+                slot.insert(tx);
+                self.0.waiters.lock().unwrap().insert(id, rx);
+            }
+            Ok(Box::new(FakeHandle {
+                id,
+                server: Arc::clone(&self.0),
+            }))
+        }
+        fn wait(&self, id: u32) -> Outcome {
+            if self
+                .0
+                .panic_in_wait
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                panic!("the bus went away");
+            }
+            let rx = self
+                .0
+                .waiters
+                .lock()
+                .unwrap()
+                .remove(&id)
+                .expect("one waiter");
+            rx.recv_timeout(Duration::from_secs(5))
+                .unwrap_or(Outcome::Closed)
+        }
+    }
+
+    pub fn poster(
+        actions: bool,
+    ) -> (
+        XdgPoster,
+        Arc<FakeServer>,
+        tokio::sync::mpsc::UnboundedReceiver<ActionTaken>,
+    ) {
+        let server = FakeServer::new(actions);
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        (
+            XdgPoster::new(Arc::new(Backend(Arc::clone(&server))), tx),
+            server,
+            rx,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,111 +575,12 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     mod linux {
-        use super::super::xdg::{
-            Outcome, XdgBackend, XdgHandle, XdgPoster, XdgRequest, MAX_WAITERS,
-        };
+        use super::super::fake::poster;
+        use super::super::xdg::{XdgPoster, MAX_WAITERS};
         use super::super::*;
         use serde_json::json;
-        use std::collections::HashMap;
-        use std::sync::mpsc::{channel, Receiver, Sender};
-        use std::sync::{Arc, Mutex};
+        use std::sync::Arc;
         use std::time::Duration;
-
-        /// A notification server that shows nothing and records everything.
-        struct FakeServer {
-            actions: bool,
-            next: Mutex<u32>,
-            shown: Mutex<Vec<XdgRequest>>,
-            closed: Mutex<Vec<u32>>,
-            /// What each blocked `wait` is waiting on: press, or close.
-            gates: Mutex<HashMap<u32, Sender<Outcome>>>,
-            waiters: Mutex<HashMap<u32, Receiver<Outcome>>>,
-            /// Makes `wait` panic, as a failing bus connection can.
-            panic_in_wait: std::sync::atomic::AtomicBool,
-        }
-
-        impl FakeServer {
-            fn new(actions: bool) -> Arc<Self> {
-                Arc::new(Self {
-                    actions,
-                    next: Mutex::new(100),
-                    shown: Mutex::new(vec![]),
-                    closed: Mutex::new(vec![]),
-                    gates: Mutex::new(HashMap::new()),
-                    waiters: Mutex::new(HashMap::new()),
-                    panic_in_wait: std::sync::atomic::AtomicBool::new(false),
-                })
-            }
-            fn press(&self, id: u32, action: &str) {
-                if let Some(tx) = self.gates.lock().unwrap().get(&id) {
-                    let _ = tx.send(Outcome::Action(action.into()));
-                }
-            }
-        }
-
-        struct FakeHandle {
-            id: u32,
-            server: Arc<FakeServer>,
-        }
-
-        impl XdgHandle for FakeHandle {
-            fn id(&self) -> u32 {
-                self.id
-            }
-            fn close(self: Box<Self>) {
-                self.server.closed.lock().unwrap().push(self.id);
-                if let Some(tx) = self.server.gates.lock().unwrap().get(&self.id) {
-                    let _ = tx.send(Outcome::Closed);
-                }
-            }
-        }
-
-        struct Backend(Arc<FakeServer>);
-
-        impl XdgBackend for Backend {
-            fn supports_actions(&self) -> bool {
-                self.0.actions
-            }
-            fn show(&self, request: &XdgRequest) -> Result<Box<dyn XdgHandle>, String> {
-                self.0.shown.lock().unwrap().push(request.clone());
-                let id = match request.replaces {
-                    Some(id) => id,
-                    None => {
-                        let mut next = self.0.next.lock().unwrap();
-                        *next += 1;
-                        *next
-                    }
-                };
-                let mut gates = self.0.gates.lock().unwrap();
-                if let std::collections::hash_map::Entry::Vacant(slot) = gates.entry(id) {
-                    let (tx, rx) = channel();
-                    slot.insert(tx);
-                    self.0.waiters.lock().unwrap().insert(id, rx);
-                }
-                Ok(Box::new(FakeHandle {
-                    id,
-                    server: Arc::clone(&self.0),
-                }))
-            }
-            fn wait(&self, id: u32) -> Outcome {
-                if self
-                    .0
-                    .panic_in_wait
-                    .load(std::sync::atomic::Ordering::SeqCst)
-                {
-                    panic!("the bus went away");
-                }
-                let rx = self
-                    .0
-                    .waiters
-                    .lock()
-                    .unwrap()
-                    .remove(&id)
-                    .expect("one waiter");
-                rx.recv_timeout(Duration::from_secs(5))
-                    .unwrap_or(Outcome::Closed)
-            }
-        }
 
         fn note(id: &str, actions: Vec<PostedAction>) -> PostedNote {
             PostedNote {
@@ -562,6 +589,7 @@ mod tests {
                 title: "Build agent".into(),
                 body: "Ship it?".into(),
                 actions,
+                user_info: HashMap::from([("sm.roomId".to_owned(), "!r:x".to_owned())]),
             }
         }
 
@@ -570,24 +598,7 @@ mod tests {
                 id: id.into(),
                 title: id.into(),
                 text_input,
-                user_info: Default::default(),
             }
-        }
-
-        fn poster(
-            actions: bool,
-        ) -> (
-            XdgPoster,
-            Arc<FakeServer>,
-            tokio::sync::mpsc::UnboundedReceiver<ActionTaken>,
-        ) {
-            let server = FakeServer::new(actions);
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-            (
-                XdgPoster::new(Arc::new(Backend(Arc::clone(&server))), tx),
-                server,
-                rx,
-            )
         }
 
         fn wait_until(what: &str, mut ok: impl FnMut() -> bool) {
@@ -675,17 +686,17 @@ mod tests {
             });
             let taken = taken.unwrap();
             assert_eq!(taken.action_id, "approve");
-            assert_eq!(taken.user_info, json!({ "id": "$a", "roomId": "!r:x" }));
+            assert_eq!(taken.user_info, json!({ "sm.roomId": "!r:x" }));
         }
 
         #[test]
-        fn a_press_carries_what_the_core_put_in_the_action() {
+        fn a_press_carries_what_the_core_put_on_the_note() {
             let (poster, server, mut rx) = poster(true);
-            let mut action = button("approve", false);
-            action
+            let mut posted = note("$a", vec![button("approve", false)]);
+            posted
                 .user_info
                 .insert("sm.allowOptionId".into(), "allow_once".into());
-            poster.post(&note("$a", vec![action])).unwrap();
+            poster.post(&posted).unwrap();
             server.press(101, "approve");
             let mut taken = None;
             wait_until("the action", || {
@@ -694,7 +705,7 @@ mod tests {
             });
             assert_eq!(
                 taken.unwrap().user_info,
-                json!({ "id": "$a", "roomId": "!r:x", "sm.allowOptionId": "allow_once" })
+                json!({ "sm.roomId": "!r:x", "sm.allowOptionId": "allow_once" })
             );
         }
 
