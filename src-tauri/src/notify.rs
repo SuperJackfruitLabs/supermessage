@@ -75,6 +75,8 @@ pub fn body_with_subtitle(subtitle: Option<&str>, body: &str) -> String {
 }
 
 /// An action performed on a notification: what the reader pressed, and which note.
+/// Reported on Linux only (see `PluginPoster`).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActionTaken {
     pub action_id: String,
@@ -85,6 +87,7 @@ pub struct ActionTaken {
 }
 
 /// Receives the buttons the reader presses (Linux); `notify_actions` consumes them.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub type ActionSender = tokio::sync::mpsc::UnboundedSender<ActionTaken>;
 
 /// Holds the receiver of [`ActionTaken`] until the consumer takes it (once).

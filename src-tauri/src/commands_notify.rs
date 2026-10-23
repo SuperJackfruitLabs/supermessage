@@ -150,7 +150,9 @@ pub(crate) async fn signed_in_account(session: &Session) -> Option<String> {
     client.user_id().map(ToString::to_string)
 }
 
-/// Posts `note` for `account`, the one signed in when it was planned.
+/// Posts `note` for `account`, the only account a press on it may act for: the one signed
+/// in when it is posted (`notification_post` reads it just before), or for a failure note,
+/// the account whose answer failed.
 pub(crate) fn post_planned(
     poster: &dyn Poster,
     note: &PlannedNotification,

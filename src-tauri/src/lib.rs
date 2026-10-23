@@ -24,6 +24,8 @@ mod commands_session;
 mod commands_voice;
 mod host;
 mod notify;
+// Only Linux reports a press (see `notify::PluginPoster`), so elsewhere nothing calls in.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod notify_actions;
 
 use crate::commands::{
@@ -87,6 +89,8 @@ async fn core_status() -> CoreStatus {
 
 /// Whether a webview permission request may be granted: the microphone alone (audio, no
 /// video), and only while the view shows the app's own content. Everything else is denied.
+/// Asked by WebKitGTK only, so unused on macOS and Windows.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn allows_user_media(audio: bool, video: bool, uri: &Url) -> bool {
     audio && !video && is_app_origin(uri)
 }
@@ -295,8 +299,8 @@ pub fn run() {
             // all three must see the *one* map the session owns.
             app.manage(session.staged_attachments());
             app.manage(session);
-            // Where notifications go: `notify-rust` on Linux, which can carry answer
-            // buttons, the plugin elsewhere. The receiver is what Linux button
+            // Where notifications go: the Desktop Notifications protocol over the session
+            // bus on Linux, which can carry answer buttons, the plugin elsewhere. The receiver is what Linux button
             // presses arrive on; it waits to be taken.
             #[cfg(target_os = "linux")]
             {
