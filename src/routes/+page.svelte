@@ -23,8 +23,6 @@
   import { setUpAfterSignIn } from "$lib/stores/signInSetup";
   import { attention } from "$lib/stores/attention.svelte";
   import { notifier } from "$lib/notifier/notifier.svelte";
-  import { turnEnded } from "$lib/notifier/turnEnded";
-  import { onTurn } from "$lib/ipc";
   import { openRoomFromNotification } from "$lib/notifier/openRoom";
   import { navigateTo } from "$lib/navigate";
   import { createWindowFocus } from "$lib/stores/windowFocus.svelte";
@@ -146,7 +144,6 @@
     if (!restored) return;
     const apply = (focused: boolean) => {
       notifier.focusChanged(focused);
-      turnEnded.focusChanged(focused);
     };
     apply(untrack(() => windowFocus.focused));
     return windowFocus.onChange(apply);
@@ -154,23 +151,10 @@
   $effect(() => {
     if (!restored) return;
     notifier.selectedChanged(roomsStore.selectedId);
-    turnEnded.selectedChanged(roomsStore.selectedId);
   });
-  // A turn ending with no reply to carry the news (the Live Activity's stand-in). Every room's
-  // updates, not only the open one's.
-  $effect(() => {
-    if (!restored) return;
-    let stop: (() => void) | null = null;
-    let gone = false;
-    void onTurn((update) => turnEnded.turnChanged(update)).then((un) => {
-      if (gone) un();
-      else stop = un;
-    });
-    return () => {
-      gone = true;
-      stop?.();
-    };
-  });
+  // No turn-ended note, on purpose: iOS alerts only for needs_you and a turn's outcome rides on
+  // the answer's own push. To bring it back once the core can say "news no message carries", see
+  // core-backlog/cp6-followup-turn-finished.md.
   $effect(() => {
     if (!restored) return;
     notifier.roomsChanged(roomsStore.rooms);

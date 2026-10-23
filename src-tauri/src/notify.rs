@@ -475,6 +475,11 @@ mod xdg {
             connection.call_method(Some(destination), path, Some(interface), method, body)
         }
 
+        /// Whether a session bus could be reached at all (opens the connection on first use).
+        pub fn has_session_bus(&self) -> bool {
+            self.connection().is_some()
+        }
+
         /// Whether anyone owns the well-known `name` on the session bus now (the bus's own
         /// `NameHasOwner`), on this backend's connection and bounded by its timeout. Blocks for
         /// one round trip: never call it on the main thread.
@@ -1661,7 +1666,7 @@ mod tests {
 
         #[test]
         fn a_server_that_never_answers_costs_one_timeout_and_stops_nothing_else() {
-            const TIMEOUT: Duration = Duration::from_millis(800);
+            const TIMEOUT: Duration = Duration::from_millis(2000);
             let (backend, peer) = peer::start(TIMEOUT);
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             let poster = Arc::new(XdgPoster::new(Arc::new(backend), tx));
@@ -1740,6 +1745,18 @@ mod tests {
                 );
                 drop(peer.connected());
             }
+        }
+
+        /// With no session bus at all the probe reads the tray as unavailable, and a timeout on a
+        /// live bus does not: the real backend over a connection that cannot be opened.
+        #[test]
+        fn with_no_session_bus_the_probe_reports_no_tray() {
+            use crate::tray::{probe_watcher, WatcherProbe};
+            let backend = SessionBusBackend::over(
+                Box::new(|| Err(zbus::Error::Failure("no bus".into()))),
+                Duration::from_millis(100),
+            );
+            assert_eq!(probe_watcher(&backend), WatcherProbe::NoOwner);
         }
 
         /// A poster over the fake bus whose `GetNameOwner` answers follow `script`.

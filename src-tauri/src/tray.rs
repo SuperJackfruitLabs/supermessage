@@ -300,7 +300,8 @@ pub enum WatcherProbe {
     Owned,
     /// Nobody owns it: the tray item exists and nothing shows it.
     NoOwner,
-    /// The bus did not answer (no bus, a timeout, a refusal). Says nothing either way.
+    /// The bus did not answer (a timeout, a refusal). Says nothing either way. No session bus at
+    /// all is not this: it is [`WatcherProbe::NoOwner`].
     Failed,
 }
 
@@ -308,12 +309,18 @@ pub enum WatcherProbe {
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub trait NameOwners {
     fn name_has_owner(&self, name: &str) -> Result<bool, String>;
+    /// Whether there is a session bus to ask at all.
+    fn has_bus(&self) -> bool;
 }
 
 #[cfg(target_os = "linux")]
 impl NameOwners for crate::notify::SessionBusBackend {
     fn name_has_owner(&self, name: &str) -> Result<bool, String> {
         crate::notify::SessionBusBackend::name_has_owner(self, name).map_err(|e| e.to_string())
+    }
+
+    fn has_bus(&self) -> bool {
+        self.has_session_bus()
     }
 }
 
@@ -323,6 +330,12 @@ pub fn probe_watcher(bus: &impl NameOwners) -> WatcherProbe {
     match bus.name_has_owner(STATUS_NOTIFIER_WATCHER) {
         Ok(true) => WatcherProbe::Owned,
         Ok(false) => WatcherProbe::NoOwner,
+        // With no session bus nothing else can bring a hidden window back either: no tray item,
+        // no first-hide notice, no single-instance. Do not hide into that.
+        Err(error) if !bus.has_bus() => {
+            tracing::warn!(%error, "no session bus; the tray cannot be seen");
+            WatcherProbe::NoOwner
+        }
         Err(error) => {
             tracing::warn!(%error, "could not ask the session bus for a tray watcher; assuming the tray shows");
             WatcherProbe::Failed
@@ -724,21 +737,30 @@ mod tests {
         }
     }
 
-    struct Bus(Result<bool, String>);
+    struct Bus(Result<bool, String>, bool);
     impl NameOwners for Bus {
         fn name_has_owner(&self, name: &str) -> Result<bool, String> {
             assert_eq!(name, STATUS_NOTIFIER_WATCHER);
             self.0.clone()
         }
+        fn has_bus(&self) -> bool {
+            self.1
+        }
     }
 
     #[test]
     fn the_probe_maps_the_buss_answer() {
-        assert_eq!(probe_watcher(&Bus(Ok(true))), WatcherProbe::Owned);
-        assert_eq!(probe_watcher(&Bus(Ok(false))), WatcherProbe::NoOwner);
+        assert_eq!(probe_watcher(&Bus(Ok(true), true)), WatcherProbe::Owned);
+        assert_eq!(probe_watcher(&Bus(Ok(false), true)), WatcherProbe::NoOwner);
         assert_eq!(
-            probe_watcher(&Bus(Err("timeout".into()))),
-            WatcherProbe::Failed
+            probe_watcher(&Bus(Err("timeout".into()), true)),
+            WatcherProbe::Failed,
+            "a timeout on a live bus keeps the tray available"
+        );
+        assert_eq!(
+            probe_watcher(&Bus(Err("no session bus".into()), false)),
+            WatcherProbe::NoOwner,
+            "no bus at all: the window could hide with no way back"
         );
     }
 
