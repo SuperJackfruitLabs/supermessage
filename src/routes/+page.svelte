@@ -53,6 +53,7 @@
   import { createHeaderStatus, headerRows, headerTurnFlag } from "$lib/components/roomHeaderView";
   import type { RoomStatus } from "$lib/ipc";
   import { railEntries } from "$lib/components/spacesRailView";
+  import KeptPane from "$lib/components/KeptPane.svelte";
   import RoomList from "$lib/components/RoomList.svelte";
   import SpacesRail from "$lib/components/SpacesRail.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
@@ -855,14 +856,17 @@
   const firstRun = browserOnboarding();
   let recoverySettled = $state(false);
   let demoOpen = $state(false);
+  /** Closed in this run, whether or not storage took the "seen" mark, so a refusing store cannot reopen it. */
+  let demoDone = $state(false);
   $effect(() => {
     const holdForRecovery = !recoverySettled || (recoveryOpen && recoveryNewKey !== null);
-    if (!demoOpen && demoDue({ demoPending: firstRun.demoPending, demoSeen: firstRun.demoSeen }, holdForRecovery)) {
+    if (!demoOpen && !demoDone && demoDue({ demoPending: firstRun.demoPending, demoSeen: firstRun.demoSeen }, holdForRecovery)) {
       demoOpen = true;
     }
   });
   function finishDemo(): void {
     firstRun.finishDemo();
+    demoDone = true;
     demoOpen = false;
   }
 
@@ -1059,6 +1063,15 @@
               that value, so returning to it from the roster would silently
               do nothing.
             -->
+            <!--
+              The roster stays mounted whichever destination shows, and is hidden (out of the layout,
+              the tab order and the accessibility tree) rather than unmounted: a return to Chats
+              would otherwise rebuild its avatar cache (every avatar over IPC again), lose the scroll
+              position and flash "No rooms yet" until the first read landed.
+            -->
+            <KeptPane active={destinations.selected === "chats"}>
+              <RoomList onSelect={() => (roomPaneOpen = true)} />
+            </KeptPane>
             {#if destinations.selected === "needsYou"}
               <NeedsYouList
                 inbox={destinations.inbox}
@@ -1087,8 +1100,6 @@
                 onSearch={searchMessages}
                 onOpenRoom={chooseFromDestination}
               />
-            {:else}
-              <RoomList onSelect={() => (roomPaneOpen = true)} />
             {/if}
           </div>
           <!--
@@ -1212,7 +1223,7 @@
                   class="-ml-1 flex shrink-0 items-center gap-1 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
                 >
                   <span aria-hidden="true">‹</span>
-                  Chats
+                  {destinationTitle}
                 </button>
               {/if}
               {#if headerAvatar}

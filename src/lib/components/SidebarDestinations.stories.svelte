@@ -91,7 +91,7 @@
   {#snippet template(args)}{@render frame(args, "zoom: 1.5;")}{/snippet}
 </Story>
 
-<!-- A 288px sidebar at 150 % text is 192px of layout: two by two, nothing stretched, nothing cut. -->
+<!-- A container narrower than the labels need (a narrow window): two by two, nothing stretched, nothing cut. -->
 <Story
   name="Two by two at the sidebar width"
   args={{ selected: "needsYou", badgeCount: 3 }}
@@ -108,4 +108,25 @@
   }}
 >
   {#snippet template(args)}{@render frame(args, "zoom: 1.5; width: 192px;")}{/snippet}
+</Story>
+
+<!-- The real two-pane sidebar: 288px less its 1px border is 287px, at 100 % text. Four across, as on iOS. -->
+<Story
+  name="One row at the real sidebar width"
+  args={{ selected: "needsYou", badgeCount: 3 }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await check(root, "needsYou", "Needs you, 3", "3");
+    const tops = new Set(buttons(root).map((b) => Math.round(b.getBoundingClientRect().top)));
+    if (tops.size !== 1) throw new Error(`expected a single row, got ${tops.size} rows`);
+    for (const t of root.querySelectorAll<HTMLElement>("[data-testid='destination-title']")) {
+      if (t.scrollWidth > t.clientWidth) throw new Error(`"${t.textContent}" is clipped: ${t.scrollWidth} > ${t.clientWidth}`);
+    }
+    const nav = root.querySelector("nav")!;
+    if (nav.scrollWidth > nav.clientWidth + 1) throw new Error("the row overflows");
+  }}
+>
+  {#snippet template(args)}
+    <div class="w-[287px] bg-surface-sunken font-sans text-content"><SidebarDestinations {...args} /></div>
+  {/snippet}
 </Story>

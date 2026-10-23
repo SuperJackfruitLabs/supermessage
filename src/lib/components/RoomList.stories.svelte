@@ -5,6 +5,7 @@
   import type { RosterFilter, RosterFilterChip, RosterSection } from "$lib/ipc";
 
   import RoomList, { type Source } from "./RoomList.svelte";
+  import RosterTripHarness from "./roster/RosterTripHarness.svelte";
   import { createRosterFilter } from "./roster/rosterFilter";
 
   // A stand-in core. The real rules are `core::roster`'s and are tested there; these only give the
@@ -63,6 +64,7 @@
     }
   };
   const q = (root: HTMLElement, sel: string) => root.querySelector<HTMLElement>(sel);
+  const avatarCalls = (root: HTMLElement) => Number(q(root, "[data-testid='trip-root']")?.dataset.avatarCalls ?? 0);
   const rowCount = (root: HTMLElement) => root.querySelectorAll("button:has([data-testid='row-second-line'])").length;
 </script>
 
@@ -197,5 +199,58 @@
         },
       ),
     )}
+  {/snippet}
+</Story>
+
+<!--
+  The page keeps the roster mounted while Needs you, Agents or Search shows (`KeptPane`). A trip
+  away and back must not read an avatar again, keep the scroll position, and not say "No rooms yet".
+-->
+<Story
+  name="Survives a trip to another destination"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => rowCount(root) >= 20, "twenty rooms");
+    const nav = q(root, "nav[aria-label='Rooms']")!;
+    await settled(() => avatarCalls(root) >= 20, "the avatars");
+    nav.scrollTop = 300;
+    await new Promise((r) => requestAnimationFrame(() => r(null)));
+    const before = nav.scrollTop;
+    if (before < 100) throw new Error(`the roster did not scroll: ${before}`);
+    const calls = avatarCalls(root);
+
+    // A pointer press focuses its button; `click()` alone does not.
+    q(root, "[data-testid='away']")!.focus();
+    q(root, "[data-testid='away']")!.click();
+    const pane = q(root, "[data-testid='kept-pane']")!;
+    await settled(() => pane.hidden, "the roster to hide");
+    if (getComputedStyle(pane).display !== "none") throw new Error("the hidden roster still takes space");
+    if (!pane.inert) throw new Error("the hidden roster is still reachable");
+    if (root.querySelector("[role='status']")) throw new Error("a status is announced while away");
+
+    const back = q(root, "[data-testid='back']")!;
+    back.focus();
+    back.click();
+    await settled(() => !pane.hidden, "the roster to show");
+    if (q(root, "[data-testid='no-rooms']")) throw new Error("No rooms yet came back");
+    await new Promise((r) => setTimeout(r, 200));
+    if (avatarCalls(root) !== calls) throw new Error(`avatars read again: ${calls} -> ${avatarCalls(root)}`);
+    if (nav.scrollTop !== before) throw new Error(`scroll position lost: ${before} -> ${nav.scrollTop}`);
+    // Focus stays on the control that was pressed, not on the body or a vanished row.
+    if (document.activeElement !== back) throw new Error(`focus is on ${document.activeElement?.tagName}`);
+  }}
+>
+  {#snippet template()}
+    <RosterTripHarness
+      source={standIn([
+        one(
+          "recent",
+          null,
+          Array.from({ length: 4 }, (_, n) =>
+            fleetRosterRows.map((r) => ({ ...r, row: { ...r.row, room: { ...r.row.room, id: `${r.row.room.id}-${n}` } } })),
+          ).flat(),
+        ),
+      ])}
+    />
   {/snippet}
 </Story>
