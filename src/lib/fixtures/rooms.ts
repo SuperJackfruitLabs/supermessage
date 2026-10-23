@@ -5,6 +5,9 @@ import type {
   RoomMember,
   RoomRow,
   RoomSummary,
+  NeedsYouInbox,
+  RoomStatus,
+  RosterRow,
 } from "$lib/ipc";
 
 /**
@@ -206,3 +209,92 @@ export const rosterUnreadOver99: RoomRow = roomRow({
   }),
   preview: { text: "Anyone looked at the build?", pending: false },
 });
+
+
+// ───────────────────── the navigation revamp's fleet ─────────────────────
+//
+// iOS `Previews/NavigationRevampFixtures.swift`, row for row: agents in every state, a room of
+// people, and an invitation. The clock is fixed (iOS measures against `Date()`), so the age
+// labels are stable across runs.
+
+/** The instant the fleet's ages are measured from. */
+export const FLEET_NOW = 1_700_000_300_000;
+
+const ago = (minutes: number): number => FLEET_NOW - minutes * 60_000;
+
+function fleetRow(
+  id: string,
+  name: string,
+  role: string | null,
+  glyph: string | null,
+  overrides: Partial<RoomRow> & { summary?: Partial<RoomSummary> },
+): RoomRow {
+  const { summary, ...rest } = overrides;
+  return roomRow({
+    room: roomSummary({ id, name: glyph ? `${glyph} ${name}${role ? ` — ${role}` : ""}` : name, ...summary }),
+    identity: identity(name, { glyph, role, initial: glyph ?? name.slice(0, 1).toUpperCase() }),
+    ...rest,
+  });
+}
+
+export const fleetSuperpipeline: RoomRow = fleetRow("!superpipeline:example.org", "Superpipeline", "Delivery", "⌘", {
+  preview: { text: "Merge this branch into main?", pending: true },
+  summary: { unread: 2, lastActivityMs: ago(3), runtime: { harness: "superpipeline", host: "foundry" } },
+});
+export const fleetAtlas: RoomRow = fleetRow("!atlas:example.org", "Atlas", "Platform", "✳", {
+  preview: { text: "Atlas: Rebased onto main and the diff is empty.", pending: false },
+  summary: { unread: 1, lastActivityMs: ago(6), runtime: { harness: "claude-code", host: "foundry" } },
+});
+export const fleetSam: RoomRow = fleetRow("!sam:example.org", "Strategy Sam", "Strategy", "◆", {
+  preview: { text: "Can I open a draft PR for the pricing page?", pending: true },
+  summary: { lastActivityMs: ago(40), runtime: { harness: "codex", host: "studio" } },
+});
+export const fleetDesignReview: RoomRow = fleetRow("!design:example.org", "Design Review", null, null, {
+  preview: { text: "Priya: the new tab bar reads well", pending: false },
+  summary: { unread: 4, lastActivityMs: ago(90) },
+});
+export const fleetQuill: RoomRow = fleetRow("!quill:example.org", "Quill", "Writing", "✒", {
+  preview: { text: "Draft is in the branch.", pending: false },
+  summary: { lastActivityMs: ago(60 * 24 * 3) },
+});
+export const fleetEstate: RoomRow = fleetRow("!estate:example.org", "Estate Planning", null, null, {
+  summary: { membership: "invited" },
+  affordance: "respondToInvitation",
+});
+
+/** The rows as the core arranges them for the fleet (state and tile as `core::roster` gives them). */
+export const fleetRosterRows: RosterRow[] = [
+  { row: fleetSuperpipeline, state: "needsYou", describesAgent: true, avatar: agentAvatarVariantsFixture[0]! },
+  { row: fleetAtlas, state: "active", describesAgent: true, avatar: agentAvatarVariantsFixture[1]! },
+  { row: fleetSam, state: "needsYou", describesAgent: true, avatar: agentAvatarVariantsFixture[2]! },
+  { row: fleetDesignReview, state: "quiet", describesAgent: false },
+  { row: fleetQuill, state: "idle", describesAgent: true, avatar: agentAvatarVariantsFixture[3]! },
+  { row: fleetEstate, state: "quiet", describesAgent: false },
+];
+
+/** `core::roster::needs_you_inbox` over the fleet: two decisions and an invitation. */
+export const fleetNeedsYouInbox: NeedsYouInbox = {
+  decisions: [fleetRosterRows[0]!, fleetRosterRows[2]!],
+  invitations: [fleetRosterRows[5]!],
+  count: 3,
+  badgeCount: 2,
+};
+
+/** `core::roster::agent_directory` over the fleet: agents by recency, no invitations. */
+export const fleetAgentDirectory: RosterRow[] = [
+  fleetRosterRows[0]!,
+  fleetRosterRows[1]!,
+  fleetRosterRows[2]!,
+  fleetRosterRows[4]!,
+];
+
+/** The same fleet with every decision answered and no invitation left. */
+export const caughtUpInbox: NeedsYouInbox = { decisions: [], invitations: [], count: 0, badgeCount: 0 };
+
+/** What the core says of each fleet agent's status (`roomStatus` then `roomStatusWord`). */
+export const fleetStatuses: Record<string, { status: RoomStatus; word: string }> = {
+  "!superpipeline:example.org": { status: "needsYou", word: "Needs you" },
+  "!atlas:example.org": { status: "working", word: "Working" },
+  "!sam:example.org": { status: "needsYou", word: "Needs you" },
+  "!quill:example.org": { status: "idle", word: "Idle" },
+};
