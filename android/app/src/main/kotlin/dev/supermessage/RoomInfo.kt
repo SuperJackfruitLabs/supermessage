@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,6 +17,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -28,11 +33,22 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import dev.supermessage.kit.ReportSubject
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
@@ -41,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.ErrorPresenter
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.RoomInfoDto
@@ -112,11 +129,67 @@ fun RoomInfoPanel(
     onSetPinned: suspend (Boolean) -> Boolean,
     onLeaveRoom: suspend () -> Unit,
     modifier: Modifier = Modifier,
+    /** Whether the core's list has this user blocked; read in composition, so it must be snapshot state. */
+    isBlocked: (String) -> Boolean = { false },
+    /** Each write answers `null` when it landed, or the refusal in words. */
+    onBlock: suspend (String) -> String? = { null },
+    onUnblock: suspend (String) -> String? = { null },
+    onReport: suspend (ReportSubject, String, Boolean) -> String? = { _, _, _ -> null },
 ) {
     var info by remember(roomId) { mutableStateOf<RoomInfoDto?>(null) }
     var failure by remember(roomId) { mutableStateOf<String?>(null) }
     var showsLeaveConfirm by remember(roomId) { mutableStateOf(false) }
+    // The member whose actions are open, the report sheet's subject, and what
+    // opened them (a user id, or [ROOM_OPENER] / [LEAVE_OPENER]) so focus can
+    // come back to it when the sheet or dialog closes.
+    var actingOn by remember(roomId) { mutableStateOf<RoomMemberDto?>(null) }
+    var reporting by remember(roomId) { mutableStateOf<ReportSubject?>(null) }
+    var opener by remember(roomId) { mutableStateOf<String?>(null) }
+    var safetyFailure by remember(roomId) { mutableStateOf<String?>(null) }
+    var safetyBusy by remember(roomId) { mutableStateOf(false) }
+    // Members unblocked from this panel: the member's own flag lags the
+    // homeserver's echo, so what was just undone wins over it.
+    val unblockedHere = remember(roomId) { mutableStateMapOf<String, Unit>() }
+    val focusers = remember(roomId) { mutableMapOf<String, FocusRequester>() }
+    fun focuserFor(key: String) = focusers.getOrPut(key) { FocusRequester() }
+    val haptics = LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
+
+    // Focus returns to whatever opened a sheet or dialog once none is open.
+    val somethingOpen = actingOn != null || reporting != null || showsLeaveConfirm
+    LaunchedEffect(somethingOpen) {
+        val key = opener
+        if (!somethingOpen && key != null) {
+            opener = null
+            // A closing sheet's window is still handing focus back, so a first
+            // request can find nothing to take it: try again for a moment.
+            repeat(FOCUS_ATTEMPTS) {
+                if (runCatching { focuserFor(key).requestFocus() }.getOrDefault(false)) return@LaunchedEffect
+                delay(FOCUS_RETRY_MS)
+            }
+        }
+    }
+
+    fun blockedNow(member: RoomMemberDto): Boolean =
+        isBlocked(member.userId) || (member.isIgnored && member.userId !in unblockedHere)
+
+    fun write(member: RoomMemberDto, unblocking: Boolean) {
+        actingOn = null
+        safetyBusy = true
+        scope.launch {
+            try {
+                val refused = if (unblocking) onUnblock(member.userId) else onBlock(member.userId)
+                if (refused != null) {
+                    safetyFailure = refused
+                } else {
+                    if (unblocking) unblockedHere[member.userId] = Unit else unblockedHere.remove(member.userId)
+                    haptics.play(Haptic.Success)
+                }
+            } finally {
+                safetyBusy = false
+            }
+        }
+    }
 
     suspend fun reload() {
         try {
@@ -163,7 +236,23 @@ fun RoomInfoPanel(
                 onClose = onClose,
                 onSetNotifications = ::applyNotifications,
                 onSetPinned = ::applyPinned,
-                onLeaveTapped = { showsLeaveConfirm = true },
+                onLeaveTapped = {
+                    opener = LEAVE_OPENER
+                    showsLeaveConfirm = true
+                },
+                blockedNow = ::blockedNow,
+                safetyFailure = safetyFailure,
+                safetyBusy = safetyBusy,
+                focuserFor = ::focuserFor,
+                onMemberTapped = { member ->
+                    safetyFailure = null
+                    opener = member.userId
+                    actingOn = member
+                },
+                onReportRoom = {
+                    opener = ROOM_OPENER
+                    reporting = ReportSubject.Room(roomId, currentInfo.identity.name)
+                },
             )
 
             failure != null ->
@@ -198,8 +287,8 @@ fun RoomInfoPanel(
             // the wrapper node is not reliable across devices.
             modifier = Modifier.testTag("room-info-leave-dialog"),
             onDismissRequest = { showsLeaveConfirm = false },
-            title = { Text("Leave room?") },
-            text = { Text("You will stop receiving messages from this room.") },
+            title = { Text("Leave ${info?.name ?: "this room"}?") },
+            text = { Text("You'll stop receiving its messages.") },
             confirmButton = {
                 TextButton(
                     modifier = Modifier.testTag("room-info-leave-confirm-button"),
@@ -220,7 +309,37 @@ fun RoomInfoPanel(
             },
         )
     }
+
+    actingOn?.let { member ->
+        val name = member.displayName ?: member.userId
+        val blocked = blockedNow(member)
+        MemberActionsSheet(
+            name = name,
+            isAgent = member.isAgent,
+            blocked = blocked,
+            onBlockOrUnblock = { write(member, unblocking = blocked) },
+            onReport = {
+                actingOn = null
+                reporting = ReportSubject.User(member.userId, name, member.isAgent)
+            },
+            onDismiss = { actingOn = null },
+        )
+    }
+
+    reporting?.let { subject ->
+        ReportSheet(
+            subject = subject,
+            isBlocked = isBlocked,
+            onSend = { reason, block -> onReport(subject, reason, block) },
+            onClose = { reporting = null },
+        )
+    }
 }
+
+private const val FOCUS_ATTEMPTS = 20
+private const val FOCUS_RETRY_MS = 50L
+private const val ROOM_OPENER = "\u0000report-room"
+private const val LEAVE_OPENER = "\u0000leave"
 
 /**
  * The loaded state: everything [RoomInfoDto] carries, laid out. Split out of
@@ -236,6 +355,12 @@ private fun RoomInfoBody(
     onSetNotifications: (NotificationMode) -> Unit,
     onSetPinned: (Boolean) -> Unit,
     onLeaveTapped: () -> Unit,
+    blockedNow: (RoomMemberDto) -> Boolean,
+    safetyFailure: String?,
+    safetyBusy: Boolean,
+    focuserFor: (String) -> FocusRequester,
+    onMemberTapped: (RoomMemberDto) -> Unit,
+    onReportRoom: () -> Unit,
 ) {
     // Everyone in the room who is not this account. A display choice, not a
     // core one — see this file's class doc.
@@ -325,10 +450,30 @@ private fun RoomInfoBody(
         // as iOS's `others(info).first` returning `nil`.
         if (others.size > 1) {
             SectionHeader("Members (${info.activeMemberCount})")
-            others.forEach { MemberRow(it) }
         } else if (others.size == 1) {
             SectionHeader("Members")
-            MemberRow(others[0])
+        }
+        others.forEach { member ->
+            val blocked = blockedNow(member)
+            MemberRow(
+                member = member,
+                blocked = blocked,
+                onClick = { onMemberTapped(member) },
+                enabled = !safetyBusy,
+                modifier = Modifier.focusRequester(focuserFor(member.userId)),
+            )
+        }
+        safetyFailure?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .semantics { liveRegion = LiveRegionMode.Polite }
+                    .testTag("room-info-safety-failure"),
+            )
         }
 
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
@@ -341,8 +486,24 @@ private fun RoomInfoBody(
 
         TextButton(
             onClick = onLeaveTapped,
-            modifier = Modifier.padding(horizontal = 16.dp).testTag("room-info-leave"),
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .focusRequester(focuserFor(LEAVE_OPENER))
+                .testTag("room-info-leave"),
         ) { Text("Leave room", color = MaterialTheme.colorScheme.error) }
+        // Beside Leave: both are ways of being done with a room.
+        Text(
+            "Report room…",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .focusRequester(focuserFor(ROOM_OPENER))
+                .clickable(onClickLabel = REPORT_ROOM_HINT, role = Role.Button, onClick = onReportRoom)
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 12.dp, vertical = 14.dp)
+                .testTag("room-info-report-room"),
+        )
     }
 }
 
@@ -388,11 +549,59 @@ private fun LabeledRow(label: String, value: String) {
     }
 }
 
-/** One member: their name, and the id beneath it — never this account's own row. */
+private const val REPORT_ROOM_HINT = "Reports this room to your homeserver's administrators"
+
+/**
+ * One member: their name, and the id beneath it — and, when it applies, that
+ * they are an agent or that this account has blocked them. One element for
+ * TalkBack. With an [onClick] it opens the member's actions; without, it is
+ * not a control.
+ */
 @Composable
-private fun MemberRow(member: RoomMemberDto) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-        Text(member.displayName ?: member.userId, maxLines = 1, overflow = TextOverflow.Ellipsis)
+internal fun MemberRow(
+    member: RoomMemberDto,
+    blocked: Boolean,
+    onClick: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val colors = SupermessageTheme.colors
+    val hint = if (blocked) "Unblock or report" else "Block or report"
+    Column(
+        modifier
+            .fillMaxWidth()
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(enabled = enabled, onClickLabel = hint, role = Role.Button, onClick = onClick)
+                } else {
+                    Modifier
+                },
+            )
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .semantics(mergeDescendants = true) {}
+            .testTag("member-${member.userId}"),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                member.displayName ?: member.userId,
+                color = if (blocked) colors.contentMuted else colors.content,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (member.isAgent) AgentTag()
+            if (blocked) {
+                Text(
+                    "Blocked",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.testTag("member-blocked-${member.userId}"),
+                )
+            }
+        }
         if (member.displayName != null) {
             Text(
                 member.userId,
@@ -403,6 +612,92 @@ private fun MemberRow(member: RoomMemberDto) {
             )
         }
     }
+}
+
+/**
+ * What can be done with a member: block or unblock, report, or nothing. The
+ * title is the name, the message says what the block does. Scrolls, so every
+ * action stays reachable at the largest font.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MemberActionsSheet(
+    name: String,
+    isAgent: Boolean,
+    blocked: Boolean,
+    onBlockOrUnblock: () -> Unit,
+    onReport: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        modifier = Modifier.testTag("member-actions"),
+    ) {
+        MemberActionsBody(name, isAgent, blocked, onBlockOrUnblock, onReport, onDismiss)
+    }
+}
+
+/** The sheet's contents, apart from the sheet chrome, so a preview can draw them. */
+@Composable
+internal fun MemberActionsBody(
+    name: String,
+    isAgent: Boolean,
+    blocked: Boolean,
+    onBlockOrUnblock: () -> Unit,
+    onReport: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(bottom = 8.dp),
+    ) {
+        Text(
+            name,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 4.dp)
+                .semantics { heading() }
+                .testTag("member-actions-title"),
+        )
+        Text(
+            if (blocked) {
+                "Unblocking shows their messages again, including ones sent while they were blocked."
+            } else {
+                ReportCopy.blockConsequence(isAgent)
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
+        )
+        MemberAction(
+            if (blocked) "Unblock $name" else "Block $name",
+            destructive = !blocked,
+            tag = if (blocked) "member-unblock" else "member-block",
+            onClick = onBlockOrUnblock,
+        )
+        MemberAction("Report $name…", destructive = true, tag = "member-report", onClick = onReport)
+        MemberAction("Cancel", destructive = false, tag = "member-actions-cancel", onClick = onCancel)
+    }
+}
+
+@Composable
+private fun MemberAction(label: String, destructive: Boolean, tag: String, onClick: () -> Unit) {
+    Text(
+        label,
+        style = MaterialTheme.typography.bodyLarge,
+        color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 24.dp, vertical = 12.dp)
+            .testTag(tag),
+    )
 }
 
 /** A label and a value you can take away with you. */

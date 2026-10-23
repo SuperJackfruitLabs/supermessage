@@ -774,6 +774,30 @@ impl Core {
         self.session.has_sent(&room_id)
     }
 
+    /// What the dock above the composer says, from the core's own rows and its
+    /// own "sent this session" — see `core::acknowledgement::for_focused`. The
+    /// host sends no rows. `None` when the focused room is not `room_id` (the
+    /// room changed under the ask, so there is nothing to say about this one);
+    /// `NotReady` when no room is focused.
+    pub fn acknowledgement(
+        &self,
+        room_id: String,
+        addressee: Option<String>,
+        agent_ids: Vec<String>,
+        typing_agents: Vec<String>,
+        turn_in_progress: bool,
+    ) -> Result<Option<supermessage_core::acknowledgement::Acknowledgement>, FfiError> {
+        let asked = self.block(supermessage_core::acknowledgement::for_focused(
+            &self.session.focused_timeline(),
+            &room_id,
+            addressee.as_deref(),
+            &agent_ids,
+            &typing_agents,
+            turn_in_progress,
+        ));
+        Ok(nothing_when_room_changed(asked)?)
+    }
+
     /// The events the reader hid on this device. The focused timeline groups
     /// as if those rows were absent and marks them `hidden`; the host keeps
     /// the ids and pushes the full set at sign-in and whenever it changes.
@@ -1160,6 +1184,26 @@ pub fn audio_clock_label(ms: u64) -> String {
     supermessage_core::audio::audio_clock_label(ms)
 }
 
+/// The voice recorder's numbers — see `core::voice_recording::spec`.
+#[uniffi::export]
+pub fn voice_recording_spec() -> supermessage_core::voice_recording::VoiceRecordingSpec {
+    supermessage_core::voice_recording::spec()
+}
+
+/// Meter readings (dBFS) as a waveform of at most `bins` levels between 0 and
+/// 1 — see `core::voice_recording::waveform`.
+#[uniffi::export]
+pub fn voice_waveform(decibels: Vec<f32>, bins: u32) -> Vec<f32> {
+    supermessage_core::voice_recording::waveform(&decibels, bins as usize)
+}
+
+/// Whether a recording is long enough to send — see
+/// `core::voice_recording::long_enough`.
+#[uniffi::export]
+pub fn voice_long_enough(duration_ms: u64) -> bool {
+    supermessage_core::voice_recording::long_enough(duration_ms)
+}
+
 /// "Thought for 12s · 2 steps" — see `core::turn_label::turn_record_label`.
 #[uniffi::export]
 pub fn turn_record_label(thought: bool, steps: u32, elapsed_ms: Option<u64>) -> String {
@@ -1183,6 +1227,16 @@ pub fn turn_duration_label(elapsed_ms: u64) -> String {
 #[uniffi::export]
 pub fn elapsed_label(elapsed_ms: i64) -> String {
     supermessage_core::turn_label::elapsed_label(elapsed_ms)
+}
+
+/// A turn in the Live Activity's words, or `None` for a turn that timed out —
+/// see `core::turn_card::turn_card`.
+#[uniffi::export]
+pub fn turn_card(
+    summary: supermessage_core::turns::TurnSummary,
+    agent_name: String,
+) -> Option<supermessage_core::turn_card::TurnCard> {
+    supermessage_core::turn_card::turn_card(&summary, &agent_name)
 }
 
 /// How many graphemes a message may have before a row says `is_long_read`
@@ -1507,6 +1561,121 @@ pub fn notification_gate_answers(
     supermessage_core::notification::gate_answers(&decision, &gate_id)
 }
 
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn planned_from_decided(
+    note: supermessage_core::notification::NotificationDto,
+) -> supermessage_core::notification_policy::PlannedNotification {
+    supermessage_core::notification_policy::planned_from_decided(&note)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notifications_for_roster(
+    previous: Vec<supermessage_core::dto::RoomRow>,
+    next: Vec<supermessage_core::dto::RoomRow>,
+    context: supermessage_core::notification_policy::NotificationContext,
+) -> Vec<supermessage_core::notification_policy::PlannedNotification> {
+    supermessage_core::notification_policy::for_roster(&previous, &next, &context)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notifications_for_timeline(
+    room_id: String,
+    room_name: String,
+    rows: Vec<supermessage_core::dto::TimelineRow>,
+    since_ms: u64,
+    already_notified: Vec<String>,
+    context: supermessage_core::notification_policy::NotificationContext,
+) -> Vec<supermessage_core::notification_policy::PlannedNotification> {
+    supermessage_core::notification_policy::for_timeline(
+        &room_id,
+        &room_name,
+        &rows,
+        since_ms,
+        &already_notified,
+        &context,
+    )
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_delivers(
+    note: supermessage_core::notification_policy::PlannedNotification,
+    mode: Option<supermessage_core::room_info::NotificationMode>,
+) -> bool {
+    supermessage_core::notification_policy::delivers(&note, mode)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_presents_remote(
+    room_id: Option<String>,
+    event_id: Option<String>,
+    context: supermessage_core::notification_policy::NotificationContext,
+    already_notified: Vec<String>,
+) -> bool {
+    supermessage_core::notification_policy::presents_remote(
+        room_id.as_deref(),
+        event_id.as_deref(),
+        &context,
+        &already_notified,
+    )
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_actions(
+    category: supermessage_core::notification::NotificationCategory,
+) -> Vec<supermessage_core::notification_policy::NotificationActionSpec> {
+    supermessage_core::notification_policy::actions(category)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_user_info(
+    note: supermessage_core::notification_policy::PlannedNotification,
+) -> std::collections::HashMap<String, String> {
+    supermessage_core::notification_policy::user_info(&note)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_response(
+    action_id: String,
+    user_info: std::collections::HashMap<String, String>,
+    user_text: Option<String>,
+) -> supermessage_core::notification_policy::NotificationResponse {
+    supermessage_core::notification_policy::response(&action_id, &user_info, user_text.as_deref())
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_answer_for_widget(
+    answer: supermessage_core::widget::WidgetAnswer,
+) -> supermessage_core::notification_policy::NotificationAnswer {
+    supermessage_core::notification_policy::answer_for_widget(&answer)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn answer_failed_notification(
+    room_id: String,
+) -> supermessage_core::notification_policy::PlannedNotification {
+    supermessage_core::notification_policy::answer_failed(&room_id)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn generic_notification(
+    room_id: String,
+    event_id: String,
+    title: String,
+) -> supermessage_core::notification_policy::PlannedNotification {
+    supermessage_core::notification_policy::generic(&room_id, &event_id, &title)
+}
+
 // ---------------------------------------------------------------------------
 // The widgets' snapshot (`core::widget`). Each takes the stored JSON — `None`
 // when there is none — and returns the next, with whether it changed and
@@ -1612,6 +1781,13 @@ pub fn widget_signed_out(
     supermessage_core::widget::signed_out(stored.as_deref(), now_ms)
 }
 
+/// The stored snapshot as a widget draws it at `now_ms`, typed. Android's
+/// widgets read this; iOS keeps its own `Codable` mirror.
+#[uniffi::export]
+pub fn widget_view(stored: Option<String>, now_ms: u64) -> supermessage_core::widget::WidgetView {
+    supermessage_core::widget::view(stored.as_deref(), now_ms)
+}
+
 /// The `UNNotificationCategory` identifier for `category` — the value the
 /// push gateway also sends as `aps.category`.
 #[uniffi::export]
@@ -1627,6 +1803,20 @@ pub fn notification_category_identifier(
 #[uniffi::export]
 pub fn report_reason_remaining(reason: String) -> i64 {
     supermessage_core::safety::report_reason_remaining(&reason)
+}
+
+/// A dock asked about a room that is no longer the focused one has nothing to
+/// say: `Ok(None)`, never a stale room's acknowledgement. Other errors stay.
+fn nothing_when_room_changed(
+    asked: supermessage_core::error::CoreResult<
+        Option<supermessage_core::acknowledgement::Acknowledgement>,
+    >,
+) -> supermessage_core::error::CoreResult<Option<supermessage_core::acknowledgement::Acknowledgement>>
+{
+    match asked {
+        Err(supermessage_core::error::CoreError::RoomChanged { .. }) => Ok(None),
+        other => other,
+    }
 }
 
 #[cfg(test)]
@@ -1686,5 +1876,39 @@ mod options_tests {
         assert_eq!(settle_data_dir(&opts), root.join("group"));
         opts.legacy_data_dir = None;
         assert_eq!(settle_data_dir(&opts), root.join("group"));
+    }
+}
+
+#[cfg(test)]
+mod acknowledgement_tests {
+    use super::*;
+    use supermessage_core::error::CoreError;
+
+    /// Mutation seen failing: `Ok(None)` without asking (or swallowing every
+    /// error) fails the `NotReady` match.
+    #[test]
+    fn acknowledgement_without_a_focused_room_is_not_ready() {
+        let dir = std::env::temp_dir().join(format!("sm-ffi-ack-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let core = Core::new(dir.to_string_lossy().into_owned());
+        assert!(matches!(
+            core.acknowledgement("!r:x".into(), Some("Atlas".into()), vec![], vec![], false),
+            Err(FfiError::NotReady)
+        ));
+    }
+
+    /// Mutation seen failing: passing the `RoomChanged` error through fails
+    /// the first assertion.
+    #[test]
+    fn a_room_changed_ask_reads_as_nothing() {
+        let changed = Err(CoreError::RoomChanged {
+            requested: "!b:x".into(),
+            focused: "!a:x".into(),
+        });
+        assert!(matches!(nothing_when_room_changed(changed), Ok(None)));
+        assert!(matches!(
+            nothing_when_room_changed(Err(CoreError::NotReady)),
+            Err(CoreError::NotReady)
+        ));
     }
 }

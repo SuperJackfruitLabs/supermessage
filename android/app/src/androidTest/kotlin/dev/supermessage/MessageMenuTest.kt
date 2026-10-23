@@ -80,6 +80,7 @@ class MessageMenuTest {
         haptics: HapticFeedback = RecordingHaptics(),
         onReact: (TimelineRowDto, String) -> Unit = { _, _ -> },
         onDelete: suspend (TimelineRowDto) -> Boolean = { true },
+        onReport: (TimelineRowDto) -> Unit = {},
     ) {
         compose.setContent {
             CompositionLocalProvider(LocalClipboardManager provides clipboard, LocalHapticFeedback provides haptics) {
@@ -93,6 +94,7 @@ class MessageMenuTest {
                     onMarkRead = {},
                     onReact = onReact,
                     onDelete = onDelete,
+                    onReport = onReport,
                 )
             }
         }
@@ -112,6 +114,59 @@ class MessageMenuTest {
         compose.onNodeWithTag("menu-edit").assertDoesNotExist()
         compose.onNodeWithTag("menu-delete").assertDoesNotExist()
         compose.onAllNodes(hasTestTagPrefix("quick-reaction-")).assertCountEquals(4)
+    }
+
+    @Test
+    fun reportOfferedOnSomeoneElsesSentMessage() {
+        val reported = mutableListOf<TimelineRowDto>()
+        val target = row(isOwn = false)
+        show(target, onReport = { reported += it })
+        openMenu()
+        compose.onNodeWithTag("menu-report").assertIsDisplayed()
+        compose.onNodeWithText("Report…").assertIsDisplayed()
+        compose.onNodeWithTag("menu-report").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf(target), reported)
+        compose.onNodeWithTag("message-menu").assertDoesNotExist()
+    }
+
+    @Test
+    fun reportIsTheLastItem() {
+        show(row(isOwn = false))
+        openMenu()
+        val tops = listOf("menu-reply", "menu-copy", "menu-report").map {
+            compose.onNodeWithTag(it).fetchSemanticsNode().boundsInRoot.top
+        }
+        assertEquals(tops.sorted(), tops)
+    }
+
+    @Test
+    fun reportNotOfferedOnYourOwn() {
+        show(row(isOwn = true, editable = true))
+        openMenu()
+        compose.onNodeWithTag("menu-report").assertDoesNotExist()
+    }
+
+    @Test
+    fun reportNotOfferedWhilePending() {
+        show(row(isOwn = false, canReplyOrReact = false, body = "hi"))
+        openMenu()
+        compose.onNodeWithTag("menu-report").assertDoesNotExist()
+        compose.onNodeWithTag("menu-copy").assertIsDisplayed()
+    }
+
+    /** No body, not editable, not own, sent: a menu of the strip, Reply and Report… and nothing else. */
+    @Test
+    fun reportAloneMakesAMenu() {
+        val bare = row(isOwn = false, canReplyOrReact = true, body = null, editable = false)
+        assertTrue(messageMenuActions(bare).report)
+        show(bare)
+        openMenu()
+        compose.onNodeWithTag("menu-report").assertIsDisplayed()
+        compose.onNodeWithTag("menu-reply").assertIsDisplayed()
+        compose.onNodeWithTag("menu-copy").assertDoesNotExist()
+        compose.onNodeWithTag("menu-edit").assertDoesNotExist()
+        compose.onNodeWithTag("menu-delete").assertDoesNotExist()
     }
 
     @Test

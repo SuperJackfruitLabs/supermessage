@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Observation
+import SupermessageFFI
 import SupermessageKit
 
 /// Records a voice message — Opus, in a CAF file — in this app's temporary
@@ -29,31 +30,28 @@ final class VoiceRecorder {
 
     private var recorder: AVAudioRecorder?
     private var file: URL?
-    /// Input levels between 0 and 1, sampled while recording.
-    private var levels: [Float] = []
+    /// dBFS readings, sampled while recording.
+    private var decibels: [Float] = []
     private var meter: Timer?
 
     /// A finished recording.
     struct Recording {
         let url: URL
         let durationMs: UInt64
-        /// At most ``waveformBins`` levels between 0 and 1, oldest first.
+        /// At most `voiceRecordingSpec().waveformBins` levels between 0 and 1,
+        /// oldest first.
         let waveform: [Float]
     }
 
-    /// How often the input level is sampled, and how many points a waveform
-    /// keeps — about what Element draws in a voice bubble.
-    static let meterInterval: TimeInterval = 0.1
-    static let waveformBins = 60
+    /// The recorder's numbers — meter interval, waveform bins, the shortest
+    /// message — are the core's, so every client keeps the same ones.
+    private static let spec = voiceRecordingSpec()
     /// Between asking to start and recording. The first time, that gap is
     /// the permission prompt — long enough for a held finger to lift.
     private var starting = false
     /// The finger lifted during that gap: throw the recording away the
     /// moment it starts, rather than leave a "held" recording nobody holds.
     private var abandonStart = false
-
-    /// Shorter than this is a slip of the thumb, not a message.
-    static let shortest: TimeInterval = 0.6
 
     var isRecording: Bool { phase != .idle }
 
@@ -103,7 +101,7 @@ final class VoiceRecorder {
             }
             self.recorder = recorder
             file = url
-            levels = []
+            decibels = []
             startMetering()
             phase = .recording(startedAt: Date(), held: held)
             if abandonStart {
@@ -124,48 +122,29 @@ final class VoiceRecorder {
     func finish() -> Recording? {
         guard let recorder, let file else { return nil }
         let duration = recorder.currentTime
-        let sampled = levels
+        let sampled = decibels
         recorder.stop()
         reset()
-        guard duration >= Self.shortest else {
+        let durationMs = UInt64((duration * 1000).rounded())
+        // Shorter than this is a slip of the thumb, not a message.
+        guard voiceLongEnough(durationMs: durationMs) else {
             try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
             return nil
         }
         return Recording(
             url: file,
-            durationMs: UInt64((duration * 1000).rounded()),
-            waveform: Self.waveform(from: sampled, bins: Self.waveformBins))
+            durationMs: durationMs,
+            waveform: voiceWaveform(decibels: sampled, bins: Self.spec.waveformBins))
     }
 
     private func startMetering() {
         meter?.invalidate()
-        meter = Timer.scheduledTimer(withTimeInterval: Self.meterInterval, repeats: true) { [weak self] _ in
+        meter = Timer.scheduledTimer(withTimeInterval: TimeInterval(Self.spec.meterIntervalMs) / 1000, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, let recorder = self.recorder else { return }
                 recorder.updateMeters()
-                self.levels.append(Self.level(fromDecibels: recorder.averagePower(forChannel: 0)))
+                self.decibels.append(recorder.averagePower(forChannel: 0))
             }
-        }
-    }
-
-    /// dBFS to 0...1: -50 dB and below is silence, 0 dB is full scale. A
-    /// linear scale over that range reads like speech in a bubble; the full
-    /// -160 dB range would flatten everything but a shout.
-    nonisolated static func level(fromDecibels db: Float) -> Float {
-        let floor: Float = -50
-        guard db.isFinite else { return 0 }
-        return min(1, max(0, (db - floor) / -floor))
-    }
-
-    /// `levels` squeezed into at most `bins` points by averaging, so a long
-    /// note and a short one draw the same width.
-    nonisolated static func waveform(from levels: [Float], bins: Int) -> [Float] {
-        guard levels.count > bins, bins > 0 else { return levels }
-        return (0..<bins).map { bin in
-            let start = bin * levels.count / bins
-            let end = max(start + 1, (bin + 1) * levels.count / bins)
-            let slice = levels[start..<end]
-            return slice.reduce(0, +) / Float(slice.count)
         }
     }
 

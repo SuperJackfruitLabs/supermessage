@@ -143,7 +143,7 @@ pub struct WidgetSnapshot {
 }
 
 /// Which kind of question a decision is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase")]
 pub enum WidgetDecisionKind {
     /// An AgentPod permission request: Allow once / Reject.
@@ -155,7 +155,7 @@ pub enum WidgetDecisionKind {
 }
 
 /// One answer a decision offers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetOption {
     /// What is sent: a permission option's name, or a gate's decision id.
@@ -169,7 +169,7 @@ pub struct WidgetOption {
 }
 
 /// An answer this device sent and nothing has yet said is over.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetAnswered {
     pub option_id: String,
@@ -180,7 +180,7 @@ pub struct WidgetAnswered {
 }
 
 /// One decision the reader owes, or has just answered.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetDecision {
     pub kind: WidgetDecisionKind,
@@ -212,7 +212,7 @@ impl WidgetDecision {
 }
 
 /// One agent room.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetAgent {
     pub room_id: String,
@@ -239,7 +239,7 @@ pub struct WidgetAgent {
 }
 
 /// What an agent did since the app was last opened, most telling first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase")]
 pub enum WidgetOutcome {
     /// A turn ended with a tool call that failed.
@@ -261,7 +261,7 @@ impl WidgetOutcome {
 }
 
 /// One row of the recap.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetRecap {
     pub room_id: String,
@@ -274,7 +274,7 @@ pub struct WidgetRecap {
 
 /// How an agent's state is drawn. Carried beside the word so a host colours
 /// by meaning rather than by matching text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase")]
 pub enum WidgetTone {
     NeedsYou,
@@ -285,7 +285,7 @@ pub enum WidgetTone {
 }
 
 /// An agent's state within one frame.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetAgentState {
     /// "needs you", "working", "active", "idle", "quiet".
@@ -294,7 +294,7 @@ pub struct WidgetAgentState {
 }
 
 /// What to draw from `from_ms` until the next frame.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetFrame {
     pub from_ms: u64,
@@ -452,7 +452,8 @@ fn answered_line(decision: &WidgetDecision, option_id: &str) -> String {
     }
 }
 
-fn needs_you_line(count: u32, overflow: bool) -> String {
+/// The line the widgets and the desktop tray both word "who needs you" with.
+pub fn needs_you_line(count: u32, overflow: bool) -> String {
     match (count, overflow) {
         (0, _) => "Nothing needs you".to_string(),
         (n, true) => format!("{n}+ need you"),
@@ -484,7 +485,9 @@ fn turn_outcome(turn: TurnCounts) -> (WidgetOutcome, String) {
     }
 }
 
-fn pulse(working: u32, needs_you: u32, overflow: bool) -> String {
+/// The fleet in one line, for the inline Lock Screen widget and the desktop
+/// tray.
+pub fn pulse(working: u32, needs_you: u32, overflow: bool) -> String {
     let asks = (needs_you > 0).then(|| needs_you_line(needs_you, overflow));
     match (working, asks) {
         (0, None) => "All quiet".to_string(),
@@ -872,6 +875,137 @@ fn start(stored: Option<&str>, signed_in: bool) -> (Option<WidgetSnapshot>, Widg
         .clone()
         .unwrap_or_else(|| WidgetSnapshot::empty(signed_in));
     (stored, next)
+}
+
+// ---------------------------------------------------------------------------
+// The view
+// ---------------------------------------------------------------------------
+
+/// What the widget shows in place of a snapshot, or that it has one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "camelCase")]
+pub enum WidgetContent {
+    /// Nothing stored yet, or another schema's.
+    Waiting,
+    SignedOut,
+    Snapshot,
+}
+
+/// A decision and the buttons a widget may draw for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetDecisionView {
+    pub decision: WidgetDecision,
+    pub buttons: Vec<WidgetOption>,
+}
+
+/// An agent and its state in the frame being shown.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetAgentView {
+    pub agent: WidgetAgent,
+    pub state: Option<WidgetAgentState>,
+}
+
+/// The snapshot as a widget draws it at one moment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct WidgetView {
+    pub content: WidgetContent,
+    pub frame: Option<WidgetFrame>,
+    pub decisions: Vec<WidgetDecisionView>,
+    pub agents: Vec<WidgetAgentView>,
+    pub recap: Vec<WidgetRecap>,
+    pub overflow: bool,
+    pub opened_at_ms: Option<u64>,
+    /// When the next frame begins: when to draw again without a write.
+    pub next_change_ms: Option<u64>,
+}
+
+impl WidgetView {
+    fn without_snapshot(content: WidgetContent) -> Self {
+        Self {
+            content,
+            frame: None,
+            decisions: Vec::new(),
+            agents: Vec::new(),
+            recap: Vec::new(),
+            overflow: false,
+            opened_at_ms: None,
+            next_change_ms: None,
+        }
+    }
+}
+
+/// The stored snapshot as a widget draws it at `now_ms`.
+///
+/// Android's widgets run in the app's process, which has the core, so they
+/// read this typed view rather than a Kotlin mirror of the JSON. iOS's widget
+/// extension cannot link the core, keeps its own `Codable` mirror
+/// (`K/Notifications/WidgetSnapshot.swift`) and applies the same rules in
+/// Swift; there is no switch-over. The rules are ported from there:
+///
+/// - nothing usable stored is `Waiting`, a signed-out account `SignedOut`
+///   (`SnapshotProvider.swift:39-40`);
+/// - the frame is the last that has begun, else the first
+///   (`WidgetSnapshot.swift:251-254`);
+/// - owed decisions list before answered ones, each in stored order
+///   (`listedDecisions`, `:258-260`); only an owed one has buttons, its
+///   inline options (`:65`);
+/// - an `opened_at_ms` of `0` is "never opened" (`:226`);
+/// - `next_change_ms` is what an alarm needs; iOS hands WidgetKit every frame
+///   instead (`WidgetEntry.swift:38-48`).
+pub fn view(stored: Option<&str>, now_ms: u64) -> WidgetView {
+    let Some(snapshot) = WidgetSnapshot::decode(stored) else {
+        return WidgetView::without_snapshot(WidgetContent::Waiting);
+    };
+    if !snapshot.signed_in {
+        return WidgetView::without_snapshot(WidgetContent::SignedOut);
+    }
+    let frame = snapshot
+        .frames
+        .iter()
+        .rev()
+        .find(|f| f.from_ms <= now_ms)
+        .or(snapshot.frames.first())
+        .cloned();
+    let next_change_ms = snapshot
+        .frames
+        .iter()
+        .map(|f| f.from_ms)
+        .find(|&from| from > now_ms);
+    let owed = snapshot.decisions.iter().filter(|d| d.answered.is_none());
+    let sent = snapshot.decisions.iter().filter(|d| d.answered.is_some());
+    let decisions = owed
+        .chain(sent)
+        .map(|d| WidgetDecisionView {
+            buttons: if d.answered.is_none() {
+                d.options.iter().filter(|o| o.inline).cloned().collect()
+            } else {
+                Vec::new()
+            },
+            decision: d.clone(),
+        })
+        .collect();
+    let agents = snapshot
+        .agents
+        .iter()
+        .enumerate()
+        .map(|(i, agent)| WidgetAgentView {
+            agent: agent.clone(),
+            state: frame.as_ref().and_then(|f| f.states.get(i)).cloned(),
+        })
+        .collect();
+    WidgetView {
+        content: WidgetContent::Snapshot,
+        frame,
+        decisions,
+        agents,
+        recap: snapshot.recap,
+        overflow: snapshot.overflow,
+        opened_at_ms: (snapshot.opened_at_ms != 0).then_some(snapshot.opened_at_ms),
+        next_change_ms,
+    }
 }
 
 /// One push, as the Notification Service Extension decided it.

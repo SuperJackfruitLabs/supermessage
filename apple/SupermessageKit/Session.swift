@@ -564,9 +564,17 @@ public final class Session {
         try? await client.roomCast(roomId: roomId)
     }
 
-    /// Whether this account has sent into `roomId` since signing in.
-    public func hasSent(in roomId: String) async -> Bool {
-        await client.hasSent(roomId: roomId)
+    /// What the dock above the composer says for `roomId`, from the core's own
+    /// timeline rows and its own record of what this account has sent. No rows
+    /// cross. `nil` when there is nothing to say, when the focused room is not
+    /// `roomId`, or when the core could not answer.
+    public func acknowledgement(
+        in roomId: String, addressee: String?, agentIds: [String],
+        typingAgents: [String], turnInProgress: Bool
+    ) async -> Acknowledgement? {
+        try? await client.acknowledgement(
+            roomId: roomId, addressee: addressee, agentIds: agentIds,
+            typingAgents: typingAgents, turnInProgress: turnInProgress)
     }
 
     /// Open the conversation with `person`, creating it only if there is not

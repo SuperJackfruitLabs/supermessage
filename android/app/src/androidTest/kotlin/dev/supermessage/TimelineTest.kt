@@ -24,6 +24,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -266,6 +267,45 @@ class TimelineTest {
             "a revision bump must re-key even against an equal rows list",
             markReadCalls > afterOpen,
         )
+    }
+
+    /**
+     * A reported message arrives from the core as a row marked `hidden`, with
+     * its neighbours regrouped as if it were absent: here the reported head
+     * of a run is gone and the next row, which the core now gives a header
+     * (`continuesRun = false`), draws its sender. The host neither draws the
+     * hidden row nor regroups.
+     */
+    @Test
+    fun aReportedRowIsSkippedAndItsNeighbourGetsTheCoresHeader() {
+        val a = row(id = "\$a", body = "alpha text", timestampMs = 1_000uL).copy(hidden = true)
+        val b = row(id = "\$b", body = "bravo text", timestampMs = 2_000uL).copy(continuesRun = false, endsRun = false)
+        val c = row(id = "\$c", body = "charlie text", timestampMs = 3_000uL).copy(continuesRun = true, endsRun = true)
+        var rows by mutableStateOf(listOf(a.copy(hidden = false), b.copy(continuesRun = true), c))
+        var revision by mutableStateOf(1uL)
+
+        compose.setContent {
+            Timeline(
+                rows = rows,
+                revision = revision,
+                typingLine = null,
+                isPaginating = false,
+                canPaginate = false,
+                onPaginate = {},
+                onMarkRead = {},
+            )
+        }
+        compose.onNodeWithText("alpha text").assertIsDisplayed()
+        compose.onAllNodesWithText("Sender").assertCountEquals(1)
+
+        // The core's Sets replace the rows and bump the revision.
+        rows = listOf(a, b, c)
+        revision++
+        compose.waitForIdle()
+        compose.onNodeWithText("alpha text").assertDoesNotExist()
+        compose.onNodeWithText("bravo text").assertIsDisplayed()
+        compose.onNodeWithText("charlie text").assertIsDisplayed()
+        compose.onAllNodesWithText("Sender").assertCountEquals(1)
     }
 
     /** Reads `Timeline`'s own Rule 2 decision off its test-only marker node. */

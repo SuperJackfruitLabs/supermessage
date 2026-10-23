@@ -2,11 +2,14 @@ package dev.supermessage.kit
 
 import dev.supermessage.kit.StubCore
 import dev.supermessage.kit.stores.ConnectionStore
+import dev.supermessage.kit.stores.InMemoryHiddenEvents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -22,6 +25,8 @@ import uniffi.supermessage_core.ItemView
 import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
+import uniffi.supermessage_core.RoomIdentity
+import uniffi.supermessage_core.RoomMemberDto
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
@@ -522,6 +527,384 @@ class SessionTest {
         assertTrue(fake.sentMessages.isEmpty())
     }
 
+    // MARK: - Block and report
+
+    private fun member(id: String, agent: Boolean) =
+        RoomMemberDto(userId = id, displayName = null, avatarUrl = null, isIgnored = false, isAgent = agent)
+
+    private fun message(eventId: String = "\$e", sender: String = "@s:x") =
+        ReportSubject.Message("!r", eventId, sender, "Sam", isAgent = false)
+
+    @Test
+    fun ignoredUsersEventReplacesTheList() = runTest {
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = sessionOf(fake, this)
+        session.start()
+        session.safety.noteBlocked("@old")
+        session.pump.onEvent(FfiEvent.IgnoredUsers(listOf("@a")))
+        advanceUntilIdle()
+        assertEquals(setOf("@a"), session.safety.blocked.value)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    /** Signing in twice must leave one listener: a single event applies once, in order. */
+    @Test
+    fun ignoredUsersEventsStillArriveAfterSigningInAgain() = runTest {
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = sessionOf(fake, this)
+        session.start()
+        session.signIn("https://x", "u", "p")
+        advanceUntilIdle()
+        session.pump.onEvent(FfiEvent.IgnoredUsers(listOf("@a")))
+        advanceUntilIdle()
+        session.pump.onEvent(FfiEvent.IgnoredUsers(listOf("@b")))
+        advanceUntilIdle()
+        assertEquals(setOf("@b"), session.safety.blocked.value)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun reportHidesOnlyAfterTheHomeserverHasIt() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, this)
+        var hiddenWhileSending: Set<String>? = null
+        fake.reportEventBody = { _, _, _ -> hiddenWhileSending = session.safety.hidden.value }
+
+        val result = session.report(message(), "spam", alsoBlock = false)
+
+        assertNull(result)
+        assertEquals(emptySet<String>(), hiddenWhileSending)
+        assertEquals(setOf("\$e"), session.safety.hidden.value)
+        assertEquals(listOf("reportEvent(!r,\$e,spam)"), fake.safetyCalls)
+    }
+
+    /** Leaving the room while a report is on its way cancels the caller, not the report's consequences. */
+    @Test
+    fun aReportHidesTheMessageEvenIfItsCallerIsCancelled() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, this)
+        val caller = launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+            session.report(message(), "spam", alsoBlock = false)
+        }
+        fake.reportEventBody = { _, _, _ -> caller.cancel() }
+        caller.start()
+        advanceUntilIdle()
+
+        assertTrue(caller.isCancelled)
+        assertEquals(setOf("\$e"), session.safety.hidden.value)
+    }
+
+    @Test
+    fun aFailedReportHidesNothingAndBlocksNoOne() = runTest {
+        val fake = FakeCore()
+        fake.reportEventBody = { _, _, _ -> throw FfiException.Network("") }
+        val session = sessionOf(fake, this)
+
+        val result = session.report(message(), "spam", alsoBlock = true)
+
+        assertEquals("Can't reach the homeserver.", result)
+        assertTrue(session.safety.hidden.value.isEmpty())
+        assertEquals(listOf("reportEvent(!r,\$e,spam)"), fake.safetyCalls)
+    }
+
+    @Test
+    fun aBlockThatFailsAfterAReportSaysWhichHalf() = runTest {
+        val fake = FakeCore()
+        fake.ignoreUserBody = { throw FfiException.Refused("You can't block yourself.") }
+        val session = sessionOf(fake, this)
+
+        val result = session.report(message(), "spam", alsoBlock = true)
+
+        assertEquals("Reported, but blocking didn't work: You can't block yourself.", result)
+        assertEquals(setOf("\$e"), session.safety.hidden.value)
+        assertTrue(session.safety.blocked.value.isEmpty())
+    }
+
+    @Test
+    fun aReportAndBlockBlocksTheSender() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, this)
+        assertNull(session.report(message(), "", alsoBlock = true))
+        assertEquals(listOf("reportEvent(!r,\$e,)", "ignoreUser(@s:x)"), fake.safetyCalls)
+        assertTrue(session.safety.isBlocked("@s:x"))
+    }
+
+    @Test
+    fun anAlreadyBlockedSenderIsNotBlockedAgain() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, this)
+        session.safety.apply(listOf("@s:x"))
+        assertNull(session.report(message(), "", alsoBlock = true))
+        assertEquals(listOf("reportEvent(!r,\$e,)"), fake.safetyCalls)
+    }
+
+    @Test
+    fun aRoomReportNeverBlocks() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, this)
+        assertNull(session.report(ReportSubject.Room("!r", "Lounge"), "why", alsoBlock = true))
+        assertEquals(listOf("reportRoom(!r,why)"), fake.safetyCalls)
+        assertTrue(session.safety.hidden.value.isEmpty())
+    }
+
+    @Test
+    fun blockNotesOnlyWhatLanded() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, this)
+        fake.ignoreUserBody = { throw FfiException.Refused("No.") }
+        assertEquals("No.", session.block("@x"))
+        assertTrue(session.safety.blocked.value.isEmpty())
+
+        fake.ignoreUserBody = {}
+        assertNull(session.block("@x"))
+        assertEquals(setOf("@x"), session.safety.blocked.value)
+
+        assertNull(session.unblock("@x"))
+        assertTrue(session.safety.blocked.value.isEmpty())
+    }
+
+    @Test
+    fun blockedUsersIsEmptyWhenTheListCannotBeRead() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, this)
+        fake.ignoredUsersBody = { throw FfiException.NotReady() }
+        assertTrue(session.blockedUsers().isEmpty())
+        fake.ignoredUsersBody = { listOf(member("@a", false)) }
+        assertEquals(listOf("@a"), session.blockedUsers().map { it.userId })
+    }
+
+    @Test
+    fun signOutForgetsBlockedAndHidden() = runTest {
+        val storage = InMemoryHiddenEvents()
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertTrue(session.start())
+        session.safety.apply(listOf("@a"))
+        session.safety.hide("\$b")
+        assertEquals(setOf("\$b"), storage.load("@me:x"))
+        session.signOut()
+        assertTrue(session.safety.blocked.value.isEmpty())
+        assertTrue(session.safety.hidden.value.isEmpty())
+        assertTrue(storage.load("@me:x").isEmpty())
+    }
+
+    @Test
+    fun aFailedRestoreForgetsBlockedAndHidden() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")); seedLegacy(setOf("\$older")) }
+        val fake = FakeCore(restoreSessionResult = { false })
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        session.safety.apply(listOf("@a"))
+        assertFalse(session.start())
+        assertTrue(session.safety.blocked.value.isEmpty())
+        assertTrue(session.safety.hidden.value.isEmpty())
+        assertTrue(storage.load("@me:x").isEmpty())
+        assertTrue(storage.takeLegacy().isEmpty())
+    }
+
+    @Test
+    fun aRestoreThatThrowsKeepsWhatWasStored() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")) }
+        val fake = FakeCore(restoreFails = true)
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertFalse(session.start())
+        // A transient error says nothing about the stored account: its
+        // reported messages stay stored for when it signs in again.
+        assertEquals(setOf("\$old"), storage.load("@me:x"))
+    }
+
+    /** RF5: the first account's hidden messages must not show for whoever signs in next. */
+    @Test
+    fun aTransientRestoreErrorThenAnotherAccountSeesNothingHidden() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")) }
+        val fake = FakeCore(restoreFails = true)
+        fake.accountUserId = "@other:x"
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertFalse(session.start())
+        session.signIn(homeserver = "https://x.example", username = "other", password = "p")
+        assertEquals(Session.Phase.SIGNED_IN, session.phase.value)
+        assertTrue(session.safety.hidden.value.isEmpty())
+        session.safety.hide("\$new")
+        assertEquals(setOf("\$old"), storage.load("@me:x"))
+        session.signOut()
+        assertEquals(setOf("\$old"), storage.load("@me:x"))
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun theSameAccountSigningInAfterARestoreErrorKeepsItsSet() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")) }
+        val fake = FakeCore(restoreFails = true)
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertFalse(session.start())
+        session.signIn(homeserver = "https://x.example", username = "me", password = "p")
+        assertEquals(setOf("\$old"), session.safety.hidden.value)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun aRestoredSessionAdoptsTheOldDeviceWideSet() = runTest {
+        val storage = InMemoryHiddenEvents().apply { seedLegacy(setOf("\$old")) }
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertTrue(session.start())
+        assertEquals(setOf("\$old"), session.safety.hidden.value)
+        assertEquals(setOf("\$old"), storage.load("@me:x"))
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun aRestoredSessionKeepsWhatWasHidden() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")) }
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertTrue(session.start())
+        assertEquals(setOf("\$old"), session.safety.hidden.value)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    /** A report that lands after a sign-out must not put its id into the next account's store. */
+    @Test
+    fun aReportThatFinishesAfterSignOutHidesNothing() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, this)
+        fake.reportEventBody = { _, _, _ -> runBlocking { session.signOut() } }
+        assertNull(session.report(message(), "", alsoBlock = true))
+        assertTrue(session.safety.hidden.value.isEmpty())
+        assertTrue(session.safety.blocked.value.isEmpty())
+    }
+
+    // MARK: - Hidden events reach the core
+
+    /** The account's stored set is pushed once it is signed in, and only its own. */
+    @Test
+    fun theStoredSetIsPushedWhenARestoreSignsIn() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$mine")); save("@other:x", setOf("\$theirs")) }
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertTrue(session.start())
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("\$mine")), fake.hiddenPushes)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun theSetIsPushedAfterAFreshSignInToo() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$mine")) }
+        val fake = FakeCore()
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        session.signIn(homeserver = "https://x.example", username = "me", password = "p")
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("\$mine")), fake.hiddenPushes)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    /** A report pushes the whole set, the new id included. */
+    @Test
+    fun aReportPushesTheSetWithTheNewId() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")) }
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        session.start()
+        advanceUntilIdle()
+        assertNull(session.report(message("\$e"), "spam", alsoBlock = false))
+        advanceUntilIdle()
+        assertEquals(setOf("\$old", "\$e"), fake.hiddenPushes.last().toSet())
+        assertEquals(2, fake.hiddenPushes.size)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    /** A report the homeserver refused hides nothing, so pushes nothing. */
+    @Test
+    fun aRefusedReportPushesNothing() = runTest {
+        val fake = FakeCore()
+        fake.reportEventBody = { _, _, _ -> throw FfiException.NotReady() }
+        val session = sessionOf(fake, this)
+        session.report(message(), "spam", alsoBlock = false)
+        advanceUntilIdle()
+        assertTrue(fake.hiddenPushes.isEmpty())
+    }
+
+    /** A push still waiting its turn when the account signs out is dropped, not handed to the next. */
+    @Test
+    fun aPushQueuedBeforeSignOutIsDropped() = runBlocking {
+        val fake = FakeCore()
+        val gate = java.util.concurrent.CountDownLatch(1)
+        var first = true
+        fake.hiddenPushBody = {
+            val slow = synchronized(this) { first.also { first = false } }
+            if (slow) gate.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val session = Session(CoreClient(fake, Dispatchers.IO), scope)
+        session.report(message("\$a"), "", alsoBlock = false)
+        session.report(message("\$b"), "", alsoBlock = false)
+        session.signOut()
+        gate.countDown()
+        withTimeout(5_000) { while (fake.hiddenPushes.isEmpty()) delay(10) }
+        delay(300)
+        assertEquals(listOf(setOf("\$a")), fake.hiddenPushes.map { it.toSet() })
+        scope.cancel()
+    }
+
+    /**
+     * The first push is slow; the second must not overtake it. Real threads:
+     * a single-threaded test dispatcher could not interleave them.
+     */
+    @Test
+    fun aSlowFirstPushIsNotOvertakenByTheSecond() = runBlocking {
+        val fake = FakeCore()
+        val gate = java.util.concurrent.CountDownLatch(1)
+        var first = true
+        fake.hiddenPushBody = {
+            val slow = synchronized(this) { first.also { first = false } }
+            if (slow) gate.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val session = Session(CoreClient(fake, Dispatchers.IO), scope)
+        session.report(message("\$a"), "", alsoBlock = false)
+        session.report(message("\$b"), "", alsoBlock = false)
+        Thread.sleep(300)
+        gate.countDown()
+        withTimeout(5_000) { while (fake.hiddenPushes.size < 2) delay(10) }
+        assertEquals(listOf(setOf("\$a"), setOf("\$a", "\$b")), fake.hiddenPushes.map { it.toSet() })
+        scope.cancel()
+    }
+
+    @Test
+    fun reportSubjectForNeedsAnEventAndASender() = runTest {
+        val fake = FakeCore()
+        val session = sessionOf(fake, this)
+        val ok = row("\$e", sender = "@s:x")
+        assertNull(session.reportSubjectFor(ok.copy(item = ok.item.copy(eventId = null)), "!r"))
+        assertNull(session.reportSubjectFor(ok.copy(item = ok.item.copy(sender = null)), "!r"))
+        val subject = session.reportSubjectFor(ok, "!r") as ReportSubject.Message
+        assertEquals(ReportSubject.Message("!r", "\$e", "@s:x", "@s:x", isAgent = false), subject)
+    }
+
+    @Test
+    fun reportSubjectForAsksTheRoomWhoIsAnAgent() = runTest {
+        val fake = FakeCore()
+        fake.members = listOf(member("@agent_x:x", true), member("@s:x", false))
+        val session = sessionOf(fake, this)
+        val agent = session.reportSubjectFor(row("\$e", sender = "@agent_x:x"), "!r") as ReportSubject.Message
+        assertTrue(agent.isAgent)
+        val person = session.reportSubjectFor(row("\$e", sender = "@s:x"), "!r") as ReportSubject.Message
+        assertFalse(person.isAgent)
+        fake.roomInfoFails = true
+        val unknown = session.reportSubjectFor(row("\$e", sender = "@agent_x:x"), "!r") as ReportSubject.Message
+        assertFalse(unknown.isAgent)
+    }
+
+
     private fun sessionOf(fake: FakeCore, scope: CoroutineScope): Session =
         Session(client = CoreClient(core = fake, dispatcher = Dispatchers.Unconfined), scope = scope)
 
@@ -543,7 +926,63 @@ class SessionTest {
         private val searchMessagesResult: (String, String?) -> List<SearchResultDto> =
             { _, _ -> throw NotImplementedError() },
         private val sendPermissionAnswerResult: (String, String) -> Unit = { _, _ -> },
+        private val restoreFails: Boolean = false,
     ) : StubCore() {
+        /** Calls the safety methods saw, in order. */
+        val safetyCalls = mutableListOf<String>()
+        var reportEventBody: (String, String, String) -> Unit = { _, _, _ -> }
+        var reportRoomBody: (String, String) -> Unit = { _, _ -> }
+        var ignoreUserBody: (String) -> Unit = {}
+        var ignoredUsersBody: () -> List<RoomMemberDto> = { emptyList() }
+        var members: List<RoomMemberDto> = emptyList()
+        var roomInfoFails = false
+        var accountUserId = "@me:x"
+
+        override fun account() = AccountDto(userId = accountUserId, homeserver = "https://x.example")
+        val roomInfoAsked = mutableListOf<String>()
+
+        override fun reportEvent(roomId: String, eventId: String, reason: String) {
+            safetyCalls += "reportEvent($roomId,$eventId,$reason)"
+            reportEventBody(roomId, eventId, reason)
+        }
+
+        /** Every set the core was handed, in the order the pushes finished. */
+        val hiddenPushes: MutableList<List<String>> = java.util.Collections.synchronizedList(mutableListOf())
+        var hiddenPushBody: (List<String>) -> Unit = {}
+
+        override fun setHiddenEvents(eventIds: List<String>) {
+            hiddenPushBody(eventIds)
+            hiddenPushes += eventIds
+        }
+
+        override fun reportRoom(roomId: String, reason: String) {
+            safetyCalls += "reportRoom($roomId,$reason)"
+            reportRoomBody(roomId, reason)
+        }
+
+        override fun ignoreUser(userId: String) {
+            safetyCalls += "ignoreUser($userId)"
+            ignoreUserBody(userId)
+        }
+
+        override fun unignoreUser(userId: String) {
+            safetyCalls += "unignoreUser($userId)"
+            ignoreUserBody(userId)
+        }
+
+        override fun ignoredUsers(): List<RoomMemberDto> = ignoredUsersBody()
+
+        override fun roomInfo(roomId: String): RoomInfoDto {
+            roomInfoAsked += roomId
+            if (roomInfoFails) throw FfiException.NotReady()
+            return RoomInfoDto(
+                roomId = roomId, name = "Room", identity = RoomIdentity(null, "Room", null, "R"),
+                topic = null, runtime = null, canonicalAlias = null, altAliases = emptyList(),
+                activeMemberCount = members.size.toULong(), members = members,
+                notifications = NotificationMode.DEFAULT, pinned = false,
+            )
+        }
+
         val permissionAnswers = mutableListOf<Pair<String, String>>()
         val sentMessages = mutableListOf<Triple<String, String, List<String>>>()
         var attachmentOutcome: AttachmentSendOutcome = AttachmentSendOutcome.Sent
@@ -557,7 +996,10 @@ class SessionTest {
         override fun login(homeserver: String, username: String, password: String, sink: EventSink): Unit =
             loginBody(homeserver, username, password, sink)
 
-        override fun restoreSession(sink: EventSink): Boolean = restoreSessionResult()
+        override fun restoreSession(sink: EventSink): Boolean {
+            if (restoreFails) throw FfiException.Store("x")
+            return restoreSessionResult()
+        }
 
         override fun logout() {
             logoutCallCount += 1

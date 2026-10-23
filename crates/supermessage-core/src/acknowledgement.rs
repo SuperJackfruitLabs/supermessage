@@ -456,4 +456,58 @@ mod tests {
             Err(CoreError::NotReady)
         ));
     }
+
+    /// A focused timeline over a mock homeserver, for the room checks.
+    ///
+    /// Mutation seen failing: deleting the `subject != room_id` check in
+    /// `for_focused` fails `for_focused_in_another_room_is_room_changed`
+    /// (it answers `Ok`); making it fire always fails the same-room assertion.
+    #[tokio::test]
+    async fn for_focused_in_another_room_is_room_changed() {
+        use matrix_sdk::ruma::room_id;
+        use matrix_sdk::test_utils::mocks::MatrixMockServer;
+        use matrix_sdk_test::JoinedRoomBuilder;
+
+        struct Quiet;
+        impl crate::event::EventSink for Quiet {
+            fn emit(&self, _: crate::event::CoreEvent) {}
+        }
+
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        client.event_cache().subscribe().unwrap();
+        server
+            .mock_room_messages()
+            .ok(Default::default())
+            .mount()
+            .await;
+        let focused_room = room_id!("!a:example.org");
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(JoinedRoomBuilder::new(focused_room));
+            })
+            .await;
+
+        let focused = FocusedTimeline::default();
+        focused
+            .subscribe(&client, focused_room.as_str(), std::sync::Arc::new(Quiet))
+            .await
+            .unwrap();
+
+        match for_focused(&focused, "!b:example.org", Some("Atlas"), &[], &[], false).await {
+            Err(CoreError::RoomChanged { requested, focused }) => {
+                assert_eq!(requested, "!b:example.org");
+                assert_eq!(focused, "!a:example.org");
+            }
+            other => panic!("expected RoomChanged, got {other:?}"),
+        }
+        assert!(
+            for_focused(&focused, "!a:example.org", Some("Atlas"), &[], &[], false)
+                .await
+                .is_ok(),
+            "the focused room itself is answered"
+        );
+        focused.clear_and_join().await;
+    }
 }

@@ -2524,6 +2524,119 @@ public func FfiConverterTypeNeedsYouInbox_lower(_ value: NeedsYouInbox) -> RustB
 
 
 /**
+ * One action a notification offers.
+ */
+public struct NotificationActionSpec {
+    public var id: String
+    public var title: String
+    public var destructive: Bool
+    /**
+     * The device must be unlocked to run it.
+     */
+    public var requiresUnlock: Bool
+    /**
+     * Running it brings the app to the front.
+     */
+    public var opensApp: Bool
+    public var textInput: NotificationTextInput?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, title: String, destructive: Bool, 
+        /**
+         * The device must be unlocked to run it.
+         */requiresUnlock: Bool, 
+        /**
+         * Running it brings the app to the front.
+         */opensApp: Bool, textInput: NotificationTextInput?) {
+        self.id = id
+        self.title = title
+        self.destructive = destructive
+        self.requiresUnlock = requiresUnlock
+        self.opensApp = opensApp
+        self.textInput = textInput
+    }
+}
+
+
+
+extension NotificationActionSpec: Equatable, Hashable {
+    public static func ==(lhs: NotificationActionSpec, rhs: NotificationActionSpec) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.destructive != rhs.destructive {
+            return false
+        }
+        if lhs.requiresUnlock != rhs.requiresUnlock {
+            return false
+        }
+        if lhs.opensApp != rhs.opensApp {
+            return false
+        }
+        if lhs.textInput != rhs.textInput {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(title)
+        hasher.combine(destructive)
+        hasher.combine(requiresUnlock)
+        hasher.combine(opensApp)
+        hasher.combine(textInput)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationActionSpec: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationActionSpec {
+        return
+            try NotificationActionSpec(
+                id: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                destructive: FfiConverterBool.read(from: &buf), 
+                requiresUnlock: FfiConverterBool.read(from: &buf), 
+                opensApp: FfiConverterBool.read(from: &buf), 
+                textInput: FfiConverterOptionTypeNotificationTextInput.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NotificationActionSpec, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterBool.write(value.destructive, into: &buf)
+        FfiConverterBool.write(value.requiresUnlock, into: &buf)
+        FfiConverterBool.write(value.opensApp, into: &buf)
+        FfiConverterOptionTypeNotificationTextInput.write(value.textInput, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationActionSpec_lift(_ buf: RustBuffer) throws -> NotificationActionSpec {
+    return try FfiConverterTypeNotificationActionSpec.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationActionSpec_lower(_ value: NotificationActionSpec) -> RustBuffer {
+    return FfiConverterTypeNotificationActionSpec.lower(value)
+}
+
+
+/**
  * The facts [`crate::widget`] needs from one pushed event, and nothing the
  * notification itself does not already know.
  */
@@ -2698,6 +2811,124 @@ public func FfiConverterTypeNotificationActivity_lift(_ buf: RustBuffer) throws 
 #endif
 public func FfiConverterTypeNotificationActivity_lower(_ value: NotificationActivity) -> RustBuffer {
     return FfiConverterTypeNotificationActivity.lower(value)
+}
+
+
+/**
+ * What the notifier needs to know about the app when it decides
+ * (`NotificationComposer.swift:125-149`).
+ */
+public struct NotificationContext {
+    /**
+     * The room on screen, or `None` on the roster.
+     */
+    public var openRoomId: String?
+    /**
+     * Whether the app is in the foreground and active.
+     */
+    public var appActive: Bool
+    /**
+     * The room the timeline store is subscribed to. That room's events are
+     * seen row by row, so the roster path leaves it alone rather than
+     * posting a second, vaguer notification for the same message.
+     */
+    public var timelineRoomId: String?
+    /**
+     * Whether this device receives remote pushes for the account — a
+     * pusher is registered. Then the push shows what arrives while the app
+     * is away, and the app only adds what it sees first, in the foreground.
+     */
+    public var remotePush: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The room on screen, or `None` on the roster.
+         */openRoomId: String?, 
+        /**
+         * Whether the app is in the foreground and active.
+         */appActive: Bool, 
+        /**
+         * The room the timeline store is subscribed to. That room's events are
+         * seen row by row, so the roster path leaves it alone rather than
+         * posting a second, vaguer notification for the same message.
+         */timelineRoomId: String?, 
+        /**
+         * Whether this device receives remote pushes for the account — a
+         * pusher is registered. Then the push shows what arrives while the app
+         * is away, and the app only adds what it sees first, in the foreground.
+         */remotePush: Bool = false) {
+        self.openRoomId = openRoomId
+        self.appActive = appActive
+        self.timelineRoomId = timelineRoomId
+        self.remotePush = remotePush
+    }
+}
+
+
+
+extension NotificationContext: Equatable, Hashable {
+    public static func ==(lhs: NotificationContext, rhs: NotificationContext) -> Bool {
+        if lhs.openRoomId != rhs.openRoomId {
+            return false
+        }
+        if lhs.appActive != rhs.appActive {
+            return false
+        }
+        if lhs.timelineRoomId != rhs.timelineRoomId {
+            return false
+        }
+        if lhs.remotePush != rhs.remotePush {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(openRoomId)
+        hasher.combine(appActive)
+        hasher.combine(timelineRoomId)
+        hasher.combine(remotePush)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationContext: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationContext {
+        return
+            try NotificationContext(
+                openRoomId: FfiConverterOptionString.read(from: &buf), 
+                appActive: FfiConverterBool.read(from: &buf), 
+                timelineRoomId: FfiConverterOptionString.read(from: &buf), 
+                remotePush: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NotificationContext, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.openRoomId, into: &buf)
+        FfiConverterBool.write(value.appActive, into: &buf)
+        FfiConverterOptionString.write(value.timelineRoomId, into: &buf)
+        FfiConverterBool.write(value.remotePush, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationContext_lift(_ buf: RustBuffer) throws -> NotificationContext {
+    return try FfiConverterTypeNotificationContext.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationContext_lower(_ value: NotificationContext) -> RustBuffer {
+    return FfiConverterTypeNotificationContext.lower(value)
 }
 
 
@@ -2963,6 +3194,75 @@ public func FfiConverterTypeNotificationDto_lower(_ value: NotificationDto) -> R
 
 
 /**
+ * The text field of a text-input action.
+ */
+public struct NotificationTextInput {
+    public var buttonTitle: String
+    public var placeholder: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(buttonTitle: String, placeholder: String) {
+        self.buttonTitle = buttonTitle
+        self.placeholder = placeholder
+    }
+}
+
+
+
+extension NotificationTextInput: Equatable, Hashable {
+    public static func ==(lhs: NotificationTextInput, rhs: NotificationTextInput) -> Bool {
+        if lhs.buttonTitle != rhs.buttonTitle {
+            return false
+        }
+        if lhs.placeholder != rhs.placeholder {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(buttonTitle)
+        hasher.combine(placeholder)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationTextInput: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationTextInput {
+        return
+            try NotificationTextInput(
+                buttonTitle: FfiConverterString.read(from: &buf), 
+                placeholder: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: NotificationTextInput, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.buttonTitle, into: &buf)
+        FfiConverterString.write(value.placeholder, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationTextInput_lift(_ buf: RustBuffer) throws -> NotificationTextInput {
+    return try FfiConverterTypeNotificationTextInput.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationTextInput_lower(_ value: NotificationTextInput) -> RustBuffer {
+    return FfiConverterTypeNotificationTextInput.lower(value)
+}
+
+
+/**
  * The two option ids a PERMISSION notification's actions send.
  */
 public struct PermissionAnswers {
@@ -3177,6 +3477,153 @@ public func FfiConverterTypePersonDto_lift(_ buf: RustBuffer) throws -> PersonDt
 #endif
 public func FfiConverterTypePersonDto_lower(_ value: PersonDto) -> RustBuffer {
     return FfiConverterTypePersonDto.lower(value)
+}
+
+
+/**
+ * One notification the host should post, decided.
+ */
+public struct PlannedNotification {
+    /**
+     * The request id: stable per event. For an event it is the event id —
+     * the push gateway's `apns-collapse-id` too, so a local and a remote
+     * notification for one event replace each other rather than stacking.
+     */
+    public var id: String
+    public var roomId: String
+    public var eventId: String?
+    public var title: String
+    public var subtitle: String?
+    public var body: String
+    public var category: NotificationCategory
+    /**
+     * Set exactly when `category` is `Permission`.
+     */
+    public var permission: PermissionAnswers?
+    /**
+     * Set exactly when `category` is `Gate`.
+     */
+    public var gate: GateAnswers?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The request id: stable per event. For an event it is the event id —
+         * the push gateway's `apns-collapse-id` too, so a local and a remote
+         * notification for one event replace each other rather than stacking.
+         */id: String, roomId: String, eventId: String?, title: String, subtitle: String?, body: String, category: NotificationCategory, 
+        /**
+         * Set exactly when `category` is `Permission`.
+         */permission: PermissionAnswers?, 
+        /**
+         * Set exactly when `category` is `Gate`.
+         */gate: GateAnswers?) {
+        self.id = id
+        self.roomId = roomId
+        self.eventId = eventId
+        self.title = title
+        self.subtitle = subtitle
+        self.body = body
+        self.category = category
+        self.permission = permission
+        self.gate = gate
+    }
+}
+
+
+
+extension PlannedNotification: Equatable, Hashable {
+    public static func ==(lhs: PlannedNotification, rhs: PlannedNotification) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.eventId != rhs.eventId {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.subtitle != rhs.subtitle {
+            return false
+        }
+        if lhs.body != rhs.body {
+            return false
+        }
+        if lhs.category != rhs.category {
+            return false
+        }
+        if lhs.permission != rhs.permission {
+            return false
+        }
+        if lhs.gate != rhs.gate {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(roomId)
+        hasher.combine(eventId)
+        hasher.combine(title)
+        hasher.combine(subtitle)
+        hasher.combine(body)
+        hasher.combine(category)
+        hasher.combine(permission)
+        hasher.combine(gate)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePlannedNotification: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PlannedNotification {
+        return
+            try PlannedNotification(
+                id: FfiConverterString.read(from: &buf), 
+                roomId: FfiConverterString.read(from: &buf), 
+                eventId: FfiConverterOptionString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                subtitle: FfiConverterOptionString.read(from: &buf), 
+                body: FfiConverterString.read(from: &buf), 
+                category: FfiConverterTypeNotificationCategory.read(from: &buf), 
+                permission: FfiConverterOptionTypePermissionAnswers.read(from: &buf), 
+                gate: FfiConverterOptionTypeGateAnswers.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PlannedNotification, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterOptionString.write(value.eventId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.subtitle, into: &buf)
+        FfiConverterString.write(value.body, into: &buf)
+        FfiConverterTypeNotificationCategory.write(value.category, into: &buf)
+        FfiConverterOptionTypePermissionAnswers.write(value.permission, into: &buf)
+        FfiConverterOptionTypeGateAnswers.write(value.gate, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlannedNotification_lift(_ buf: RustBuffer) throws -> PlannedNotification {
+    return try FfiConverterTypePlannedNotification.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePlannedNotification_lower(_ value: PlannedNotification) -> RustBuffer {
+    return FfiConverterTypePlannedNotification.lower(value)
 }
 
 
@@ -6849,6 +7296,91 @@ public func FfiConverterTypeTranscriptNotice_lower(_ value: TranscriptNotice) ->
 
 
 /**
+ * What a card says: a headline, a subtitle and which way it leans.
+ */
+public struct TurnCard {
+    public var headline: String
+    public var subtitle: String
+    public var inProgress: Bool
+    public var failed: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(headline: String, subtitle: String, inProgress: Bool, failed: Bool) {
+        self.headline = headline
+        self.subtitle = subtitle
+        self.inProgress = inProgress
+        self.failed = failed
+    }
+}
+
+
+
+extension TurnCard: Equatable, Hashable {
+    public static func ==(lhs: TurnCard, rhs: TurnCard) -> Bool {
+        if lhs.headline != rhs.headline {
+            return false
+        }
+        if lhs.subtitle != rhs.subtitle {
+            return false
+        }
+        if lhs.inProgress != rhs.inProgress {
+            return false
+        }
+        if lhs.failed != rhs.failed {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(headline)
+        hasher.combine(subtitle)
+        hasher.combine(inProgress)
+        hasher.combine(failed)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeTurnCard: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> TurnCard {
+        return
+            try TurnCard(
+                headline: FfiConverterString.read(from: &buf), 
+                subtitle: FfiConverterString.read(from: &buf), 
+                inProgress: FfiConverterBool.read(from: &buf), 
+                failed: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: TurnCard, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.headline, into: &buf)
+        FfiConverterString.write(value.subtitle, into: &buf)
+        FfiConverterBool.write(value.inProgress, into: &buf)
+        FfiConverterBool.write(value.failed, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnCard_lift(_ buf: RustBuffer) throws -> TurnCard {
+    return try FfiConverterTypeTurnCard.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeTurnCard_lower(_ value: TurnCard) -> RustBuffer {
+    return FfiConverterTypeTurnCard.lower(value)
+}
+
+
+/**
  * A turn's tool calls: how many it made and how many of those failed.
  */
 public struct TurnCounts {
@@ -8214,6 +8746,159 @@ public func FfiConverterTypeVoiceNoteTranscript_lower(_ value: VoiceNoteTranscri
 
 
 /**
+ * The recorder's numbers, for a host to configure its encoder and meter.
+ */
+public struct VoiceRecordingSpec {
+    /**
+     * `VoiceRecordingFormat.swift:17` minus the container's extension.
+     */
+    public var fileStem: String
+    /**
+     * `VoiceRecordingFormat.swift:24`.
+     */
+    public var sampleRate: UInt32
+    /**
+     * `VoiceRecordingFormat.swift:25`.
+     */
+    public var channels: UInt32
+    /**
+     * `VoiceRecordingFormat.swift:26`, bits per second.
+     */
+    public var bitRate: UInt32
+    /**
+     * How often the input level is sampled: `VoiceRecorder.swift:46` (0.1 s).
+     */
+    public var meterIntervalMs: UInt32
+    /**
+     * How many points a waveform keeps: `VoiceRecorder.swift:47`.
+     */
+    public var waveformBins: UInt32
+    /**
+     * Shorter than this is a slip of the thumb, not a message:
+     * `VoiceRecorder.swift:56` (0.6 s).
+     */
+    public var shortestMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `VoiceRecordingFormat.swift:17` minus the container's extension.
+         */fileStem: String, 
+        /**
+         * `VoiceRecordingFormat.swift:24`.
+         */sampleRate: UInt32, 
+        /**
+         * `VoiceRecordingFormat.swift:25`.
+         */channels: UInt32, 
+        /**
+         * `VoiceRecordingFormat.swift:26`, bits per second.
+         */bitRate: UInt32, 
+        /**
+         * How often the input level is sampled: `VoiceRecorder.swift:46` (0.1 s).
+         */meterIntervalMs: UInt32, 
+        /**
+         * How many points a waveform keeps: `VoiceRecorder.swift:47`.
+         */waveformBins: UInt32, 
+        /**
+         * Shorter than this is a slip of the thumb, not a message:
+         * `VoiceRecorder.swift:56` (0.6 s).
+         */shortestMs: UInt64) {
+        self.fileStem = fileStem
+        self.sampleRate = sampleRate
+        self.channels = channels
+        self.bitRate = bitRate
+        self.meterIntervalMs = meterIntervalMs
+        self.waveformBins = waveformBins
+        self.shortestMs = shortestMs
+    }
+}
+
+
+
+extension VoiceRecordingSpec: Equatable, Hashable {
+    public static func ==(lhs: VoiceRecordingSpec, rhs: VoiceRecordingSpec) -> Bool {
+        if lhs.fileStem != rhs.fileStem {
+            return false
+        }
+        if lhs.sampleRate != rhs.sampleRate {
+            return false
+        }
+        if lhs.channels != rhs.channels {
+            return false
+        }
+        if lhs.bitRate != rhs.bitRate {
+            return false
+        }
+        if lhs.meterIntervalMs != rhs.meterIntervalMs {
+            return false
+        }
+        if lhs.waveformBins != rhs.waveformBins {
+            return false
+        }
+        if lhs.shortestMs != rhs.shortestMs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(fileStem)
+        hasher.combine(sampleRate)
+        hasher.combine(channels)
+        hasher.combine(bitRate)
+        hasher.combine(meterIntervalMs)
+        hasher.combine(waveformBins)
+        hasher.combine(shortestMs)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeVoiceRecordingSpec: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> VoiceRecordingSpec {
+        return
+            try VoiceRecordingSpec(
+                fileStem: FfiConverterString.read(from: &buf), 
+                sampleRate: FfiConverterUInt32.read(from: &buf), 
+                channels: FfiConverterUInt32.read(from: &buf), 
+                bitRate: FfiConverterUInt32.read(from: &buf), 
+                meterIntervalMs: FfiConverterUInt32.read(from: &buf), 
+                waveformBins: FfiConverterUInt32.read(from: &buf), 
+                shortestMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: VoiceRecordingSpec, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.fileStem, into: &buf)
+        FfiConverterUInt32.write(value.sampleRate, into: &buf)
+        FfiConverterUInt32.write(value.channels, into: &buf)
+        FfiConverterUInt32.write(value.bitRate, into: &buf)
+        FfiConverterUInt32.write(value.meterIntervalMs, into: &buf)
+        FfiConverterUInt32.write(value.waveformBins, into: &buf)
+        FfiConverterUInt64.write(value.shortestMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoiceRecordingSpec_lift(_ buf: RustBuffer) throws -> VoiceRecordingSpec {
+    return try FfiConverterTypeVoiceRecordingSpec.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeVoiceRecordingSpec_lower(_ value: VoiceRecordingSpec) -> RustBuffer {
+    return FfiConverterTypeVoiceRecordingSpec.lower(value)
+}
+
+
+/**
  * What a voice message says it speaks: the text message it is the voice of.
  *
  * Carried on the voice message's own row ([`TimelineRow::voice_reply`]) so
@@ -8396,6 +9081,339 @@ public func FfiConverterTypeVoiceReplyPlayer_lower(_ value: VoiceReplyPlayer) ->
 
 
 /**
+ * One agent room.
+ */
+public struct WidgetAgent {
+    public var roomId: String
+    public var name: String
+    public var lastActivityMs: UInt64?
+    /**
+     * What it last said, as the roster previews it, bounded to
+     * [`LINE_MAX_CHARS`]. `None` when there is nothing to say.
+     */
+    public var line: String?
+    /**
+     * The step of a turn the app watched in progress.
+     */
+    public var step: String?
+    /**
+     * Whether the roster itself said this room owes an answer.
+     */
+    public var rosterNeedsYou: Bool
+    /**
+     * The most telling thing it did since the app was last opened: a turn
+     * that failed outranks one that finished, which outranks a line.
+     */
+    public var outcome: WidgetOutcome?
+    /**
+     * "2 of 7 steps failed", "Finished · 7 steps", or what it said.
+     */
+    public var outcomeLine: String?
+    public var outcomeAtMs: UInt64?
+    /**
+     * Pushes from it since the app was last opened.
+     */
+    public var unread: UInt32
+    /**
+     * The last event counted in `unread`, so a push delivered twice in a
+     * row counts once.
+     */
+    public var countedEventId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(roomId: String, name: String, lastActivityMs: UInt64?, 
+        /**
+         * What it last said, as the roster previews it, bounded to
+         * [`LINE_MAX_CHARS`]. `None` when there is nothing to say.
+         */line: String?, 
+        /**
+         * The step of a turn the app watched in progress.
+         */step: String?, 
+        /**
+         * Whether the roster itself said this room owes an answer.
+         */rosterNeedsYou: Bool, 
+        /**
+         * The most telling thing it did since the app was last opened: a turn
+         * that failed outranks one that finished, which outranks a line.
+         */outcome: WidgetOutcome?, 
+        /**
+         * "2 of 7 steps failed", "Finished · 7 steps", or what it said.
+         */outcomeLine: String?, outcomeAtMs: UInt64?, 
+        /**
+         * Pushes from it since the app was last opened.
+         */unread: UInt32, 
+        /**
+         * The last event counted in `unread`, so a push delivered twice in a
+         * row counts once.
+         */countedEventId: String?) {
+        self.roomId = roomId
+        self.name = name
+        self.lastActivityMs = lastActivityMs
+        self.line = line
+        self.step = step
+        self.rosterNeedsYou = rosterNeedsYou
+        self.outcome = outcome
+        self.outcomeLine = outcomeLine
+        self.outcomeAtMs = outcomeAtMs
+        self.unread = unread
+        self.countedEventId = countedEventId
+    }
+}
+
+
+
+extension WidgetAgent: Equatable, Hashable {
+    public static func ==(lhs: WidgetAgent, rhs: WidgetAgent) -> Bool {
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.lastActivityMs != rhs.lastActivityMs {
+            return false
+        }
+        if lhs.line != rhs.line {
+            return false
+        }
+        if lhs.step != rhs.step {
+            return false
+        }
+        if lhs.rosterNeedsYou != rhs.rosterNeedsYou {
+            return false
+        }
+        if lhs.outcome != rhs.outcome {
+            return false
+        }
+        if lhs.outcomeLine != rhs.outcomeLine {
+            return false
+        }
+        if lhs.outcomeAtMs != rhs.outcomeAtMs {
+            return false
+        }
+        if lhs.unread != rhs.unread {
+            return false
+        }
+        if lhs.countedEventId != rhs.countedEventId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(roomId)
+        hasher.combine(name)
+        hasher.combine(lastActivityMs)
+        hasher.combine(line)
+        hasher.combine(step)
+        hasher.combine(rosterNeedsYou)
+        hasher.combine(outcome)
+        hasher.combine(outcomeLine)
+        hasher.combine(outcomeAtMs)
+        hasher.combine(unread)
+        hasher.combine(countedEventId)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetAgent: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetAgent {
+        return
+            try WidgetAgent(
+                roomId: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                lastActivityMs: FfiConverterOptionUInt64.read(from: &buf), 
+                line: FfiConverterOptionString.read(from: &buf), 
+                step: FfiConverterOptionString.read(from: &buf), 
+                rosterNeedsYou: FfiConverterBool.read(from: &buf), 
+                outcome: FfiConverterOptionTypeWidgetOutcome.read(from: &buf), 
+                outcomeLine: FfiConverterOptionString.read(from: &buf), 
+                outcomeAtMs: FfiConverterOptionUInt64.read(from: &buf), 
+                unread: FfiConverterUInt32.read(from: &buf), 
+                countedEventId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WidgetAgent, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastActivityMs, into: &buf)
+        FfiConverterOptionString.write(value.line, into: &buf)
+        FfiConverterOptionString.write(value.step, into: &buf)
+        FfiConverterBool.write(value.rosterNeedsYou, into: &buf)
+        FfiConverterOptionTypeWidgetOutcome.write(value.outcome, into: &buf)
+        FfiConverterOptionString.write(value.outcomeLine, into: &buf)
+        FfiConverterOptionUInt64.write(value.outcomeAtMs, into: &buf)
+        FfiConverterUInt32.write(value.unread, into: &buf)
+        FfiConverterOptionString.write(value.countedEventId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetAgent_lift(_ buf: RustBuffer) throws -> WidgetAgent {
+    return try FfiConverterTypeWidgetAgent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetAgent_lower(_ value: WidgetAgent) -> RustBuffer {
+    return FfiConverterTypeWidgetAgent.lower(value)
+}
+
+
+/**
+ * An agent's state within one frame.
+ */
+public struct WidgetAgentState {
+    /**
+     * "needs you", "working", "active", "idle", "quiet".
+     */
+    public var word: String
+    public var tone: WidgetTone
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * "needs you", "working", "active", "idle", "quiet".
+         */word: String, tone: WidgetTone) {
+        self.word = word
+        self.tone = tone
+    }
+}
+
+
+
+extension WidgetAgentState: Equatable, Hashable {
+    public static func ==(lhs: WidgetAgentState, rhs: WidgetAgentState) -> Bool {
+        if lhs.word != rhs.word {
+            return false
+        }
+        if lhs.tone != rhs.tone {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(word)
+        hasher.combine(tone)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetAgentState: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetAgentState {
+        return
+            try WidgetAgentState(
+                word: FfiConverterString.read(from: &buf), 
+                tone: FfiConverterTypeWidgetTone.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WidgetAgentState, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.word, into: &buf)
+        FfiConverterTypeWidgetTone.write(value.tone, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetAgentState_lift(_ buf: RustBuffer) throws -> WidgetAgentState {
+    return try FfiConverterTypeWidgetAgentState.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetAgentState_lower(_ value: WidgetAgentState) -> RustBuffer {
+    return FfiConverterTypeWidgetAgentState.lower(value)
+}
+
+
+/**
+ * An agent and its state in the frame being shown.
+ */
+public struct WidgetAgentView {
+    public var agent: WidgetAgent
+    public var state: WidgetAgentState?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(agent: WidgetAgent, state: WidgetAgentState?) {
+        self.agent = agent
+        self.state = state
+    }
+}
+
+
+
+extension WidgetAgentView: Equatable, Hashable {
+    public static func ==(lhs: WidgetAgentView, rhs: WidgetAgentView) -> Bool {
+        if lhs.agent != rhs.agent {
+            return false
+        }
+        if lhs.state != rhs.state {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(agent)
+        hasher.combine(state)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetAgentView: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetAgentView {
+        return
+            try WidgetAgentView(
+                agent: FfiConverterTypeWidgetAgent.read(from: &buf), 
+                state: FfiConverterOptionTypeWidgetAgentState.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WidgetAgentView, into buf: inout [UInt8]) {
+        FfiConverterTypeWidgetAgent.write(value.agent, into: &buf)
+        FfiConverterOptionTypeWidgetAgentState.write(value.state, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetAgentView_lift(_ buf: RustBuffer) throws -> WidgetAgentView {
+    return try FfiConverterTypeWidgetAgentView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetAgentView_lower(_ value: WidgetAgentView) -> RustBuffer {
+    return FfiConverterTypeWidgetAgentView.lower(value)
+}
+
+
+/**
  * What a widget button sends, for an answer the snapshot still owes: the
  * same facts a notification action carries.
  */
@@ -8496,6 +9514,518 @@ public func FfiConverterTypeWidgetAnswer_lower(_ value: WidgetAnswer) -> RustBuf
 
 
 /**
+ * An answer this device sent and nothing has yet said is over.
+ */
+public struct WidgetAnswered {
+    public var optionId: String
+    public var atMs: UInt64
+    /**
+     * What the widget says in place of the buttons: "Sent: Allow once",
+     * "Sent: Approve · waiting for the board". Never the outcome.
+     */
+    public var line: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(optionId: String, atMs: UInt64, 
+        /**
+         * What the widget says in place of the buttons: "Sent: Allow once",
+         * "Sent: Approve · waiting for the board". Never the outcome.
+         */line: String) {
+        self.optionId = optionId
+        self.atMs = atMs
+        self.line = line
+    }
+}
+
+
+
+extension WidgetAnswered: Equatable, Hashable {
+    public static func ==(lhs: WidgetAnswered, rhs: WidgetAnswered) -> Bool {
+        if lhs.optionId != rhs.optionId {
+            return false
+        }
+        if lhs.atMs != rhs.atMs {
+            return false
+        }
+        if lhs.line != rhs.line {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(optionId)
+        hasher.combine(atMs)
+        hasher.combine(line)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetAnswered: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetAnswered {
+        return
+            try WidgetAnswered(
+                optionId: FfiConverterString.read(from: &buf), 
+                atMs: FfiConverterUInt64.read(from: &buf), 
+                line: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WidgetAnswered, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.optionId, into: &buf)
+        FfiConverterUInt64.write(value.atMs, into: &buf)
+        FfiConverterString.write(value.line, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetAnswered_lift(_ buf: RustBuffer) throws -> WidgetAnswered {
+    return try FfiConverterTypeWidgetAnswered.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetAnswered_lower(_ value: WidgetAnswered) -> RustBuffer {
+    return FfiConverterTypeWidgetAnswered.lower(value)
+}
+
+
+/**
+ * One decision the reader owes, or has just answered.
+ */
+public struct WidgetDecision {
+    public var kind: WidgetDecisionKind
+    public var roomId: String
+    /**
+     * The event the card is — and, for a gate, the one its decision
+     * references.
+     */
+    public var eventId: String
+    /**
+     * The agent's or the board's name: the room's `RoomIdentity.name`.
+     */
+    public var agent: String
+    /**
+     * Who asked, so only their receipt closes it (the rule
+     * [`crate::gate_outcome`] applies to cards).
+     */
+    public var asker: String?
+    /**
+     * The question, bounded to [`QUESTION_MAX_CHARS`].
+     */
+    public var question: String
+    public var options: [WidgetOption]
+    /**
+     * A gate's `gate_id`.
+     */
+    public var gateId: String?
+    /**
+     * A gate's question as the card had it, unbounded — the sentence left in
+     * the room is derived from it when the widget answers.
+     */
+    public var prompt: String
+    public var askedAtMs: UInt64
+    public var answered: WidgetAnswered?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(kind: WidgetDecisionKind, roomId: String, 
+        /**
+         * The event the card is — and, for a gate, the one its decision
+         * references.
+         */eventId: String, 
+        /**
+         * The agent's or the board's name: the room's `RoomIdentity.name`.
+         */agent: String, 
+        /**
+         * Who asked, so only their receipt closes it (the rule
+         * [`crate::gate_outcome`] applies to cards).
+         */asker: String?, 
+        /**
+         * The question, bounded to [`QUESTION_MAX_CHARS`].
+         */question: String, options: [WidgetOption], 
+        /**
+         * A gate's `gate_id`.
+         */gateId: String?, 
+        /**
+         * A gate's question as the card had it, unbounded — the sentence left in
+         * the room is derived from it when the widget answers.
+         */prompt: String, askedAtMs: UInt64, answered: WidgetAnswered?) {
+        self.kind = kind
+        self.roomId = roomId
+        self.eventId = eventId
+        self.agent = agent
+        self.asker = asker
+        self.question = question
+        self.options = options
+        self.gateId = gateId
+        self.prompt = prompt
+        self.askedAtMs = askedAtMs
+        self.answered = answered
+    }
+}
+
+
+
+extension WidgetDecision: Equatable, Hashable {
+    public static func ==(lhs: WidgetDecision, rhs: WidgetDecision) -> Bool {
+        if lhs.kind != rhs.kind {
+            return false
+        }
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.eventId != rhs.eventId {
+            return false
+        }
+        if lhs.agent != rhs.agent {
+            return false
+        }
+        if lhs.asker != rhs.asker {
+            return false
+        }
+        if lhs.question != rhs.question {
+            return false
+        }
+        if lhs.options != rhs.options {
+            return false
+        }
+        if lhs.gateId != rhs.gateId {
+            return false
+        }
+        if lhs.prompt != rhs.prompt {
+            return false
+        }
+        if lhs.askedAtMs != rhs.askedAtMs {
+            return false
+        }
+        if lhs.answered != rhs.answered {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(kind)
+        hasher.combine(roomId)
+        hasher.combine(eventId)
+        hasher.combine(agent)
+        hasher.combine(asker)
+        hasher.combine(question)
+        hasher.combine(options)
+        hasher.combine(gateId)
+        hasher.combine(prompt)
+        hasher.combine(askedAtMs)
+        hasher.combine(answered)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetDecision: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetDecision {
+        return
+            try WidgetDecision(
+                kind: FfiConverterTypeWidgetDecisionKind.read(from: &buf), 
+                roomId: FfiConverterString.read(from: &buf), 
+                eventId: FfiConverterString.read(from: &buf), 
+                agent: FfiConverterString.read(from: &buf), 
+                asker: FfiConverterOptionString.read(from: &buf), 
+                question: FfiConverterString.read(from: &buf), 
+                options: FfiConverterSequenceTypeWidgetOption.read(from: &buf), 
+                gateId: FfiConverterOptionString.read(from: &buf), 
+                prompt: FfiConverterString.read(from: &buf), 
+                askedAtMs: FfiConverterUInt64.read(from: &buf), 
+                answered: FfiConverterOptionTypeWidgetAnswered.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WidgetDecision, into buf: inout [UInt8]) {
+        FfiConverterTypeWidgetDecisionKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterString.write(value.eventId, into: &buf)
+        FfiConverterString.write(value.agent, into: &buf)
+        FfiConverterOptionString.write(value.asker, into: &buf)
+        FfiConverterString.write(value.question, into: &buf)
+        FfiConverterSequenceTypeWidgetOption.write(value.options, into: &buf)
+        FfiConverterOptionString.write(value.gateId, into: &buf)
+        FfiConverterString.write(value.prompt, into: &buf)
+        FfiConverterUInt64.write(value.askedAtMs, into: &buf)
+        FfiConverterOptionTypeWidgetAnswered.write(value.answered, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetDecision_lift(_ buf: RustBuffer) throws -> WidgetDecision {
+    return try FfiConverterTypeWidgetDecision.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetDecision_lower(_ value: WidgetDecision) -> RustBuffer {
+    return FfiConverterTypeWidgetDecision.lower(value)
+}
+
+
+/**
+ * A decision and the buttons a widget may draw for it.
+ */
+public struct WidgetDecisionView {
+    public var decision: WidgetDecision
+    public var buttons: [WidgetOption]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(decision: WidgetDecision, buttons: [WidgetOption]) {
+        self.decision = decision
+        self.buttons = buttons
+    }
+}
+
+
+
+extension WidgetDecisionView: Equatable, Hashable {
+    public static func ==(lhs: WidgetDecisionView, rhs: WidgetDecisionView) -> Bool {
+        if lhs.decision != rhs.decision {
+            return false
+        }
+        if lhs.buttons != rhs.buttons {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(decision)
+        hasher.combine(buttons)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetDecisionView: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetDecisionView {
+        return
+            try WidgetDecisionView(
+                decision: FfiConverterTypeWidgetDecision.read(from: &buf), 
+                buttons: FfiConverterSequenceTypeWidgetOption.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WidgetDecisionView, into buf: inout [UInt8]) {
+        FfiConverterTypeWidgetDecision.write(value.decision, into: &buf)
+        FfiConverterSequenceTypeWidgetOption.write(value.buttons, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetDecisionView_lift(_ buf: RustBuffer) throws -> WidgetDecisionView {
+    return try FfiConverterTypeWidgetDecisionView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetDecisionView_lower(_ value: WidgetDecisionView) -> RustBuffer {
+    return FfiConverterTypeWidgetDecisionView.lower(value)
+}
+
+
+/**
+ * What to draw from `from_ms` until the next frame.
+ */
+public struct WidgetFrame {
+    public var fromMs: UInt64
+    /**
+     * Decisions still owed — answered ones do not count.
+     */
+    public var needsYou: UInt32
+    /**
+     * "3" or, when some were pushed out, "5+".
+     */
+    public var needsYouCount: String
+    /**
+     * "1 needs you", "3 need you", "Nothing needs you".
+     */
+    public var needsYouLine: String
+    /**
+     * Agents working or recently active.
+     */
+    public var working: UInt32
+    /**
+     * The fleet in one line, for the inline Lock Screen widget:
+     * "2 working · 1 needs you", "All quiet".
+     */
+    public var pulse: String
+    /**
+     * One per [`WidgetSnapshot::agents`], in order.
+     */
+    public var states: [WidgetAgentState]
+    /**
+     * Who the pulse counts as working, by name — "Atlas is working",
+     * "Atlas, Lyra and 3 others are working" — or `None` when nobody is.
+     *
+     * For a recap with nothing in it: under a header that says "2 working",
+     * "Nothing new since 10:42" reads as a contradiction (spec 2026-09-30,
+     * B5), so the widget says who is working instead. Named from the same
+     * states the count is, so the two cannot disagree. Absent from a
+     * snapshot written before it, which serde reads as `None` — nobody.
+     */
+    public var busy: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(fromMs: UInt64, 
+        /**
+         * Decisions still owed — answered ones do not count.
+         */needsYou: UInt32, 
+        /**
+         * "3" or, when some were pushed out, "5+".
+         */needsYouCount: String, 
+        /**
+         * "1 needs you", "3 need you", "Nothing needs you".
+         */needsYouLine: String, 
+        /**
+         * Agents working or recently active.
+         */working: UInt32, 
+        /**
+         * The fleet in one line, for the inline Lock Screen widget:
+         * "2 working · 1 needs you", "All quiet".
+         */pulse: String, 
+        /**
+         * One per [`WidgetSnapshot::agents`], in order.
+         */states: [WidgetAgentState], 
+        /**
+         * Who the pulse counts as working, by name — "Atlas is working",
+         * "Atlas, Lyra and 3 others are working" — or `None` when nobody is.
+         *
+         * For a recap with nothing in it: under a header that says "2 working",
+         * "Nothing new since 10:42" reads as a contradiction (spec 2026-09-30,
+         * B5), so the widget says who is working instead. Named from the same
+         * states the count is, so the two cannot disagree. Absent from a
+         * snapshot written before it, which serde reads as `None` — nobody.
+         */busy: String?) {
+        self.fromMs = fromMs
+        self.needsYou = needsYou
+        self.needsYouCount = needsYouCount
+        self.needsYouLine = needsYouLine
+        self.working = working
+        self.pulse = pulse
+        self.states = states
+        self.busy = busy
+    }
+}
+
+
+
+extension WidgetFrame: Equatable, Hashable {
+    public static func ==(lhs: WidgetFrame, rhs: WidgetFrame) -> Bool {
+        if lhs.fromMs != rhs.fromMs {
+            return false
+        }
+        if lhs.needsYou != rhs.needsYou {
+            return false
+        }
+        if lhs.needsYouCount != rhs.needsYouCount {
+            return false
+        }
+        if lhs.needsYouLine != rhs.needsYouLine {
+            return false
+        }
+        if lhs.working != rhs.working {
+            return false
+        }
+        if lhs.pulse != rhs.pulse {
+            return false
+        }
+        if lhs.states != rhs.states {
+            return false
+        }
+        if lhs.busy != rhs.busy {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(fromMs)
+        hasher.combine(needsYou)
+        hasher.combine(needsYouCount)
+        hasher.combine(needsYouLine)
+        hasher.combine(working)
+        hasher.combine(pulse)
+        hasher.combine(states)
+        hasher.combine(busy)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetFrame: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetFrame {
+        return
+            try WidgetFrame(
+                fromMs: FfiConverterUInt64.read(from: &buf), 
+                needsYou: FfiConverterUInt32.read(from: &buf), 
+                needsYouCount: FfiConverterString.read(from: &buf), 
+                needsYouLine: FfiConverterString.read(from: &buf), 
+                working: FfiConverterUInt32.read(from: &buf), 
+                pulse: FfiConverterString.read(from: &buf), 
+                states: FfiConverterSequenceTypeWidgetAgentState.read(from: &buf), 
+                busy: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WidgetFrame, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.fromMs, into: &buf)
+        FfiConverterUInt32.write(value.needsYou, into: &buf)
+        FfiConverterString.write(value.needsYouCount, into: &buf)
+        FfiConverterString.write(value.needsYouLine, into: &buf)
+        FfiConverterUInt32.write(value.working, into: &buf)
+        FfiConverterString.write(value.pulse, into: &buf)
+        FfiConverterSequenceTypeWidgetAgentState.write(value.states, into: &buf)
+        FfiConverterOptionString.write(value.busy, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetFrame_lift(_ buf: RustBuffer) throws -> WidgetFrame {
+    return try FfiConverterTypeWidgetFrame.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetFrame_lower(_ value: WidgetFrame) -> RustBuffer {
+    return FfiConverterTypeWidgetFrame.lower(value)
+}
+
+
+/**
  * A turn the app is watching, for [`apply_roster`].
  */
 public struct WidgetLiveTurn {
@@ -8561,6 +10091,335 @@ public func FfiConverterTypeWidgetLiveTurn_lift(_ buf: RustBuffer) throws -> Wid
 #endif
 public func FfiConverterTypeWidgetLiveTurn_lower(_ value: WidgetLiveTurn) -> RustBuffer {
     return FfiConverterTypeWidgetLiveTurn.lower(value)
+}
+
+
+/**
+ * One answer a decision offers.
+ */
+public struct WidgetOption {
+    /**
+     * What is sent: a permission option's name, or a gate's decision id.
+     */
+    public var id: String
+    public var label: String
+    /**
+     * Whether a widget button may send it. "Request changes" needs typed
+     * feedback, which a widget cannot take, so it opens the card instead.
+     */
+    public var inline: Bool
+    /**
+     * Whether it refuses rather than grants — drawn as the quieter button.
+     */
+    public var declines: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * What is sent: a permission option's name, or a gate's decision id.
+         */id: String, label: String, 
+        /**
+         * Whether a widget button may send it. "Request changes" needs typed
+         * feedback, which a widget cannot take, so it opens the card instead.
+         */inline: Bool, 
+        /**
+         * Whether it refuses rather than grants — drawn as the quieter button.
+         */declines: Bool) {
+        self.id = id
+        self.label = label
+        self.inline = inline
+        self.declines = declines
+    }
+}
+
+
+
+extension WidgetOption: Equatable, Hashable {
+    public static func ==(lhs: WidgetOption, rhs: WidgetOption) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.label != rhs.label {
+            return false
+        }
+        if lhs.inline != rhs.inline {
+            return false
+        }
+        if lhs.declines != rhs.declines {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(label)
+        hasher.combine(inline)
+        hasher.combine(declines)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetOption: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetOption {
+        return
+            try WidgetOption(
+                id: FfiConverterString.read(from: &buf), 
+                label: FfiConverterString.read(from: &buf), 
+                inline: FfiConverterBool.read(from: &buf), 
+                declines: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WidgetOption, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterBool.write(value.inline, into: &buf)
+        FfiConverterBool.write(value.declines, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetOption_lift(_ buf: RustBuffer) throws -> WidgetOption {
+    return try FfiConverterTypeWidgetOption.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetOption_lower(_ value: WidgetOption) -> RustBuffer {
+    return FfiConverterTypeWidgetOption.lower(value)
+}
+
+
+/**
+ * One row of the recap.
+ */
+public struct WidgetRecap {
+    public var roomId: String
+    public var name: String
+    public var outcome: WidgetOutcome
+    public var line: String
+    public var unread: UInt32
+    public var atMs: UInt64
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(roomId: String, name: String, outcome: WidgetOutcome, line: String, unread: UInt32, atMs: UInt64) {
+        self.roomId = roomId
+        self.name = name
+        self.outcome = outcome
+        self.line = line
+        self.unread = unread
+        self.atMs = atMs
+    }
+}
+
+
+
+extension WidgetRecap: Equatable, Hashable {
+    public static func ==(lhs: WidgetRecap, rhs: WidgetRecap) -> Bool {
+        if lhs.roomId != rhs.roomId {
+            return false
+        }
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.outcome != rhs.outcome {
+            return false
+        }
+        if lhs.line != rhs.line {
+            return false
+        }
+        if lhs.unread != rhs.unread {
+            return false
+        }
+        if lhs.atMs != rhs.atMs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(roomId)
+        hasher.combine(name)
+        hasher.combine(outcome)
+        hasher.combine(line)
+        hasher.combine(unread)
+        hasher.combine(atMs)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetRecap: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetRecap {
+        return
+            try WidgetRecap(
+                roomId: FfiConverterString.read(from: &buf), 
+                name: FfiConverterString.read(from: &buf), 
+                outcome: FfiConverterTypeWidgetOutcome.read(from: &buf), 
+                line: FfiConverterString.read(from: &buf), 
+                unread: FfiConverterUInt32.read(from: &buf), 
+                atMs: FfiConverterUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WidgetRecap, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.roomId, into: &buf)
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterTypeWidgetOutcome.write(value.outcome, into: &buf)
+        FfiConverterString.write(value.line, into: &buf)
+        FfiConverterUInt32.write(value.unread, into: &buf)
+        FfiConverterUInt64.write(value.atMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetRecap_lift(_ buf: RustBuffer) throws -> WidgetRecap {
+    return try FfiConverterTypeWidgetRecap.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetRecap_lower(_ value: WidgetRecap) -> RustBuffer {
+    return FfiConverterTypeWidgetRecap.lower(value)
+}
+
+
+/**
+ * The snapshot as a widget draws it at one moment.
+ */
+public struct WidgetView {
+    public var content: WidgetContent
+    public var frame: WidgetFrame?
+    public var decisions: [WidgetDecisionView]
+    public var agents: [WidgetAgentView]
+    public var recap: [WidgetRecap]
+    public var overflow: Bool
+    public var openedAtMs: UInt64?
+    /**
+     * When the next frame begins: when to draw again without a write.
+     */
+    public var nextChangeMs: UInt64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(content: WidgetContent, frame: WidgetFrame?, decisions: [WidgetDecisionView], agents: [WidgetAgentView], recap: [WidgetRecap], overflow: Bool, openedAtMs: UInt64?, 
+        /**
+         * When the next frame begins: when to draw again without a write.
+         */nextChangeMs: UInt64?) {
+        self.content = content
+        self.frame = frame
+        self.decisions = decisions
+        self.agents = agents
+        self.recap = recap
+        self.overflow = overflow
+        self.openedAtMs = openedAtMs
+        self.nextChangeMs = nextChangeMs
+    }
+}
+
+
+
+extension WidgetView: Equatable, Hashable {
+    public static func ==(lhs: WidgetView, rhs: WidgetView) -> Bool {
+        if lhs.content != rhs.content {
+            return false
+        }
+        if lhs.frame != rhs.frame {
+            return false
+        }
+        if lhs.decisions != rhs.decisions {
+            return false
+        }
+        if lhs.agents != rhs.agents {
+            return false
+        }
+        if lhs.recap != rhs.recap {
+            return false
+        }
+        if lhs.overflow != rhs.overflow {
+            return false
+        }
+        if lhs.openedAtMs != rhs.openedAtMs {
+            return false
+        }
+        if lhs.nextChangeMs != rhs.nextChangeMs {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(content)
+        hasher.combine(frame)
+        hasher.combine(decisions)
+        hasher.combine(agents)
+        hasher.combine(recap)
+        hasher.combine(overflow)
+        hasher.combine(openedAtMs)
+        hasher.combine(nextChangeMs)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetView: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetView {
+        return
+            try WidgetView(
+                content: FfiConverterTypeWidgetContent.read(from: &buf), 
+                frame: FfiConverterOptionTypeWidgetFrame.read(from: &buf), 
+                decisions: FfiConverterSequenceTypeWidgetDecisionView.read(from: &buf), 
+                agents: FfiConverterSequenceTypeWidgetAgentView.read(from: &buf), 
+                recap: FfiConverterSequenceTypeWidgetRecap.read(from: &buf), 
+                overflow: FfiConverterBool.read(from: &buf), 
+                openedAtMs: FfiConverterOptionUInt64.read(from: &buf), 
+                nextChangeMs: FfiConverterOptionUInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: WidgetView, into buf: inout [UInt8]) {
+        FfiConverterTypeWidgetContent.write(value.content, into: &buf)
+        FfiConverterOptionTypeWidgetFrame.write(value.frame, into: &buf)
+        FfiConverterSequenceTypeWidgetDecisionView.write(value.decisions, into: &buf)
+        FfiConverterSequenceTypeWidgetAgentView.write(value.agents, into: &buf)
+        FfiConverterSequenceTypeWidgetRecap.write(value.recap, into: &buf)
+        FfiConverterBool.write(value.overflow, into: &buf)
+        FfiConverterOptionUInt64.write(value.openedAtMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.nextChangeMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetView_lift(_ buf: RustBuffer) throws -> WidgetView {
+    return try FfiConverterTypeWidgetView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetView_lower(_ value: WidgetView) -> RustBuffer {
+    return FfiConverterTypeWidgetView.lower(value)
 }
 
 
@@ -10019,6 +11878,94 @@ extension Membership: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * An answer given from a notification, ready to send with no room open
+ * (`NotificationRouter.swift:36-52`). Field order is the order Swift labels.
+ */
+
+public enum NotificationAnswer {
+    
+    /**
+     * An AgentPod permission request: `option_id` goes into the room as a
+     * plain message, as every other client answers one.
+     */
+    case permission(roomId: String, optionId: String
+    )
+    /**
+     * A superpipeline gate: a `dev.superpipeline.gate.decision.v1`
+     * referencing `gate_event_id`, exactly what the card sends.
+     */
+    case gate(roomId: String, gateEventId: String, gateId: String, optionId: String, comment: String?, prompt: String
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationAnswer: FfiConverterRustBuffer {
+    typealias SwiftType = NotificationAnswer
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationAnswer {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .permission(roomId: try FfiConverterString.read(from: &buf), optionId: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .gate(roomId: try FfiConverterString.read(from: &buf), gateEventId: try FfiConverterString.read(from: &buf), gateId: try FfiConverterString.read(from: &buf), optionId: try FfiConverterString.read(from: &buf), comment: try FfiConverterOptionString.read(from: &buf), prompt: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: NotificationAnswer, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .permission(roomId,optionId):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(roomId, into: &buf)
+            FfiConverterString.write(optionId, into: &buf)
+            
+        
+        case let .gate(roomId,gateEventId,gateId,optionId,comment,prompt):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(roomId, into: &buf)
+            FfiConverterString.write(gateEventId, into: &buf)
+            FfiConverterString.write(gateId, into: &buf)
+            FfiConverterString.write(optionId, into: &buf)
+            FfiConverterOptionString.write(comment, into: &buf)
+            FfiConverterString.write(prompt, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationAnswer_lift(_ buf: RustBuffer) throws -> NotificationAnswer {
+    return try FfiConverterTypeNotificationAnswer.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationAnswer_lower(_ value: NotificationAnswer) -> RustBuffer {
+    return FfiConverterTypeNotificationAnswer.lower(value)
+}
+
+
+
+extension NotificationAnswer: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * Which set of actions a notification offers. The host registers one
  * category per case under [`NotificationCategory::identifier`].
  */
@@ -10197,6 +12144,95 @@ public func FfiConverterTypeNotificationMode_lower(_ value: NotificationMode) ->
 
 
 extension NotificationMode: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What an action on a delivered notification means.
+ */
+
+public enum NotificationResponse {
+    
+    /**
+     * Open the room.
+     */
+    case `open`(roomId: String
+    )
+    /**
+     * Send this answer — no room needs to be open.
+     */
+    case answer(answer: NotificationAnswer
+    )
+    /**
+     * Nothing this app can act on.
+     */
+    case ignore
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeNotificationResponse: FfiConverterRustBuffer {
+    typealias SwiftType = NotificationResponse
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> NotificationResponse {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .`open`(roomId: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .answer(answer: try FfiConverterTypeNotificationAnswer.read(from: &buf)
+        )
+        
+        case 3: return .ignore
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: NotificationResponse, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .`open`(roomId):
+            writeInt(&buf, Int32(1))
+            FfiConverterString.write(roomId, into: &buf)
+            
+        
+        case let .answer(answer):
+            writeInt(&buf, Int32(2))
+            FfiConverterTypeNotificationAnswer.write(answer, into: &buf)
+            
+        
+        case .ignore:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationResponse_lift(_ buf: RustBuffer) throws -> NotificationResponse {
+    return try FfiConverterTypeNotificationResponse.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeNotificationResponse_lower(_ value: NotificationResponse) -> RustBuffer {
+    return FfiConverterTypeNotificationResponse.lower(value)
+}
+
+
+
+extension NotificationResponse: Equatable, Hashable {}
 
 
 
@@ -11718,6 +13754,338 @@ extension TurnInput: Equatable, Hashable {}
 
 
 
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What the widget shows in place of a snapshot, or that it has one.
+ */
+
+public enum WidgetContent {
+    
+    /**
+     * Nothing stored yet, or another schema's.
+     */
+    case waiting
+    case signedOut
+    case snapshot
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetContent: FfiConverterRustBuffer {
+    typealias SwiftType = WidgetContent
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetContent {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .waiting
+        
+        case 2: return .signedOut
+        
+        case 3: return .snapshot
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: WidgetContent, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .waiting:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .signedOut:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .snapshot:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetContent_lift(_ buf: RustBuffer) throws -> WidgetContent {
+    return try FfiConverterTypeWidgetContent.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetContent_lower(_ value: WidgetContent) -> RustBuffer {
+    return FfiConverterTypeWidgetContent.lower(value)
+}
+
+
+
+extension WidgetContent: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Which kind of question a decision is.
+ */
+
+public enum WidgetDecisionKind {
+    
+    /**
+     * An AgentPod permission request: Allow once / Reject.
+     */
+    case permission
+    /**
+     * A superpipeline gate: Approve / Request changes / Reject.
+     */
+    case gate
+    /**
+     * A decision the widget cannot answer — it must be read in the app.
+     */
+    case `open`
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetDecisionKind: FfiConverterRustBuffer {
+    typealias SwiftType = WidgetDecisionKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetDecisionKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .permission
+        
+        case 2: return .gate
+        
+        case 3: return .`open`
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: WidgetDecisionKind, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .permission:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .gate:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .`open`:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetDecisionKind_lift(_ buf: RustBuffer) throws -> WidgetDecisionKind {
+    return try FfiConverterTypeWidgetDecisionKind.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetDecisionKind_lower(_ value: WidgetDecisionKind) -> RustBuffer {
+    return FfiConverterTypeWidgetDecisionKind.lower(value)
+}
+
+
+
+extension WidgetDecisionKind: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * What an agent did since the app was last opened, most telling first.
+ */
+
+public enum WidgetOutcome {
+    
+    /**
+     * A turn ended with a tool call that failed.
+     */
+    case failed
+    /**
+     * A turn ended with every tool call done.
+     */
+    case finished
+    /**
+     * It said something, or asked something.
+     */
+    case said
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = WidgetOutcome
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetOutcome {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .failed
+        
+        case 2: return .finished
+        
+        case 3: return .said
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: WidgetOutcome, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .finished:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .said:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetOutcome_lift(_ buf: RustBuffer) throws -> WidgetOutcome {
+    return try FfiConverterTypeWidgetOutcome.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetOutcome_lower(_ value: WidgetOutcome) -> RustBuffer {
+    return FfiConverterTypeWidgetOutcome.lower(value)
+}
+
+
+
+extension WidgetOutcome: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * How an agent's state is drawn. Carried beside the word so a host colours
+ * by meaning rather than by matching text.
+ */
+
+public enum WidgetTone {
+    
+    case needsYou
+    case working
+    case active
+    case idle
+    case quiet
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeWidgetTone: FfiConverterRustBuffer {
+    typealias SwiftType = WidgetTone
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> WidgetTone {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .needsYou
+        
+        case 2: return .working
+        
+        case 3: return .active
+        
+        case 4: return .idle
+        
+        case 5: return .quiet
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: WidgetTone, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .needsYou:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .working:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .active:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .idle:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .quiet:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetTone_lift(_ buf: RustBuffer) throws -> WidgetTone {
+    return try FfiConverterTypeWidgetTone.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeWidgetTone_lower(_ value: WidgetTone) -> RustBuffer {
+    return FfiConverterTypeWidgetTone.lower(value)
+}
+
+
+
+extension WidgetTone: Equatable, Hashable {}
+
+
+
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
@@ -12057,6 +14425,30 @@ fileprivate struct FfiConverterOptionTypeNotificationActivity: FfiConverterRustB
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeNotificationTextInput: FfiConverterRustBuffer {
+    typealias SwiftType = NotificationTextInput?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeNotificationTextInput.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeNotificationTextInput.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypePermissionAnswers: FfiConverterRustBuffer {
     typealias SwiftType = PermissionAnswers?
 
@@ -12297,6 +14689,78 @@ fileprivate struct FfiConverterOptionTypeVoiceReplyPlayer: FfiConverterRustBuffe
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeWidgetAgentState: FfiConverterRustBuffer {
+    typealias SwiftType = WidgetAgentState?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeWidgetAgentState.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeWidgetAgentState.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeWidgetAnswered: FfiConverterRustBuffer {
+    typealias SwiftType = WidgetAnswered?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeWidgetAnswered.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeWidgetAnswered.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeWidgetFrame: FfiConverterRustBuffer {
+    typealias SwiftType = WidgetFrame?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeWidgetFrame.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeWidgetFrame.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeDeliveryState: FfiConverterRustBuffer {
     typealias SwiftType = DeliveryState?
 
@@ -12385,6 +14849,30 @@ fileprivate struct FfiConverterOptionTypeTurnEnding: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeTurnEnding.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeWidgetOutcome: FfiConverterRustBuffer {
+    typealias SwiftType = WidgetOutcome?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeWidgetOutcome.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeWidgetOutcome.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -12808,6 +15296,131 @@ fileprivate struct FfiConverterSequenceTypeTurnStep: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeTurnStep.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeWidgetAgentState: FfiConverterRustBuffer {
+    typealias SwiftType = [WidgetAgentState]
+
+    public static func write(_ value: [WidgetAgentState], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeWidgetAgentState.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [WidgetAgentState] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [WidgetAgentState]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeWidgetAgentState.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeWidgetAgentView: FfiConverterRustBuffer {
+    typealias SwiftType = [WidgetAgentView]
+
+    public static func write(_ value: [WidgetAgentView], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeWidgetAgentView.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [WidgetAgentView] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [WidgetAgentView]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeWidgetAgentView.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeWidgetDecisionView: FfiConverterRustBuffer {
+    typealias SwiftType = [WidgetDecisionView]
+
+    public static func write(_ value: [WidgetDecisionView], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeWidgetDecisionView.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [WidgetDecisionView] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [WidgetDecisionView]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeWidgetDecisionView.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeWidgetOption: FfiConverterRustBuffer {
+    typealias SwiftType = [WidgetOption]
+
+    public static func write(_ value: [WidgetOption], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeWidgetOption.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [WidgetOption] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [WidgetOption]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeWidgetOption.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeWidgetRecap: FfiConverterRustBuffer {
+    typealias SwiftType = [WidgetRecap]
+
+    public static func write(_ value: [WidgetRecap], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeWidgetRecap.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [WidgetRecap] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [WidgetRecap]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeWidgetRecap.read(from: &buf))
         }
         return seq
     }

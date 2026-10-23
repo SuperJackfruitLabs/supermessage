@@ -15,9 +15,14 @@ function elapsed(ms: number): string {
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
 }
 
+/** The instant story frames read as "now": a turn started at STORY_TURN_START has run 3 s. */
+export const STORY_TURN_START = 1_700_000_000_000;
+export const STORY_NOW = STORY_TURN_START + 3000;
+
 export const storyServices: LiveCardServices = {
   elapsedLabel: async (ms) => elapsed(ms),
   statusWord: async (endedBy) => (endedBy === null ? "Working" : endedBy === "timedOut" ? "Stopped" : "Done"),
+  now: () => STORY_NOW,
   parse: async (markdown) =>
     markdown
       .split(/\n\n+/)

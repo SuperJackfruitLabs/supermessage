@@ -19,7 +19,7 @@
   import type { RichBlock, TurnStep, TurnSummary } from "$lib/ipc";
   import RichText from "../RichText.svelte";
   import { createPacer } from "../pacer";
-  import { ipcServices, type LiveCardServices } from "./liveCardServices";
+  import { clockOf, ipcServices, type LiveCardServices } from "./liveCardServices";
   import {
     elapsedMs,
     failedLabel,
@@ -82,7 +82,7 @@
       const s = untrack(() => summary);
       if (s === null) return;
       services
-        .elapsedLabel(elapsedMs(s, Date.now(), still))
+        .elapsedLabel(elapsedMs(s, clockOf(services)(), still))
         .then((t) => {
           if (live) elapsed = t;
         })

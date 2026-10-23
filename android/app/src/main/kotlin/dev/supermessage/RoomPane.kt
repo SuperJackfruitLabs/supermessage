@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.supermessage.kit.MentionCast
+import dev.supermessage.kit.ReportSubject
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.SendResult
 import dev.supermessage.kit.Session
@@ -56,6 +57,12 @@ internal fun RoomPane(
     // `Session.open` subscribes, before the first
     // diff for it has even arrived.
     val roomId by session.timeline.roomId.collectAsStateWithLifecycle()
+
+    // What the report sheet is open for, if it is. Keyed by the room: a sheet
+    // about one room's message must not follow the reader into the next.
+    // `reportOrigin` is the row it was started from, for returning focus.
+    var reporting by remember(roomId) { mutableStateOf<ReportSubject?>(null) }
+    var reportOrigin by remember(roomId) { mutableStateOf<String?>(null) }
 
     // What the core already decided about this room — never
     // re-derived here. An invited room shows InvitationView in
@@ -122,6 +129,10 @@ internal fun RoomPane(
                 joinRoom = session::joinRoom,
                 leaveRoom = session::leaveRoom,
                 modifier = Modifier.fillMaxWidth(),
+                onReport = {
+                    reporting = ReportSubject.Room(currentRoomId, currentRow?.identity?.name ?: currentRoomId)
+                },
+                reporting = reporting != null,
             )
         }
     } else {
@@ -255,6 +266,16 @@ internal fun RoomPane(
                         onEdit = { row -> session.edits.start(row, currentRoomId) },
                         onDelete = { row -> session.delete(row.item.eventId, currentRoomId) },
                         onSwipeReply = { row -> session.replies.start(row, currentRoomId) },
+                        reportingRowId = reportOrigin,
+                        // The subject needs the sender's kind, which the room is
+                        // asked for; the sheet opens once it has the answer.
+                        onReport = { row ->
+                            reportOrigin = row.item.id
+                            scope.launch {
+                                val subject = session.reportSubjectFor(row, currentRoomId)
+                                if (subject == null) reportOrigin = null else reporting = subject
+                            }
+                        },
                         modifier = Modifier.weight(1f).fillMaxWidth(),
                     )
                 }
@@ -353,5 +374,16 @@ internal fun RoomPane(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
+    }
+    reporting?.let { subject ->
+        ReportSheet(
+            subject = subject,
+            isBlocked = session.safety::isBlocked,
+            onSend = { reason, block -> session.report(subject, reason, block) },
+            onClose = {
+                reporting = null
+                reportOrigin = null
+            },
+        )
     }
 }

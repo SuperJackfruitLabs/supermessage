@@ -2112,6 +2112,63 @@ public object FfiConverterTypeNeedsYouInbox: FfiConverterRustBuffer<NeedsYouInbo
 
 
 /**
+ * One action a notification offers.
+ */
+data class NotificationActionSpec (
+    var `id`: kotlin.String, 
+    var `title`: kotlin.String, 
+    var `destructive`: kotlin.Boolean, 
+    /**
+     * The device must be unlocked to run it.
+     */
+    var `requiresUnlock`: kotlin.Boolean, 
+    /**
+     * Running it brings the app to the front.
+     */
+    var `opensApp`: kotlin.Boolean, 
+    var `textInput`: NotificationTextInput?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNotificationActionSpec: FfiConverterRustBuffer<NotificationActionSpec> {
+    override fun read(buf: ByteBuffer): NotificationActionSpec {
+        return NotificationActionSpec(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalTypeNotificationTextInput.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: NotificationActionSpec) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterBoolean.allocationSize(value.`destructive`) +
+            FfiConverterBoolean.allocationSize(value.`requiresUnlock`) +
+            FfiConverterBoolean.allocationSize(value.`opensApp`) +
+            FfiConverterOptionalTypeNotificationTextInput.allocationSize(value.`textInput`)
+    )
+
+    override fun write(value: NotificationActionSpec, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterBoolean.write(value.`destructive`, buf)
+            FfiConverterBoolean.write(value.`requiresUnlock`, buf)
+            FfiConverterBoolean.write(value.`opensApp`, buf)
+            FfiConverterOptionalTypeNotificationTextInput.write(value.`textInput`, buf)
+    }
+}
+
+
+
+/**
  * The facts [`crate::widget`] needs from one pushed event, and nothing the
  * notification itself does not already know.
  */
@@ -2196,6 +2253,66 @@ public object FfiConverterTypeNotificationActivity: FfiConverterRustBuffer<Notif
             FfiConverterOptionalString.write(value.`gateId`, buf)
             FfiConverterOptionalString.write(value.`references`, buf)
             FfiConverterOptionalString.write(value.`optionId`, buf)
+    }
+}
+
+
+
+/**
+ * What the notifier needs to know about the app when it decides
+ * (`NotificationComposer.swift:125-149`).
+ */
+data class NotificationContext (
+    /**
+     * The room on screen, or `None` on the roster.
+     */
+    var `openRoomId`: kotlin.String?, 
+    /**
+     * Whether the app is in the foreground and active.
+     */
+    var `appActive`: kotlin.Boolean, 
+    /**
+     * The room the timeline store is subscribed to. That room's events are
+     * seen row by row, so the roster path leaves it alone rather than
+     * posting a second, vaguer notification for the same message.
+     */
+    var `timelineRoomId`: kotlin.String?, 
+    /**
+     * Whether this device receives remote pushes for the account — a
+     * pusher is registered. Then the push shows what arrives while the app
+     * is away, and the app only adds what it sees first, in the foreground.
+     */
+    var `remotePush`: kotlin.Boolean = false
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNotificationContext: FfiConverterRustBuffer<NotificationContext> {
+    override fun read(buf: ByteBuffer): NotificationContext {
+        return NotificationContext(
+            FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: NotificationContext) = (
+            FfiConverterOptionalString.allocationSize(value.`openRoomId`) +
+            FfiConverterBoolean.allocationSize(value.`appActive`) +
+            FfiConverterOptionalString.allocationSize(value.`timelineRoomId`) +
+            FfiConverterBoolean.allocationSize(value.`remotePush`)
+    )
+
+    override fun write(value: NotificationContext, buf: ByteBuffer) {
+            FfiConverterOptionalString.write(value.`openRoomId`, buf)
+            FfiConverterBoolean.write(value.`appActive`, buf)
+            FfiConverterOptionalString.write(value.`timelineRoomId`, buf)
+            FfiConverterBoolean.write(value.`remotePush`, buf)
     }
 }
 
@@ -2333,6 +2450,41 @@ public object FfiConverterTypeNotificationDto: FfiConverterRustBuffer<Notificati
 
 
 /**
+ * The text field of a text-input action.
+ */
+data class NotificationTextInput (
+    var `buttonTitle`: kotlin.String, 
+    var `placeholder`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNotificationTextInput: FfiConverterRustBuffer<NotificationTextInput> {
+    override fun read(buf: ByteBuffer): NotificationTextInput {
+        return NotificationTextInput(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: NotificationTextInput) = (
+            FfiConverterString.allocationSize(value.`buttonTitle`) +
+            FfiConverterString.allocationSize(value.`placeholder`)
+    )
+
+    override fun write(value: NotificationTextInput, buf: ByteBuffer) {
+            FfiConverterString.write(value.`buttonTitle`, buf)
+            FfiConverterString.write(value.`placeholder`, buf)
+    }
+}
+
+
+
+/**
  * The two option ids a PERMISSION notification's actions send.
  */
 data class PermissionAnswers (
@@ -2437,6 +2589,80 @@ public object FfiConverterTypePersonDto: FfiConverterRustBuffer<PersonDto> {
             FfiConverterString.write(value.`initial`, buf)
             FfiConverterOptionalTypeRuntimeDto.write(value.`runtime`, buf)
             FfiConverterOptionalString.write(value.`avatarUrl`, buf)
+    }
+}
+
+
+
+/**
+ * One notification the host should post, decided.
+ */
+data class PlannedNotification (
+    /**
+     * The request id: stable per event. For an event it is the event id —
+     * the push gateway's `apns-collapse-id` too, so a local and a remote
+     * notification for one event replace each other rather than stacking.
+     */
+    var `id`: kotlin.String, 
+    var `roomId`: kotlin.String, 
+    var `eventId`: kotlin.String?, 
+    var `title`: kotlin.String, 
+    var `subtitle`: kotlin.String?, 
+    var `body`: kotlin.String, 
+    var `category`: NotificationCategory, 
+    /**
+     * Set exactly when `category` is `Permission`.
+     */
+    var `permission`: PermissionAnswers?, 
+    /**
+     * Set exactly when `category` is `Gate`.
+     */
+    var `gate`: GateAnswers?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePlannedNotification: FfiConverterRustBuffer<PlannedNotification> {
+    override fun read(buf: ByteBuffer): PlannedNotification {
+        return PlannedNotification(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeNotificationCategory.read(buf),
+            FfiConverterOptionalTypePermissionAnswers.read(buf),
+            FfiConverterOptionalTypeGateAnswers.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PlannedNotification) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterOptionalString.allocationSize(value.`eventId`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterOptionalString.allocationSize(value.`subtitle`) +
+            FfiConverterString.allocationSize(value.`body`) +
+            FfiConverterTypeNotificationCategory.allocationSize(value.`category`) +
+            FfiConverterOptionalTypePermissionAnswers.allocationSize(value.`permission`) +
+            FfiConverterOptionalTypeGateAnswers.allocationSize(value.`gate`)
+    )
+
+    override fun write(value: PlannedNotification, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterOptionalString.write(value.`eventId`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterOptionalString.write(value.`subtitle`, buf)
+            FfiConverterString.write(value.`body`, buf)
+            FfiConverterTypeNotificationCategory.write(value.`category`, buf)
+            FfiConverterOptionalTypePermissionAnswers.write(value.`permission`, buf)
+            FfiConverterOptionalTypeGateAnswers.write(value.`gate`, buf)
     }
 }
 
@@ -4302,6 +4528,49 @@ public object FfiConverterTypeTranscriptNotice: FfiConverterRustBuffer<Transcrip
 
 
 /**
+ * What a card says: a headline, a subtitle and which way it leans.
+ */
+data class TurnCard (
+    var `headline`: kotlin.String, 
+    var `subtitle`: kotlin.String, 
+    var `inProgress`: kotlin.Boolean, 
+    var `failed`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeTurnCard: FfiConverterRustBuffer<TurnCard> {
+    override fun read(buf: ByteBuffer): TurnCard {
+        return TurnCard(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: TurnCard) = (
+            FfiConverterString.allocationSize(value.`headline`) +
+            FfiConverterString.allocationSize(value.`subtitle`) +
+            FfiConverterBoolean.allocationSize(value.`inProgress`) +
+            FfiConverterBoolean.allocationSize(value.`failed`)
+    )
+
+    override fun write(value: TurnCard, buf: ByteBuffer) {
+            FfiConverterString.write(value.`headline`, buf)
+            FfiConverterString.write(value.`subtitle`, buf)
+            FfiConverterBoolean.write(value.`inProgress`, buf)
+            FfiConverterBoolean.write(value.`failed`, buf)
+    }
+}
+
+
+
+/**
  * A turn's tool calls: how many it made and how many of those failed.
  */
 data class TurnCounts (
@@ -4995,6 +5264,83 @@ public object FfiConverterTypeVoiceNoteTranscript: FfiConverterRustBuffer<VoiceN
 
 
 /**
+ * The recorder's numbers, for a host to configure its encoder and meter.
+ */
+data class VoiceRecordingSpec (
+    /**
+     * `VoiceRecordingFormat.swift:17` minus the container's extension.
+     */
+    var `fileStem`: kotlin.String, 
+    /**
+     * `VoiceRecordingFormat.swift:24`.
+     */
+    var `sampleRate`: kotlin.UInt, 
+    /**
+     * `VoiceRecordingFormat.swift:25`.
+     */
+    var `channels`: kotlin.UInt, 
+    /**
+     * `VoiceRecordingFormat.swift:26`, bits per second.
+     */
+    var `bitRate`: kotlin.UInt, 
+    /**
+     * How often the input level is sampled: `VoiceRecorder.swift:46` (0.1 s).
+     */
+    var `meterIntervalMs`: kotlin.UInt, 
+    /**
+     * How many points a waveform keeps: `VoiceRecorder.swift:47`.
+     */
+    var `waveformBins`: kotlin.UInt, 
+    /**
+     * Shorter than this is a slip of the thumb, not a message:
+     * `VoiceRecorder.swift:56` (0.6 s).
+     */
+    var `shortestMs`: kotlin.ULong
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeVoiceRecordingSpec: FfiConverterRustBuffer<VoiceRecordingSpec> {
+    override fun read(buf: ByteBuffer): VoiceRecordingSpec {
+        return VoiceRecordingSpec(
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: VoiceRecordingSpec) = (
+            FfiConverterString.allocationSize(value.`fileStem`) +
+            FfiConverterUInt.allocationSize(value.`sampleRate`) +
+            FfiConverterUInt.allocationSize(value.`channels`) +
+            FfiConverterUInt.allocationSize(value.`bitRate`) +
+            FfiConverterUInt.allocationSize(value.`meterIntervalMs`) +
+            FfiConverterUInt.allocationSize(value.`waveformBins`) +
+            FfiConverterULong.allocationSize(value.`shortestMs`)
+    )
+
+    override fun write(value: VoiceRecordingSpec, buf: ByteBuffer) {
+            FfiConverterString.write(value.`fileStem`, buf)
+            FfiConverterUInt.write(value.`sampleRate`, buf)
+            FfiConverterUInt.write(value.`channels`, buf)
+            FfiConverterUInt.write(value.`bitRate`, buf)
+            FfiConverterUInt.write(value.`meterIntervalMs`, buf)
+            FfiConverterUInt.write(value.`waveformBins`, buf)
+            FfiConverterULong.write(value.`shortestMs`, buf)
+    }
+}
+
+
+
+/**
  * What a voice message says it speaks: the text message it is the voice of.
  *
  * Carried on the voice message's own row ([`TimelineRow::voice_reply`]) so
@@ -5092,6 +5438,174 @@ public object FfiConverterTypeVoiceReplyPlayer: FfiConverterRustBuffer<VoiceRepl
 
 
 /**
+ * One agent room.
+ */
+data class WidgetAgent (
+    var `roomId`: kotlin.String, 
+    var `name`: kotlin.String, 
+    var `lastActivityMs`: kotlin.ULong?, 
+    /**
+     * What it last said, as the roster previews it, bounded to
+     * [`LINE_MAX_CHARS`]. `None` when there is nothing to say.
+     */
+    var `line`: kotlin.String?, 
+    /**
+     * The step of a turn the app watched in progress.
+     */
+    var `step`: kotlin.String?, 
+    /**
+     * Whether the roster itself said this room owes an answer.
+     */
+    var `rosterNeedsYou`: kotlin.Boolean, 
+    /**
+     * The most telling thing it did since the app was last opened: a turn
+     * that failed outranks one that finished, which outranks a line.
+     */
+    var `outcome`: WidgetOutcome?, 
+    /**
+     * "2 of 7 steps failed", "Finished · 7 steps", or what it said.
+     */
+    var `outcomeLine`: kotlin.String?, 
+    var `outcomeAtMs`: kotlin.ULong?, 
+    /**
+     * Pushes from it since the app was last opened.
+     */
+    var `unread`: kotlin.UInt, 
+    /**
+     * The last event counted in `unread`, so a push delivered twice in a
+     * row counts once.
+     */
+    var `countedEventId`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetAgent: FfiConverterRustBuffer<WidgetAgent> {
+    override fun read(buf: ByteBuffer): WidgetAgent {
+        return WidgetAgent(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalTypeWidgetOutcome.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetAgent) = (
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterOptionalULong.allocationSize(value.`lastActivityMs`) +
+            FfiConverterOptionalString.allocationSize(value.`line`) +
+            FfiConverterOptionalString.allocationSize(value.`step`) +
+            FfiConverterBoolean.allocationSize(value.`rosterNeedsYou`) +
+            FfiConverterOptionalTypeWidgetOutcome.allocationSize(value.`outcome`) +
+            FfiConverterOptionalString.allocationSize(value.`outcomeLine`) +
+            FfiConverterOptionalULong.allocationSize(value.`outcomeAtMs`) +
+            FfiConverterUInt.allocationSize(value.`unread`) +
+            FfiConverterOptionalString.allocationSize(value.`countedEventId`)
+    )
+
+    override fun write(value: WidgetAgent, buf: ByteBuffer) {
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterOptionalULong.write(value.`lastActivityMs`, buf)
+            FfiConverterOptionalString.write(value.`line`, buf)
+            FfiConverterOptionalString.write(value.`step`, buf)
+            FfiConverterBoolean.write(value.`rosterNeedsYou`, buf)
+            FfiConverterOptionalTypeWidgetOutcome.write(value.`outcome`, buf)
+            FfiConverterOptionalString.write(value.`outcomeLine`, buf)
+            FfiConverterOptionalULong.write(value.`outcomeAtMs`, buf)
+            FfiConverterUInt.write(value.`unread`, buf)
+            FfiConverterOptionalString.write(value.`countedEventId`, buf)
+    }
+}
+
+
+
+/**
+ * An agent's state within one frame.
+ */
+data class WidgetAgentState (
+    /**
+     * "needs you", "working", "active", "idle", "quiet".
+     */
+    var `word`: kotlin.String, 
+    var `tone`: WidgetTone
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetAgentState: FfiConverterRustBuffer<WidgetAgentState> {
+    override fun read(buf: ByteBuffer): WidgetAgentState {
+        return WidgetAgentState(
+            FfiConverterString.read(buf),
+            FfiConverterTypeWidgetTone.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetAgentState) = (
+            FfiConverterString.allocationSize(value.`word`) +
+            FfiConverterTypeWidgetTone.allocationSize(value.`tone`)
+    )
+
+    override fun write(value: WidgetAgentState, buf: ByteBuffer) {
+            FfiConverterString.write(value.`word`, buf)
+            FfiConverterTypeWidgetTone.write(value.`tone`, buf)
+    }
+}
+
+
+
+/**
+ * An agent and its state in the frame being shown.
+ */
+data class WidgetAgentView (
+    var `agent`: WidgetAgent, 
+    var `state`: WidgetAgentState?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetAgentView: FfiConverterRustBuffer<WidgetAgentView> {
+    override fun read(buf: ByteBuffer): WidgetAgentView {
+        return WidgetAgentView(
+            FfiConverterTypeWidgetAgent.read(buf),
+            FfiConverterOptionalTypeWidgetAgentState.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetAgentView) = (
+            FfiConverterTypeWidgetAgent.allocationSize(value.`agent`) +
+            FfiConverterOptionalTypeWidgetAgentState.allocationSize(value.`state`)
+    )
+
+    override fun write(value: WidgetAgentView, buf: ByteBuffer) {
+            FfiConverterTypeWidgetAgent.write(value.`agent`, buf)
+            FfiConverterOptionalTypeWidgetAgentState.write(value.`state`, buf)
+    }
+}
+
+
+
+/**
  * What a widget button sends, for an answer the snapshot still owes: the
  * same facts a notification action carries.
  */
@@ -5143,6 +5657,264 @@ public object FfiConverterTypeWidgetAnswer: FfiConverterRustBuffer<WidgetAnswer>
 
 
 /**
+ * An answer this device sent and nothing has yet said is over.
+ */
+data class WidgetAnswered (
+    var `optionId`: kotlin.String, 
+    var `atMs`: kotlin.ULong, 
+    /**
+     * What the widget says in place of the buttons: "Sent: Allow once",
+     * "Sent: Approve · waiting for the board". Never the outcome.
+     */
+    var `line`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetAnswered: FfiConverterRustBuffer<WidgetAnswered> {
+    override fun read(buf: ByteBuffer): WidgetAnswered {
+        return WidgetAnswered(
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetAnswered) = (
+            FfiConverterString.allocationSize(value.`optionId`) +
+            FfiConverterULong.allocationSize(value.`atMs`) +
+            FfiConverterString.allocationSize(value.`line`)
+    )
+
+    override fun write(value: WidgetAnswered, buf: ByteBuffer) {
+            FfiConverterString.write(value.`optionId`, buf)
+            FfiConverterULong.write(value.`atMs`, buf)
+            FfiConverterString.write(value.`line`, buf)
+    }
+}
+
+
+
+/**
+ * One decision the reader owes, or has just answered.
+ */
+data class WidgetDecision (
+    var `kind`: WidgetDecisionKind, 
+    var `roomId`: kotlin.String, 
+    /**
+     * The event the card is — and, for a gate, the one its decision
+     * references.
+     */
+    var `eventId`: kotlin.String, 
+    /**
+     * The agent's or the board's name: the room's `RoomIdentity.name`.
+     */
+    var `agent`: kotlin.String, 
+    /**
+     * Who asked, so only their receipt closes it (the rule
+     * [`crate::gate_outcome`] applies to cards).
+     */
+    var `asker`: kotlin.String?, 
+    /**
+     * The question, bounded to [`QUESTION_MAX_CHARS`].
+     */
+    var `question`: kotlin.String, 
+    var `options`: List<WidgetOption>, 
+    /**
+     * A gate's `gate_id`.
+     */
+    var `gateId`: kotlin.String?, 
+    /**
+     * A gate's question as the card had it, unbounded — the sentence left in
+     * the room is derived from it when the widget answers.
+     */
+    var `prompt`: kotlin.String, 
+    var `askedAtMs`: kotlin.ULong, 
+    var `answered`: WidgetAnswered?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetDecision: FfiConverterRustBuffer<WidgetDecision> {
+    override fun read(buf: ByteBuffer): WidgetDecision {
+        return WidgetDecision(
+            FfiConverterTypeWidgetDecisionKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeWidgetOption.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalTypeWidgetAnswered.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetDecision) = (
+            FfiConverterTypeWidgetDecisionKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterString.allocationSize(value.`eventId`) +
+            FfiConverterString.allocationSize(value.`agent`) +
+            FfiConverterOptionalString.allocationSize(value.`asker`) +
+            FfiConverterString.allocationSize(value.`question`) +
+            FfiConverterSequenceTypeWidgetOption.allocationSize(value.`options`) +
+            FfiConverterOptionalString.allocationSize(value.`gateId`) +
+            FfiConverterString.allocationSize(value.`prompt`) +
+            FfiConverterULong.allocationSize(value.`askedAtMs`) +
+            FfiConverterOptionalTypeWidgetAnswered.allocationSize(value.`answered`)
+    )
+
+    override fun write(value: WidgetDecision, buf: ByteBuffer) {
+            FfiConverterTypeWidgetDecisionKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterString.write(value.`eventId`, buf)
+            FfiConverterString.write(value.`agent`, buf)
+            FfiConverterOptionalString.write(value.`asker`, buf)
+            FfiConverterString.write(value.`question`, buf)
+            FfiConverterSequenceTypeWidgetOption.write(value.`options`, buf)
+            FfiConverterOptionalString.write(value.`gateId`, buf)
+            FfiConverterString.write(value.`prompt`, buf)
+            FfiConverterULong.write(value.`askedAtMs`, buf)
+            FfiConverterOptionalTypeWidgetAnswered.write(value.`answered`, buf)
+    }
+}
+
+
+
+/**
+ * A decision and the buttons a widget may draw for it.
+ */
+data class WidgetDecisionView (
+    var `decision`: WidgetDecision, 
+    var `buttons`: List<WidgetOption>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetDecisionView: FfiConverterRustBuffer<WidgetDecisionView> {
+    override fun read(buf: ByteBuffer): WidgetDecisionView {
+        return WidgetDecisionView(
+            FfiConverterTypeWidgetDecision.read(buf),
+            FfiConverterSequenceTypeWidgetOption.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetDecisionView) = (
+            FfiConverterTypeWidgetDecision.allocationSize(value.`decision`) +
+            FfiConverterSequenceTypeWidgetOption.allocationSize(value.`buttons`)
+    )
+
+    override fun write(value: WidgetDecisionView, buf: ByteBuffer) {
+            FfiConverterTypeWidgetDecision.write(value.`decision`, buf)
+            FfiConverterSequenceTypeWidgetOption.write(value.`buttons`, buf)
+    }
+}
+
+
+
+/**
+ * What to draw from `from_ms` until the next frame.
+ */
+data class WidgetFrame (
+    var `fromMs`: kotlin.ULong, 
+    /**
+     * Decisions still owed — answered ones do not count.
+     */
+    var `needsYou`: kotlin.UInt, 
+    /**
+     * "3" or, when some were pushed out, "5+".
+     */
+    var `needsYouCount`: kotlin.String, 
+    /**
+     * "1 needs you", "3 need you", "Nothing needs you".
+     */
+    var `needsYouLine`: kotlin.String, 
+    /**
+     * Agents working or recently active.
+     */
+    var `working`: kotlin.UInt, 
+    /**
+     * The fleet in one line, for the inline Lock Screen widget:
+     * "2 working · 1 needs you", "All quiet".
+     */
+    var `pulse`: kotlin.String, 
+    /**
+     * One per [`WidgetSnapshot::agents`], in order.
+     */
+    var `states`: List<WidgetAgentState>, 
+    /**
+     * Who the pulse counts as working, by name — "Atlas is working",
+     * "Atlas, Lyra and 3 others are working" — or `None` when nobody is.
+     *
+     * For a recap with nothing in it: under a header that says "2 working",
+     * "Nothing new since 10:42" reads as a contradiction (spec 2026-09-30,
+     * B5), so the widget says who is working instead. Named from the same
+     * states the count is, so the two cannot disagree. Absent from a
+     * snapshot written before it, which serde reads as `None` — nobody.
+     */
+    var `busy`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetFrame: FfiConverterRustBuffer<WidgetFrame> {
+    override fun read(buf: ByteBuffer): WidgetFrame {
+        return WidgetFrame(
+            FfiConverterULong.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeWidgetAgentState.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetFrame) = (
+            FfiConverterULong.allocationSize(value.`fromMs`) +
+            FfiConverterUInt.allocationSize(value.`needsYou`) +
+            FfiConverterString.allocationSize(value.`needsYouCount`) +
+            FfiConverterString.allocationSize(value.`needsYouLine`) +
+            FfiConverterUInt.allocationSize(value.`working`) +
+            FfiConverterString.allocationSize(value.`pulse`) +
+            FfiConverterSequenceTypeWidgetAgentState.allocationSize(value.`states`) +
+            FfiConverterOptionalString.allocationSize(value.`busy`)
+    )
+
+    override fun write(value: WidgetFrame, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`fromMs`, buf)
+            FfiConverterUInt.write(value.`needsYou`, buf)
+            FfiConverterString.write(value.`needsYouCount`, buf)
+            FfiConverterString.write(value.`needsYouLine`, buf)
+            FfiConverterUInt.write(value.`working`, buf)
+            FfiConverterString.write(value.`pulse`, buf)
+            FfiConverterSequenceTypeWidgetAgentState.write(value.`states`, buf)
+            FfiConverterOptionalString.write(value.`busy`, buf)
+    }
+}
+
+
+
+/**
  * A turn the app is watching, for [`apply_roster`].
  */
 data class WidgetLiveTurn (
@@ -5172,6 +5944,172 @@ public object FfiConverterTypeWidgetLiveTurn: FfiConverterRustBuffer<WidgetLiveT
     override fun write(value: WidgetLiveTurn, buf: ByteBuffer) {
             FfiConverterString.write(value.`roomId`, buf)
             FfiConverterString.write(value.`step`, buf)
+    }
+}
+
+
+
+/**
+ * One answer a decision offers.
+ */
+data class WidgetOption (
+    /**
+     * What is sent: a permission option's name, or a gate's decision id.
+     */
+    var `id`: kotlin.String, 
+    var `label`: kotlin.String, 
+    /**
+     * Whether a widget button may send it. "Request changes" needs typed
+     * feedback, which a widget cannot take, so it opens the card instead.
+     */
+    var `inline`: kotlin.Boolean, 
+    /**
+     * Whether it refuses rather than grants — drawn as the quieter button.
+     */
+    var `declines`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetOption: FfiConverterRustBuffer<WidgetOption> {
+    override fun read(buf: ByteBuffer): WidgetOption {
+        return WidgetOption(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetOption) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterBoolean.allocationSize(value.`inline`) +
+            FfiConverterBoolean.allocationSize(value.`declines`)
+    )
+
+    override fun write(value: WidgetOption, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterBoolean.write(value.`inline`, buf)
+            FfiConverterBoolean.write(value.`declines`, buf)
+    }
+}
+
+
+
+/**
+ * One row of the recap.
+ */
+data class WidgetRecap (
+    var `roomId`: kotlin.String, 
+    var `name`: kotlin.String, 
+    var `outcome`: WidgetOutcome, 
+    var `line`: kotlin.String, 
+    var `unread`: kotlin.UInt, 
+    var `atMs`: kotlin.ULong
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetRecap: FfiConverterRustBuffer<WidgetRecap> {
+    override fun read(buf: ByteBuffer): WidgetRecap {
+        return WidgetRecap(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeWidgetOutcome.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetRecap) = (
+            FfiConverterString.allocationSize(value.`roomId`) +
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterTypeWidgetOutcome.allocationSize(value.`outcome`) +
+            FfiConverterString.allocationSize(value.`line`) +
+            FfiConverterUInt.allocationSize(value.`unread`) +
+            FfiConverterULong.allocationSize(value.`atMs`)
+    )
+
+    override fun write(value: WidgetRecap, buf: ByteBuffer) {
+            FfiConverterString.write(value.`roomId`, buf)
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterTypeWidgetOutcome.write(value.`outcome`, buf)
+            FfiConverterString.write(value.`line`, buf)
+            FfiConverterUInt.write(value.`unread`, buf)
+            FfiConverterULong.write(value.`atMs`, buf)
+    }
+}
+
+
+
+/**
+ * The snapshot as a widget draws it at one moment.
+ */
+data class WidgetView (
+    var `content`: WidgetContent, 
+    var `frame`: WidgetFrame?, 
+    var `decisions`: List<WidgetDecisionView>, 
+    var `agents`: List<WidgetAgentView>, 
+    var `recap`: List<WidgetRecap>, 
+    var `overflow`: kotlin.Boolean, 
+    var `openedAtMs`: kotlin.ULong?, 
+    /**
+     * When the next frame begins: when to draw again without a write.
+     */
+    var `nextChangeMs`: kotlin.ULong?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetView: FfiConverterRustBuffer<WidgetView> {
+    override fun read(buf: ByteBuffer): WidgetView {
+        return WidgetView(
+            FfiConverterTypeWidgetContent.read(buf),
+            FfiConverterOptionalTypeWidgetFrame.read(buf),
+            FfiConverterSequenceTypeWidgetDecisionView.read(buf),
+            FfiConverterSequenceTypeWidgetAgentView.read(buf),
+            FfiConverterSequenceTypeWidgetRecap.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: WidgetView) = (
+            FfiConverterTypeWidgetContent.allocationSize(value.`content`) +
+            FfiConverterOptionalTypeWidgetFrame.allocationSize(value.`frame`) +
+            FfiConverterSequenceTypeWidgetDecisionView.allocationSize(value.`decisions`) +
+            FfiConverterSequenceTypeWidgetAgentView.allocationSize(value.`agents`) +
+            FfiConverterSequenceTypeWidgetRecap.allocationSize(value.`recap`) +
+            FfiConverterBoolean.allocationSize(value.`overflow`) +
+            FfiConverterOptionalULong.allocationSize(value.`openedAtMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`nextChangeMs`)
+    )
+
+    override fun write(value: WidgetView, buf: ByteBuffer) {
+            FfiConverterTypeWidgetContent.write(value.`content`, buf)
+            FfiConverterOptionalTypeWidgetFrame.write(value.`frame`, buf)
+            FfiConverterSequenceTypeWidgetDecisionView.write(value.`decisions`, buf)
+            FfiConverterSequenceTypeWidgetAgentView.write(value.`agents`, buf)
+            FfiConverterSequenceTypeWidgetRecap.write(value.`recap`, buf)
+            FfiConverterBoolean.write(value.`overflow`, buf)
+            FfiConverterOptionalULong.write(value.`openedAtMs`, buf)
+            FfiConverterOptionalULong.write(value.`nextChangeMs`, buf)
     }
 }
 
@@ -6366,6 +7304,112 @@ public object FfiConverterTypeMembership: FfiConverterRustBuffer<Membership> {
 
 
 /**
+ * An answer given from a notification, ready to send with no room open
+ * (`NotificationRouter.swift:36-52`). Field order is the order Swift labels.
+ */
+sealed class NotificationAnswer {
+    
+    /**
+     * An AgentPod permission request: `option_id` goes into the room as a
+     * plain message, as every other client answers one.
+     */
+    data class Permission(
+        val `roomId`: kotlin.String, 
+        val `optionId`: kotlin.String) : NotificationAnswer() {
+        companion object
+    }
+    
+    /**
+     * A superpipeline gate: a `dev.superpipeline.gate.decision.v1`
+     * referencing `gate_event_id`, exactly what the card sends.
+     */
+    data class Gate(
+        val `roomId`: kotlin.String, 
+        val `gateEventId`: kotlin.String, 
+        val `gateId`: kotlin.String, 
+        val `optionId`: kotlin.String, 
+        val `comment`: kotlin.String?, 
+        val `prompt`: kotlin.String) : NotificationAnswer() {
+        companion object
+    }
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNotificationAnswer : FfiConverterRustBuffer<NotificationAnswer>{
+    override fun read(buf: ByteBuffer): NotificationAnswer {
+        return when(buf.getInt()) {
+            1 -> NotificationAnswer.Permission(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                )
+            2 -> NotificationAnswer.Gate(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterOptionalString.read(buf),
+                FfiConverterString.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: NotificationAnswer) = when(value) {
+        is NotificationAnswer.Permission -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`roomId`)
+                + FfiConverterString.allocationSize(value.`optionId`)
+            )
+        }
+        is NotificationAnswer.Gate -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`roomId`)
+                + FfiConverterString.allocationSize(value.`gateEventId`)
+                + FfiConverterString.allocationSize(value.`gateId`)
+                + FfiConverterString.allocationSize(value.`optionId`)
+                + FfiConverterOptionalString.allocationSize(value.`comment`)
+                + FfiConverterString.allocationSize(value.`prompt`)
+            )
+        }
+    }
+
+    override fun write(value: NotificationAnswer, buf: ByteBuffer) {
+        when(value) {
+            is NotificationAnswer.Permission -> {
+                buf.putInt(1)
+                FfiConverterString.write(value.`roomId`, buf)
+                FfiConverterString.write(value.`optionId`, buf)
+                Unit
+            }
+            is NotificationAnswer.Gate -> {
+                buf.putInt(2)
+                FfiConverterString.write(value.`roomId`, buf)
+                FfiConverterString.write(value.`gateEventId`, buf)
+                FfiConverterString.write(value.`gateId`, buf)
+                FfiConverterString.write(value.`optionId`, buf)
+                FfiConverterOptionalString.write(value.`comment`, buf)
+                FfiConverterString.write(value.`prompt`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
+/**
  * Which set of actions a notification offers. The host registers one
  * category per case under [`NotificationCategory::identifier`].
  */
@@ -6450,6 +7494,102 @@ public object FfiConverterTypeNotificationMode: FfiConverterRustBuffer<Notificat
 
     override fun write(value: NotificationMode, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * What an action on a delivered notification means.
+ */
+sealed class NotificationResponse {
+    
+    /**
+     * Open the room.
+     */
+    data class Open(
+        val `roomId`: kotlin.String) : NotificationResponse() {
+        companion object
+    }
+    
+    /**
+     * Send this answer — no room needs to be open.
+     */
+    data class Answer(
+        val `answer`: NotificationAnswer) : NotificationResponse() {
+        companion object
+    }
+    
+    /**
+     * Nothing this app can act on.
+     */
+    object Ignore : NotificationResponse()
+    
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeNotificationResponse : FfiConverterRustBuffer<NotificationResponse>{
+    override fun read(buf: ByteBuffer): NotificationResponse {
+        return when(buf.getInt()) {
+            1 -> NotificationResponse.Open(
+                FfiConverterString.read(buf),
+                )
+            2 -> NotificationResponse.Answer(
+                FfiConverterTypeNotificationAnswer.read(buf),
+                )
+            3 -> NotificationResponse.Ignore
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: NotificationResponse) = when(value) {
+        is NotificationResponse.Open -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`roomId`)
+            )
+        }
+        is NotificationResponse.Answer -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterTypeNotificationAnswer.allocationSize(value.`answer`)
+            )
+        }
+        is NotificationResponse.Ignore -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+            )
+        }
+    }
+
+    override fun write(value: NotificationResponse, buf: ByteBuffer) {
+        when(value) {
+            is NotificationResponse.Open -> {
+                buf.putInt(1)
+                FfiConverterString.write(value.`roomId`, buf)
+                Unit
+            }
+            is NotificationResponse.Answer -> {
+                buf.putInt(2)
+                FfiConverterTypeNotificationAnswer.write(value.`answer`, buf)
+                Unit
+            }
+            is NotificationResponse.Ignore -> {
+                buf.putInt(3)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
     }
 }
 
@@ -7779,6 +8919,166 @@ public object FfiConverterTypeTurnInput : FfiConverterRustBuffer<TurnInput>{
 
 
 
+/**
+ * What the widget shows in place of a snapshot, or that it has one.
+ */
+
+enum class WidgetContent {
+    
+    /**
+     * Nothing stored yet, or another schema's.
+     */
+    WAITING,
+    SIGNED_OUT,
+    SNAPSHOT;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetContent: FfiConverterRustBuffer<WidgetContent> {
+    override fun read(buf: ByteBuffer) = try {
+        WidgetContent.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: WidgetContent) = 4UL
+
+    override fun write(value: WidgetContent, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Which kind of question a decision is.
+ */
+
+enum class WidgetDecisionKind {
+    
+    /**
+     * An AgentPod permission request: Allow once / Reject.
+     */
+    PERMISSION,
+    /**
+     * A superpipeline gate: Approve / Request changes / Reject.
+     */
+    GATE,
+    /**
+     * A decision the widget cannot answer — it must be read in the app.
+     */
+    OPEN;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetDecisionKind: FfiConverterRustBuffer<WidgetDecisionKind> {
+    override fun read(buf: ByteBuffer) = try {
+        WidgetDecisionKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: WidgetDecisionKind) = 4UL
+
+    override fun write(value: WidgetDecisionKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * What an agent did since the app was last opened, most telling first.
+ */
+
+enum class WidgetOutcome {
+    
+    /**
+     * A turn ended with a tool call that failed.
+     */
+    FAILED,
+    /**
+     * A turn ended with every tool call done.
+     */
+    FINISHED,
+    /**
+     * It said something, or asked something.
+     */
+    SAID;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetOutcome: FfiConverterRustBuffer<WidgetOutcome> {
+    override fun read(buf: ByteBuffer) = try {
+        WidgetOutcome.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: WidgetOutcome) = 4UL
+
+    override fun write(value: WidgetOutcome, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * How an agent's state is drawn. Carried beside the word so a host colours
+ * by meaning rather than by matching text.
+ */
+
+enum class WidgetTone {
+    
+    NEEDS_YOU,
+    WORKING,
+    ACTIVE,
+    IDLE,
+    QUIET;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeWidgetTone: FfiConverterRustBuffer<WidgetTone> {
+    override fun read(buf: ByteBuffer) = try {
+        WidgetTone.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: WidgetTone) = 4UL
+
+    override fun write(value: WidgetTone, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
 
 /**
  * @suppress
@@ -8231,6 +9531,38 @@ public object FfiConverterOptionalTypeNotificationActivity: FfiConverterRustBuff
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeNotificationTextInput: FfiConverterRustBuffer<NotificationTextInput?> {
+    override fun read(buf: ByteBuffer): NotificationTextInput? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeNotificationTextInput.read(buf)
+    }
+
+    override fun allocationSize(value: NotificationTextInput?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeNotificationTextInput.allocationSize(value)
+        }
+    }
+
+    override fun write(value: NotificationTextInput?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeNotificationTextInput.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypePermissionAnswers: FfiConverterRustBuffer<PermissionAnswers?> {
     override fun read(buf: ByteBuffer): PermissionAnswers? {
         if (buf.get().toInt() == 0) {
@@ -8551,6 +9883,102 @@ public object FfiConverterOptionalTypeVoiceReplyPlayer: FfiConverterRustBuffer<V
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeWidgetAgentState: FfiConverterRustBuffer<WidgetAgentState?> {
+    override fun read(buf: ByteBuffer): WidgetAgentState? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeWidgetAgentState.read(buf)
+    }
+
+    override fun allocationSize(value: WidgetAgentState?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeWidgetAgentState.allocationSize(value)
+        }
+    }
+
+    override fun write(value: WidgetAgentState?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeWidgetAgentState.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeWidgetAnswered: FfiConverterRustBuffer<WidgetAnswered?> {
+    override fun read(buf: ByteBuffer): WidgetAnswered? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeWidgetAnswered.read(buf)
+    }
+
+    override fun allocationSize(value: WidgetAnswered?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeWidgetAnswered.allocationSize(value)
+        }
+    }
+
+    override fun write(value: WidgetAnswered?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeWidgetAnswered.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeWidgetFrame: FfiConverterRustBuffer<WidgetFrame?> {
+    override fun read(buf: ByteBuffer): WidgetFrame? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeWidgetFrame.read(buf)
+    }
+
+    override fun allocationSize(value: WidgetFrame?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeWidgetFrame.allocationSize(value)
+        }
+    }
+
+    override fun write(value: WidgetFrame?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeWidgetFrame.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeDeliveryState: FfiConverterRustBuffer<DeliveryState?> {
     override fun read(buf: ByteBuffer): DeliveryState? {
         if (buf.get().toInt() == 0) {
@@ -8669,6 +10097,38 @@ public object FfiConverterOptionalTypeTurnEnding: FfiConverterRustBuffer<TurnEnd
         } else {
             buf.put(1)
             FfiConverterTypeTurnEnding.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeWidgetOutcome: FfiConverterRustBuffer<WidgetOutcome?> {
+    override fun read(buf: ByteBuffer): WidgetOutcome? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeWidgetOutcome.read(buf)
+    }
+
+    override fun allocationSize(value: WidgetOutcome?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeWidgetOutcome.allocationSize(value)
+        }
+    }
+
+    override fun write(value: WidgetOutcome?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeWidgetOutcome.write(value, buf)
         }
     }
 }
@@ -9153,6 +10613,146 @@ public object FfiConverterSequenceTypeTurnStep: FfiConverterRustBuffer<List<Turn
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeTurnStep.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWidgetAgentState: FfiConverterRustBuffer<List<WidgetAgentState>> {
+    override fun read(buf: ByteBuffer): List<WidgetAgentState> {
+        val len = buf.getInt()
+        return List<WidgetAgentState>(len) {
+            FfiConverterTypeWidgetAgentState.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WidgetAgentState>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWidgetAgentState.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WidgetAgentState>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWidgetAgentState.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWidgetAgentView: FfiConverterRustBuffer<List<WidgetAgentView>> {
+    override fun read(buf: ByteBuffer): List<WidgetAgentView> {
+        val len = buf.getInt()
+        return List<WidgetAgentView>(len) {
+            FfiConverterTypeWidgetAgentView.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WidgetAgentView>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWidgetAgentView.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WidgetAgentView>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWidgetAgentView.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWidgetDecisionView: FfiConverterRustBuffer<List<WidgetDecisionView>> {
+    override fun read(buf: ByteBuffer): List<WidgetDecisionView> {
+        val len = buf.getInt()
+        return List<WidgetDecisionView>(len) {
+            FfiConverterTypeWidgetDecisionView.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WidgetDecisionView>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWidgetDecisionView.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WidgetDecisionView>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWidgetDecisionView.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWidgetOption: FfiConverterRustBuffer<List<WidgetOption>> {
+    override fun read(buf: ByteBuffer): List<WidgetOption> {
+        val len = buf.getInt()
+        return List<WidgetOption>(len) {
+            FfiConverterTypeWidgetOption.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WidgetOption>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWidgetOption.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WidgetOption>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWidgetOption.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeWidgetRecap: FfiConverterRustBuffer<List<WidgetRecap>> {
+    override fun read(buf: ByteBuffer): List<WidgetRecap> {
+        val len = buf.getInt()
+        return List<WidgetRecap>(len) {
+            FfiConverterTypeWidgetRecap.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<WidgetRecap>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeWidgetRecap.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<WidgetRecap>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeWidgetRecap.write(it, buf)
         }
     }
 }
