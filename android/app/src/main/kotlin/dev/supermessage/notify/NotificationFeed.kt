@@ -68,6 +68,7 @@ internal class NotificationFeed(
     private val turnLock = Any()
     private val casts = HashMap<String, RoomCast?>()
     private val turns = TurnNotifications(nameOf = { room, agentId ->
+        // "Agent" *(no iOS copy)*: the host's last fallback, with no cast and no room name.
         agentDisplayName(agentId, casts[room]) ?: session.rooms.row(room)?.identity?.name ?: "Agent"
     })
 

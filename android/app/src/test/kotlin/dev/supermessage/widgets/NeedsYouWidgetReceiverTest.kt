@@ -64,14 +64,14 @@ class NeedsYouWidgetReceiverTest {
         }
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun placingTheFirstWidgetArms() {
         assertNull(frameAlarm())
         receiver.onEnabled(app)
         await("the frame alarm and the backstop") { frameAlarm() != null && backstop().size == 1 }
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun theProvidersDoTheirReadsOffTheMainThread() {
         val realHold = armHold
         armHold = {}
@@ -90,7 +90,7 @@ class NeedsYouWidgetReceiverTest {
     }
 
     /** Glance may have taken the broadcast's PendingResult: then nothing holds the arm but WorkManager. */
-    @Test
+    @Test(timeout = 30_000)
     fun anArmWithNoBroadcastToHoldGoesToWorkManager() {
         receiver.onEnabled(app)
         await("the arm job") {
@@ -98,7 +98,7 @@ class NeedsYouWidgetReceiverTest {
         }
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun removingOneProviderWhileTheOtherIsPlacedKeepsTheSchedule() {
         receiver.onEnabled(app)
         await("armed") { frameAlarm() != null && backstop().size == 1 }
@@ -109,7 +109,7 @@ class NeedsYouWidgetReceiverTest {
         assertEquals(1, backstop().size)
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun theUpdateAfterBootArmsAgain() {
         receiver.onEnabled(app)
         await("armed") { frameAlarm() != null }
@@ -137,7 +137,7 @@ class NeedsYouWidgetReceiverTest {
         assertEquals("the queued work stands", 1, backstop().size)
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun removingTheLastWidgetCancelsEverything() {
         receiver.onEnabled(app)
         await("armed") { frameAlarm() != null && backstop().isNotEmpty() }
@@ -146,7 +146,7 @@ class NeedsYouWidgetReceiverTest {
         await("cancelled") { frameAlarm() == null && backstop().isEmpty() }
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun theProviderIsDeclaredWithTheWidgetsLabelAndDescription() {
         val info = app.packageManager.getReceiverInfo(
             android.content.ComponentName(app, NeedsYouWidgetReceiver::class.java), android.content.pm.PackageManager.GET_META_DATA,
@@ -158,7 +158,7 @@ class NeedsYouWidgetReceiverTest {
         assertFalse(WidgetRedraw.anyWidgetPlaced(app))
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun theAgentsProviderIsDeclaredWithItsLabelAndDescription() {
         val info = app.packageManager.getReceiverInfo(
             android.content.ComponentName(app, AgentsWidgetReceiver::class.java), android.content.pm.PackageManager.GET_META_DATA,
@@ -169,7 +169,7 @@ class NeedsYouWidgetReceiverTest {
         assertEquals(WidgetCopy.AGENTS_DESCRIPTION, app.getString(dev.supermessage.R.string.agents_widget_description))
     }
 
-    @Test
+    @Test(timeout = 30_000)
     fun bothWidgetsAreRedrawnByTheSharedSchedule() {
         assertEquals(
             setOf(NeedsYouWidget::class, AgentsWidget::class),

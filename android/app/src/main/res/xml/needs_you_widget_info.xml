@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   M7 Android Task 2. The Needs you widget. The sizes it is drawn at (small 110x110,
-  medium 250x110, large 250x250 dp) are NeedsYouWidget.sizeMode; these are the least and
+  wide 250x110, medium 250x180, large 250x250 dp) are NeedsYouWidget.sizeMode; these are the least and
   the most the launcher may give it. updatePeriodMillis is Android's shortest (30 min):
   the second backstop under WidgetRedraw's periodic work.
 -->

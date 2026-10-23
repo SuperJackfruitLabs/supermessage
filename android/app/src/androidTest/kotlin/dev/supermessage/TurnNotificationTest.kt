@@ -77,9 +77,20 @@ class TurnNotificationTest {
         manager.cancelAll()
         runBlocking { session.start() }
         feed.start()
-        // The feed's collectors subscribe on another thread; an event sent before is not replayed.
-        Thread.sleep(500)
+        // The feed's collectors subscribe on another thread and the flow does not replay, so a
+        // fixed sleep loses the first event on a slow emulator. A warm-up turn in another room,
+        // sent until its card shows, proves the feed is listening; then it ends, and its card goes.
+        val deadline = System.currentTimeMillis() + 15_000
+        while (cardsFor(WARM_UP).isEmpty()) {
+            check(System.currentTimeMillis() < deadline) { "the feed never heard a turn" }
+            core.event(FfiEvent.Turn(update(1uL, running = true, room = WARM_UP)))
+            Thread.sleep(100)
+        }
+        core.event(FfiEvent.Turn(update(2uL, running = false, room = WARM_UP)))
+        waitUntil("the warm-up card left") { cardsFor(WARM_UP).isEmpty() }
     }
+
+    private fun cardsFor(room: String) = manager.activeNotifications.filter { it.tag == "turn:$room" }
 
     @After
     fun stop() {
@@ -99,10 +110,16 @@ class TurnNotificationTest {
     /** Recent: the system ignores a notification whose time is long past. */
     private val startedAt = System.currentTimeMillis() - 90_000
 
-    private fun update(revision: ULong, running: Boolean, step: String = "Reading the logs", agent: String? = "@lyra:x") =
+    private fun update(
+        revision: ULong,
+        running: Boolean,
+        step: String = "Reading the logs",
+        agent: String? = "@lyra:x",
+        room: String = "!a:x",
+    ) =
         TurnUpdate(
             uniffi.supermessage_core.TurnSummary(
-                roomId = "!a:x", turnId = 1uL, revision = revision, inProgress = running,
+                roomId = room, turnId = 1uL, revision = revision, inProgress = running,
                 endedBy = if (running) null else TurnEnding.REPLY,
                 startedAtMs = startedAt.toULong(), endedAtMs = if (running) null else (startedAt + 60_000).toULong(),
                 lastActivityMs = startedAt.toULong(), answering = false, hasThought = false,
@@ -151,5 +168,10 @@ class TurnNotificationTest {
         waitUntil("it shows once the app is away") { turnNotes().size == 1 }
         coordinator.activeChanged(true)
         waitUntil("and goes again when the reader returns to that room") { turnNotes().isEmpty() }
+    }
+
+    private companion object {
+        /** The room of the turn that proves the feed is listening, not the one under test. */
+        const val WARM_UP = "!warm:x"
     }
 }
