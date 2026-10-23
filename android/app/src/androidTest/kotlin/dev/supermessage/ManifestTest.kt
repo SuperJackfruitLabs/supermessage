@@ -43,4 +43,18 @@ class ManifestTest {
             declared.contains(android.Manifest.permission.INTERNET),
         )
     }
+
+    @Test
+    fun declaresPostNotifications() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val declared = context.packageManager
+            .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
+            .requestedPermissions
+            .orEmpty()
+        assertTrue(
+            "android.permission.POST_NOTIFICATIONS is not declared: on API 33+ no notification " +
+                "can be shown. Declared: ${declared.joinToString()}",
+            declared.contains(android.Manifest.permission.POST_NOTIFICATIONS),
+        )
+    }
 }

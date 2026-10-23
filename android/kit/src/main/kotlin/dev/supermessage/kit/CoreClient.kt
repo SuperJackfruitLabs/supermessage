@@ -5,9 +5,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.supermessage_core.Acknowledgement
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_core.NotificationDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlayableAudio
+import uniffi.supermessage_core.PushRegistration
 import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.RoomMemberDto
@@ -235,6 +237,37 @@ class CoreClient(
         run { it.setRoomPinned(roomId, pinned) }
     }
 
+    // MARK: - Notifications and push
+
+    /**
+     * Restores the stored session without starting the sync or touching the
+     * UI sink: what a background process (a notification action, a push) may
+     * safely do. Returns whether a session was restored.
+     */
+    suspend fun restoreSessionQuietly(): Boolean = run { it.restoreSessionQuietly() }
+
+    suspend fun notificationFor(roomId: String, eventId: String): NotificationDto =
+        run { it.notificationFor(roomId, eventId) }
+
+    suspend fun registerPusher(registration: PushRegistration) {
+        run { it.registerPusher(registration) }
+    }
+
+    suspend fun unregisterPusher() {
+        run { it.unregisterPusher() }
+    }
+
+    suspend fun sendGateDecisionTo(
+        roomId: String,
+        gateId: String,
+        optionId: String,
+        comment: String?,
+        inReplyTo: String,
+        prompt: String,
+    ) {
+        run { it.sendGateDecisionTo(roomId, gateId, optionId, comment, inReplyTo, prompt) }
+    }
+
     // MARK: - Block and report
 
     suspend fun ignoreUser(userId: String) {
@@ -319,6 +352,10 @@ class CoreClient(
 
     suspend fun attachmentStagePath(roomId: String, path: String): StagedFile =
         run { it.attachmentStagePath(roomId, path) }
+
+    suspend fun attachmentMarkVoice(roomId: String, token: String, durationMs: ULong, waveform: List<Float>) {
+        run { it.attachmentMarkVoice(roomId, token, durationMs, waveform) }
+    }
 
     suspend fun attachmentSend(roomId: String, token: String, caption: String?): AttachmentSendOutcome =
         run { it.attachmentSend(roomId, token, caption) }

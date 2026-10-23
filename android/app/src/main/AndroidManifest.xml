@@ -13,6 +13,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
+      M6 Android Task 1. Notifications need a runtime grant from API 33; on 31
+      and 32 they are allowed without one. The ask happens after a fresh
+      sign-in, never at launch (PlatformCoordinator, shouldAskForNotifications).
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
       Theme.Material3.DayNight.NoActionBar lives in com.google.android.material,
       not a declared dependency here, so AAPT fails to resolve it — and that
       dependency stays undeclared: this project has been bitten twice by an

@@ -1,5 +1,6 @@
 package dev.supermessage
 
+import android.Manifest
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
@@ -7,6 +8,11 @@ import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import dev.supermessage.notify.PlatformCoordinator
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -85,8 +91,24 @@ private val Context.rosterDataStore: DataStore<Preferences> by preferencesDataSt
 private val Context.appearanceDataStore: DataStore<Preferences> by preferencesDataStore(name = "appearance")
 
 class MainActivity : ComponentActivity() {
+    /**
+     * Registered before the Activity is STARTED, as the contract requires. The
+     * answer is not acted on: a refusal is the reader's to make, and the
+     * system remembers it.
+     */
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val coordinator = PlatformCoordinator(
+            context = this,
+            session = ViewModelProvider(this)[SessionViewModel::class.java].session,
+            permissionLauncher = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
+        )
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) { coordinator.run() }
+        }
         val appearance = AppearancePreferences(applicationContext.appearanceDataStore)
         // Read before `setContent`, so the first frame is drawn in the stored
         // choice rather than in the house palette and then repainted (iOS:

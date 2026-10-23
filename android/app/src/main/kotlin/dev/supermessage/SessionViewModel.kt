@@ -9,11 +9,16 @@ import dev.supermessage.kit.stores.HiddenEventStorage
 import dev.supermessage.kit.stores.InMemoryHiddenEvents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import uniffi.supermessage_ffi.Core
 import uniffi.supermessage_ffi.CoreInterface
 
 /**
- * The one place in the Android app that names a filesystem location.
+ * Owns the app's `Session`. The Rust **core** is not built here: it is
+ * process-wide, in [AppCore], so that a notification receiver or a push
+ * service, which run with no Activity, reach the same core and never open a
+ * second one over the same store. The `Session` stays ViewModel-scoped, for
+ * the reasons that follow.
+ *
+ * The filesystem location the core uses is named once, in [AppCore].
  *
  * A `ViewModel` rather than a `remember` or an `Application` singleton. The
  * manifest suppresses recreation for `orientation|screenSize|screenLayout|
@@ -41,10 +46,7 @@ import uniffi.supermessage_ffi.CoreInterface
  */
 class SessionViewModel(app: Application) : AndroidViewModel(app) {
     val session: Session = build(
-        Core.withSecretStore(
-            dataDir = app.filesDir.path,
-            store = AndroidSecretStore(app),
-        ),
+        AppCore.core(app),
         viewModelScope,
         HiddenEventsPreferences(app),
     )
