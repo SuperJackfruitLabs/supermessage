@@ -13,6 +13,7 @@ import androidx.compose.ui.test.performClick
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import dev.supermessage.kit.CoreClient
 import dev.supermessage.kit.Session
@@ -160,10 +161,21 @@ internal object RoomHarness {
             runOnUiThread { f = activity.hasWindowFocus() }
             return f
         }
+        if (!focused()) {
+            // On CI the window has stayed unfocused for 30s after an earlier test in the
+            // shard. Clear what can sit above it: a sleeping screen, the keyguard, and an
+            // expanded notification shade.
+            shell("input keyevent KEYCODE_WAKEUP")
+            shell("wm dismiss-keyguard")
+            shell("cmd statusbar collapse")
+        }
         try {
             waitUntil(timeoutMillis) { focused() }
         } catch (e: ComposeTimeoutException) {
-            throw AssertionError("the window never got input focus, so no keyboard can show", e)
+            val holder = shell("dumpsys window displays").lines()
+                .filter { "mCurrentFocus" in it || "mFocusedApp" in it }
+                .joinToString("; ") { it.trim() }
+            throw AssertionError("the window never got input focus, so no keyboard can show ($holder)", e)
         }
         onNodeWithTag("composer-text").performClick()
         var asked = 0L
@@ -185,6 +197,11 @@ internal object RoomHarness {
             throw AssertionError("the soft keyboard never showed (window focused: ${focused()})", e)
         }
     }
+
+    /** Runs [command] as the shell user and returns what it printed. */
+    private fun shell(command: String): String =
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command)
+            .let { pfd -> android.os.ParcelFileDescriptor.AutoCloseInputStream(pfd).use { it.reader().readText() } }
 
     fun AndroidComposeTestRule<*, *>.count(tag: String): Int =
         onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes().size
