@@ -22,6 +22,7 @@
   import { spacesStore } from "$lib/stores/spaces.svelte";
   import { setUpAfterSignIn } from "$lib/stores/signInSetup";
   import { notifier } from "$lib/notifier/notifier.svelte";
+  import { openRoomFromNotification } from "$lib/notifier/openRoom";
   import { createWindowFocus } from "$lib/stores/windowFocus.svelte";
   import {
     appVersion,
@@ -30,6 +31,7 @@
     createRoom,
     knownPeople,
     onIgnoredUsers,
+    onNotificationOpen,
     ensureRecovery,
     notificationPermission,
     joinRoomByAlias,
@@ -786,11 +788,25 @@
   // an `onMount` return value: that callback is `async`, and Svelte only calls a
   // synchronous one.
   let unlistenIgnored: (() => void) | null = null;
+  let unlistenOpen: (() => void) | null = null;
   let destroyed = false;
   onDestroy(() => {
     destroyed = true;
     unlistenIgnored?.();
+    unlistenOpen?.();
   });
+
+  /** A notification was clicked: the window is forward; show its room (the collapsed layout too). */
+  async function openFromNotification(roomId: string): Promise<void> {
+    await openRoomFromNotification(roomId, {
+      rooms: roomsStore.rooms,
+      selectedRoomId: roomsStore.selectedId,
+      spaceSelected: spacesStore.selectedId !== null,
+      selectSpace: (spaceId) => spacesStore.select(spaceId),
+      selectRoom: (id) => roomsStore.select(id),
+    });
+    roomPaneOpen = true;
+  }
 
   onMount(() => windowFocus.start());
 
@@ -801,6 +817,12 @@
         else unlistenIgnored = unlisten;
       })
       .catch((err: unknown) => console.error("could not listen for the blocked list", err));
+    onNotificationOpen((roomId) => void openFromNotification(roomId))
+      .then((unlisten) => {
+        if (destroyed) unlisten();
+        else unlistenOpen = unlisten;
+      })
+      .catch((err: unknown) => console.error("could not listen for notification clicks", err));
     try {
       restored = await roomsStore.restoreSession();
     } catch (err) {

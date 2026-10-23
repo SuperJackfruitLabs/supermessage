@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -338,6 +338,18 @@ describe("session commands", () => {
     invokeMock.mockResolvedValue(null);
     await call();
     expect(invokeMock.mock.calls).toEqual([args === undefined ? [command] : [command, args]]);
+  });
+
+  it("onNotificationOpen listens on sm://notification/open and hands over the room id", async () => {
+    const listenMock = vi.mocked(listen);
+    listenMock.mockReset();
+    listenMock.mockResolvedValue(() => {});
+    const handler = vi.fn();
+    await onNotificationOpen(handler);
+    expect(listenMock.mock.calls[0][0]).toBe("sm://notification/open");
+    const callback = listenMock.mock.calls[0][1] as (e: { payload: { roomId: string } }) => void;
+    callback({ payload: { roomId: "!r:x" } });
+    expect(handler).toHaveBeenCalledWith("!r:x");
   });
 
   it("onIgnoredUsers listens on sm://ignored-users and hands over the ids", async () => {

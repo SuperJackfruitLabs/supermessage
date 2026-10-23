@@ -136,7 +136,7 @@ pub async fn notification_post(
         .map_err(|e| e.to_string())?
 }
 
-fn post_planned(poster: &dyn Poster, note: &PlannedNotification) -> Result<(), String> {
+pub(crate) fn post_planned(poster: &dyn Poster, note: &PlannedNotification) -> Result<(), String> {
     let info = notification_policy::user_info(note);
     let actions = notification_policy::actions(note.category)
         .into_iter()

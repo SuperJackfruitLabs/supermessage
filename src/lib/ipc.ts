@@ -2086,6 +2086,16 @@ export function onStagedAttachment(handler: (staged: StagedAttachment) => void):
   return listen<StagedAttachment>(STAGED_ATTACHMENT_EVENT, (event) => handler(event.payload));
 }
 
+const NOTIFICATION_OPEN_EVENT = "sm://notification/open";
+
+/**
+ * A notification asked for a room to be opened (the reader clicked it). The window is already
+ * in front; selecting the room is the page's.
+ */
+export function onNotificationOpen(handler: (roomId: string) => void): Promise<UnlistenFn> {
+  return listen<{ roomId: string }>(NOTIFICATION_OPEN_EVENT, (event) => handler(event.payload.roomId));
+}
+
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */
 export function onRoomsDiff(handler: (env: DiffEnvelope<RoomRow>) => void): Promise<UnlistenFn> {
   return listen<DiffEnvelope<RoomRow>>(ROOMS_DIFF_EVENT, (event) => handler(event.payload));

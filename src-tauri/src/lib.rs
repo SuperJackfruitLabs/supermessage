@@ -22,6 +22,7 @@ mod commands_notify;
 mod commands_session;
 mod host;
 mod notify;
+mod notify_actions;
 
 use crate::commands::{
     acknowledgement, agent_avatar_style, agent_avatar_variants, attachment_discard,
@@ -247,6 +248,7 @@ pub fn run() {
                 ));
                 app.manage(poster);
                 app.manage(notify::ActionInbox::new(rx));
+                spawn_action_consumer(app.handle().clone());
             }
             #[cfg(not(target_os = "linux"))]
             {
@@ -364,6 +366,31 @@ pub fn run() {
                 }
             }
         });
+}
+
+/// Takes the buttons the reader presses and answers each in its own task, so one slow send
+/// does not hold the next press.
+#[cfg(target_os = "linux")]
+fn spawn_action_consumer(app: tauri::AppHandle) {
+    let Some(mut inbox) = app.state::<notify::ActionInbox>().take() else {
+        return;
+    };
+    tauri::async_runtime::spawn(async move {
+        while let Some(taken) = inbox.recv().await {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let poster = app.state::<Arc<dyn notify::Poster>>().inner().clone();
+                notify_actions::handle(
+                    taken.action_id,
+                    notify_actions::info_map(&taken.user_info),
+                    &*app.state::<Session>(),
+                    &notify_actions::WindowOpener(app.clone()),
+                    poster.as_ref(),
+                )
+                .await;
+            });
+        }
+    });
 }
 
 #[cfg(test)]

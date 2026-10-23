@@ -81,17 +81,14 @@ pub struct ActionTaken {
     pub user_info: Value,
 }
 
-/// Receives the buttons the reader presses (Linux). Task 3 takes the receiver.
+/// Receives the buttons the reader presses (Linux); `notify_actions` consumes them.
 pub type ActionSender = tokio::sync::mpsc::UnboundedSender<ActionTaken>;
 
 /// Holds the receiver of [`ActionTaken`] until the consumer takes it (once).
-// Task 3 takes the receiver; until then nothing reads it.
 #[cfg(target_os = "linux")]
-#[allow(dead_code)]
 pub struct ActionInbox(std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<ActionTaken>>>);
 
 #[cfg(target_os = "linux")]
-#[allow(dead_code)]
 impl ActionInbox {
     pub fn new(rx: tokio::sync::mpsc::UnboundedReceiver<ActionTaken>) -> Self {
         Self(std::sync::Mutex::new(Some(rx)))
