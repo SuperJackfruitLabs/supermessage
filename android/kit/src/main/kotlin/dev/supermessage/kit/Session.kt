@@ -320,6 +320,10 @@ class Session(
 
     suspend fun signIn(homeserver: String, username: String, password: String) {
         _failure.value = null
+        // Not settled from the first moment of a sign-in, so nothing waiting on the recovery key (the
+        // demo, behind a stale "pending") can show before the core has said whether one is coming.
+        _recoverySettled.value = false
+        var handedOff = false
         try {
             // Same reason as start(): undo a prior signOut's teardown — or a
             // still-active drain, if this is called again without one —
@@ -336,6 +340,7 @@ class Session(
             bindSafety(adoptLegacy = false)
             beginDraining()
             load()
+            handedOff = true
             setUpRecoveryIfNeeded()
         } catch (e: CancellationException) {
             throw e
@@ -343,6 +348,9 @@ class Session(
             _failure.value = ErrorPresenter.message(e)
         } catch (e: Exception) {
             _failure.value = "Couldn't sign in."
+        } finally {
+            // A sign-in that never got as far as asking for a key has nothing to wait for.
+            if (!handedOff) _recoverySettled.value = true
         }
     }
 

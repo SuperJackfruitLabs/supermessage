@@ -19,6 +19,7 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -47,7 +48,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -466,9 +466,19 @@ class FirstRunTest {
         compose.onNodeWithText("Approve").performScrollTo().performClick()
         waitFor("first-run-finish")
         compose.onNodeWithText("Get started").performScrollTo().assertIsDisplayed()
-        // The greeting is whole: its node is as tall as the text needs, not clipped by the column.
+        // The greeting is whole: laid out in full, with no line cut or ellipsized, and its node is
+        // as tall as that layout.
         val greeting = compose.onNodeWithText(script.greeting).fetchSemanticsNode()
-        assertNotNull(greeting)
+        val layouts = mutableListOf<TextLayoutResult>()
+        greeting.config.getOrNull(SemanticsActions.GetTextLayoutResult)!!.action!!.invoke(layouts)
+        val layout = layouts.single()
+        assertTrue("the greeting wraps at this scale", layout.lineCount > 1)
+        assertFalse("the greeting overflows its box", layout.didOverflowHeight)
+        assertFalse("the greeting is ellipsized", (0 until layout.lineCount).any { layout.isLineEllipsized(it) })
+        assertTrue(
+            "the greeting's node (${greeting.size.height}px) is shorter than its text (${layout.size.height}px)",
+            greeting.size.height >= layout.size.height,
+        )
     }
 
     @Test

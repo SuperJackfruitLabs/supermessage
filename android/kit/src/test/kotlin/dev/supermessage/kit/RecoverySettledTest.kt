@@ -57,6 +57,40 @@ class RecoverySettledTest {
         assertEquals(null, session.newRecoveryKey.value)
     }
 
+    @Test
+    fun aNewSignInIsUnsettledFromItsFirstMoment() = runBlocking {
+        var seenAtLogin: Boolean? = null
+        lateinit var session: Session
+        val core = object : StubCore() {
+            override fun login(homeserver: String, username: String, password: String, sink: EventSink) {
+                seenAtLogin = session.recoverySettled.value
+            }
+            override fun roomsSnapshot() = RoomsSnapshot(seq = 0uL, rooms = emptyList())
+            override fun spacesList() = emptyList<uniffi.supermessage_core.SpaceSummary>()
+            override fun account() = AccountDto(userId = "@me:x", homeserver = "https://x")
+            override fun ignoredUsers() = emptyList<uniffi.supermessage_core.RoomMemberDto>()
+            override fun setHiddenEvents(eventIds: List<String>) {}
+            override fun ensureRecovery(): String? = null
+        }
+        session = Session(client = CoreClient(core = core, dispatcher = Dispatchers.IO), scope = CoroutineScope(Dispatchers.IO))
+        assertTrue(session.recoverySettled.value)
+        session.signIn("https://x", "u", "p")
+        assertEquals("not settled while the core logs in", false, seenAtLogin)
+        withTimeoutOrNullPoll { session.recoverySettled.value }
+    }
+
+    @Test
+    fun aFailedSignInLeavesNothingToWaitFor() = runBlocking {
+        val core = object : StubCore() {
+            override fun login(homeserver: String, username: String, password: String, sink: EventSink) {
+                throw RuntimeException("no")
+            }
+        }
+        val session = Session(client = CoreClient(core = core, dispatcher = Dispatchers.IO), scope = CoroutineScope(Dispatchers.IO))
+        session.signIn("https://x", "u", "p")
+        assertTrue(session.recoverySettled.value)
+    }
+
     private suspend fun withTimeoutOrNullPoll(done: () -> Boolean) {
         val end = System.nanoTime() + 10_000_000_000L
         while (!done() && System.nanoTime() < end) kotlinx.coroutines.delay(10)
