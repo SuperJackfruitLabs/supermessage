@@ -24,6 +24,8 @@ internal object WidgetColors {
     val contentMuted = role { it.contentMuted }
     val contentFaint = role { it.contentFaint }
     val accent = role { it.accent }
+    val danger = role { it.danger }
+    val ok = role { it.ok }
 
     /**
      * Amber, and its ground. **Only [WidgetDecisionCard] may draw these**, and only while the

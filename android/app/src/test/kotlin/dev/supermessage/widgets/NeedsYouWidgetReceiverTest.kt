@@ -80,7 +80,7 @@ class NeedsYouWidgetReceiverTest {
         )
         receiver.onEnabled(app)
         receiver.onUpdate(app, AppWidgetManager.getInstance(app), intArrayOf(7))
-        NeedsYouWidgetReceiver().onUpdate(app, AppWidgetManager.getInstance(app), intArrayOf(8))
+        AgentsWidgetReceiver().onUpdate(app, AppWidgetManager.getInstance(app), intArrayOf(8))
         await("three arms") { threads.size == 3 }
         val main = android.os.Looper.getMainLooper().thread
         assertTrue("arm read the core on the main thread", threads.none { it === main })
@@ -91,7 +91,7 @@ class NeedsYouWidgetReceiverTest {
         receiver.onEnabled(app)
         await("armed") { frameAlarm() != null && backstop().size == 1 }
         // The Agents widget is still on a home screen: `placed` stays true.
-        NeedsYouWidgetReceiver().onDisabled(app)
+        AgentsWidgetReceiver().onDisabled(app)
         Thread.sleep(300)
         assertNotNull(frameAlarm())
         assertEquals(1, backstop().size)
@@ -144,5 +144,24 @@ class NeedsYouWidgetReceiverTest {
         assertEquals(WidgetCopy.NAME, app.getString(dev.supermessage.R.string.needs_you_widget_label))
         assertEquals(WidgetCopy.DESCRIPTION, app.getString(dev.supermessage.R.string.needs_you_widget_description))
         assertFalse(WidgetRedraw.anyWidgetPlaced(app))
+    }
+
+    @Test
+    fun theAgentsProviderIsDeclaredWithItsLabelAndDescription() {
+        val info = app.packageManager.getReceiverInfo(
+            android.content.ComponentName(app, AgentsWidgetReceiver::class.java), android.content.pm.PackageManager.GET_META_DATA,
+        )
+        assertTrue(info.exported)
+        assertEquals("Agents", app.getString(dev.supermessage.R.string.agents_widget_label))
+        assertEquals(WidgetCopy.AGENTS, app.getString(dev.supermessage.R.string.agents_widget_label))
+        assertEquals(WidgetCopy.AGENTS_DESCRIPTION, app.getString(dev.supermessage.R.string.agents_widget_description))
+    }
+
+    @Test
+    fun bothWidgetsAreRedrawnByTheSharedSchedule() {
+        assertEquals(
+            setOf(NeedsYouWidget::class, AgentsWidget::class),
+            WidgetRegistry.all.map { it::class }.toSet(),
+        )
     }
 }

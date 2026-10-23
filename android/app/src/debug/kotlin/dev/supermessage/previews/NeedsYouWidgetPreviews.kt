@@ -83,17 +83,17 @@ internal fun NeedsYouOneSent() = Widget(view(sent(shipSent)), NeedsYouWidget.LAR
 @OptIn(ExperimentalGlancePreviewApi::class)
 @Preview(widthDp = 250, heightDp = 110)
 @Composable
-internal fun NeedsYouAllClear() = Widget(view(), NeedsYouWidget.MEDIUM)
+internal fun NeedsYouAllClear() = Widget(view(), NeedsYouWidget.WIDE)
 
 @OptIn(ExperimentalGlancePreviewApi::class)
 @Preview(widthDp = 250, heightDp = 110)
 @Composable
-internal fun NeedsYouSignedOut() = Widget(without(WidgetContent.SIGNED_OUT), NeedsYouWidget.MEDIUM)
+internal fun NeedsYouSignedOut() = Widget(without(WidgetContent.SIGNED_OUT), NeedsYouWidget.WIDE)
 
 @OptIn(ExperimentalGlancePreviewApi::class)
 @Preview(widthDp = 250, heightDp = 110)
 @Composable
-internal fun NeedsYouWaiting() = Widget(without(WidgetContent.WAITING), NeedsYouWidget.MEDIUM)
+internal fun NeedsYouWaiting() = Widget(without(WidgetContent.WAITING), NeedsYouWidget.WIDE)
 
 @OptIn(ExperimentalGlancePreviewApi::class)
 @Preview(widthDp = 110, heightDp = 110)

@@ -29,6 +29,26 @@ internal object WidgetCopy {
     /** `:151`. */
     fun more(count: Int) = "$count more in the app"
 
+    /** `AgentsWidget.swift:12-13`, and the header (`AgentsWidgetView.swift:105-109`). */
+    const val AGENTS = "Agents"
+    const val AGENTS_DESCRIPTION = "What your agents did since you last opened the app."
+
+    /** `AgentsWidgetView.swift:108`: "Since 10:42", the device's short time. */
+    fun since(time: String) = "Since $time"
+
+    /** `:111-114`, under a header that says someone is working. */
+    fun nothingFinished(time: String?) = if (time == null) "Nothing finished yet" else "Nothing finished since $time"
+
+    /** `:116-119`. */
+    fun nothingNew(time: String?) = if (time == null) "Nothing new" else "Nothing new since $time"
+
+    /** `:84`. */
+    const val NO_ROOMS = "No agent rooms yet."
+    const val QUIET = "Quiet while you were away."
+
+    /** `:141`. */
+    fun newCount(count: UInt) = "$count new"
+
     /** `:341-343`: a decision with no inline button. */
     const val OPEN_TO_ANSWER = "Open to answer"
 }

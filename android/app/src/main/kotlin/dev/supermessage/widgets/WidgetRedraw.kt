@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 object WidgetRegistry {
     // A redraw can start a cold process (an alarm, the periodic work) in which no provider has
     // run, so the widgets this app has are known here, not only registered by their receivers.
-    private val registered = CopyOnWriteArrayList<GlanceAppWidget>(listOf(NeedsYouWidget()))
+    private val registered = CopyOnWriteArrayList<GlanceAppWidget>(listOf(NeedsYouWidget(), AgentsWidget()))
 
     fun register(widget: GlanceAppWidget) {
         if (registered.none { it::class == widget::class }) registered += widget

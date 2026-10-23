@@ -12,6 +12,7 @@ import uniffi.supermessage_core.RoomIdentity
 import uniffi.supermessage_core.RoomPreview
 import uniffi.supermessage_core.RoomRow
 import uniffi.supermessage_core.RoomSummary
+import uniffi.supermessage_core.TurnCounts
 import uniffi.supermessage_core.NotificationSuppression
 
 /**
@@ -31,10 +32,10 @@ object WidgetFixtures {
         }
     }
 
-    private fun activity(kind: ActivityKind, at: Long, gateId: String? = null, name: String = "Hermes") =
+    private fun activity(kind: ActivityKind, at: Long, gateId: String? = null, name: String = "Hermes", line: String? = null) =
         NotificationActivity(
             kind = kind, roomName = name, roomIsAgent = true, sender = "@agent_hermes:hs", atMs = at.toULong(),
-            line = null, gateId = gateId, references = null, optionId = null,
+            line = line, gateId = gateId, references = null, optionId = null,
         )
 
     fun permission(
@@ -78,6 +79,26 @@ object WidgetFixtures {
         activity = activity(ActivityKind.DECISION, at, name = agent),
     )
 
+    /**
+     * An agent's line, as a push; with [steps] and [failed] it is the answer that ends a turn
+     * (the hub adds the turn's counts to that push), which the recap calls finished or failed.
+     */
+    fun said(
+        room: String,
+        event: String,
+        agent: String,
+        line: String,
+        at: Long = NOW - MINUTE,
+        steps: Int? = null,
+        failed: Int = 0,
+    ) = NotificationDto(
+        roomId = room, eventId = event, title = agent, subtitle = null, body = line,
+        category = NotificationCategory.MESSAGE, permission = null, gate = null, threadId = room,
+        suppress = null, fallbackTitle = null, fallbackBody = null,
+        activity = activity(ActivityKind.MESSAGE, at, name = agent, line = line),
+        turn = steps?.let { TurnCounts(it.toUInt(), failed.toUInt()) },
+    )
+
     /** The board's receipt for [gate]: what takes a gate off the widget. */
     fun outcome(room: String = "!b:hs") = NotificationDto(
         roomId = room, eventId = "\$o", title = "", subtitle = null, body = "New message",
@@ -96,6 +117,11 @@ object WidgetFixtures {
         preview = RoomPreview(text = says, pending = false),
         affordance = RoomAffordance.COMPOSE,
     )
+
+    /** A roster row the core counts as an agent's room (a glyph and a role in its name). */
+    fun agentRow(id: String, name: String, at: Long, says: String) = row(id, name, at, says).let {
+        it.copy(identity = RoomIdentity(glyph = "✳", name = name, role = "Platform", initial = name.take(1)))
+    }
 
     /** A feed over [store] whose clock is [now]. */
     fun feed(store: SnapshotStore = Memory(), now: () -> Long = { NOW }) = WidgetFeed(store, now)

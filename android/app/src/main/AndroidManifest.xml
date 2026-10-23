@@ -123,5 +123,16 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/needs_you_widget_info" />
         </receiver>
+        <receiver
+            android:name=".widgets.AgentsWidgetReceiver"
+            android:label="@string/agents_widget_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/agents_widget_info" />
+        </receiver>
     </application>
 </manifest>

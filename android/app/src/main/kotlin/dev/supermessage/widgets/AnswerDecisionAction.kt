@@ -99,6 +99,12 @@ internal object AnswerFromWidget {
         )
     }
 
+    /** A room's deep link (`supermessage://open?room=`), what an Agents row opens (iOS `AppLink.room`). */
+    fun roomIntent(context: Context, roomId: String): Intent =
+        Intent(Intent.ACTION_VIEW, AndroidPoster.openRoomUri(roomId), context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra(AndroidPoster.EXTRA_ROOM, roomId)
+
     /** The decision's deep link (`supermessage://open?room=&event=`), into this app's one Activity. */
     fun decisionIntent(context: Context, roomId: String, eventId: String): Intent =
         Intent(Intent.ACTION_VIEW, AndroidPoster.openRoomUri(roomId, eventId), context, MainActivity::class.java)
