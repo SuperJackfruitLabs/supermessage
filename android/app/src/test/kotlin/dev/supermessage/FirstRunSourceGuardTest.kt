@@ -21,6 +21,8 @@ class FirstRunSourceGuardTest {
         Regex("""^import dev\.supermessage\.kit\.stores\."""),
         Regex("""^import uniffi\.supermessage_ffi\.(Core|CoreInterface|EventSink)\b"""),
         Regex("""^import (java\.net|okhttp3|android\.net)\."""),
+        // A wildcard would bring every name above in at once.
+        Regex("""^import (dev\.supermessage\.kit|dev\.supermessage\.kit\.stores|uniffi\.supermessage_ffi)\.\*"""),
     )
 
     @Test

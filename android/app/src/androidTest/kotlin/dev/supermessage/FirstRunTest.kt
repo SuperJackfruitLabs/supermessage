@@ -32,6 +32,8 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.core.DataStore
 import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
 import dev.supermessage.kit.CoreClient
 import dev.supermessage.kit.FirstRunDemo
@@ -394,6 +396,36 @@ class FirstRunTest {
         assertEquals(1, finished)
         assertTrue(runBlocking { firstRun.demoSeen.first() })
         assertFalse(runBlocking { firstRun.demoPending.first() })
+    }
+
+    /** A write that fails (a full disk) still lets the reader out, and does not take the app down. */
+    @Test
+    fun aFailedWriteStillLetsTheReaderOut() {
+        val store = FailingWrites(
+            PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.Unconfined)) {
+                File.createTempFile("first-run-failing", ".preferences_pb")
+            },
+        )
+        val firstRun = FirstRunPreferences(store)
+        runBlocking { firstRun.setDemoPending(true) }
+        store.fails = true
+        showApp(sessionOf(Core(restores = true, key = null)), firstRun)
+        waitFor("first-run")
+        compose.onNodeWithTag("first-run-skip").performClick()
+        compose.waitForIdle()
+        assertFalse("the demo is still up", present("first-run"))
+        assertFalse("the store refused the write, as it should here", runBlocking { firstRun.demoSeen.first() })
+        assertTrue("the shell is there", present("destination-chats"))
+    }
+
+    /** A real store whose writes fail once [fails] is set, as a full disk's would. */
+    private class FailingWrites(private val real: DataStore<Preferences>) : DataStore<Preferences> {
+        @Volatile var fails = false
+        override val data = real.data
+        override suspend fun updateData(transform: suspend (Preferences) -> Preferences): Preferences {
+            if (fails) throw java.io.IOException("No space left on device")
+            return real.updateData(transform)
+        }
     }
 
     @Test

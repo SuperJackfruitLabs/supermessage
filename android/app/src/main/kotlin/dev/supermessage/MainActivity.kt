@@ -330,8 +330,22 @@ internal fun AppRoot(
     if (firstRun != null) {
         val demoPending by firstRun.demoPending.collectAsStateWithLifecycle(initialValue = false)
         val demoSeen by firstRun.demoSeen.collectAsStateWithLifecycle(initialValue = true)
-        if (phase == Session.Phase.SIGNED_IN && demoPending && !demoSeen && newRecoveryKey == null && recoverySettled) {
-            FirstRunDemoScreen(onFinish = { scope.launch { firstRun.finishDemo() } })
+        // Gone as soon as the reader finishes, not when the write lands: a write that fails (a full
+        // disk) must neither keep them in the demo nor take the app down.
+        var demoFinished by remember { mutableStateOf(false) }
+        if (phase == Session.Phase.SIGNED_IN && demoPending && !demoSeen && !demoFinished && newRecoveryKey == null && recoverySettled) {
+            FirstRunDemoScreen(
+                onFinish = {
+                    demoFinished = true
+                    scope.launch {
+                        try {
+                            firstRun.finishDemo()
+                        } catch (e: java.io.IOException) {
+                            // Not written: the demo comes back on the next launch, which is all it costs.
+                        }
+                    }
+                },
+            )
         }
     }
     newRecoveryKey?.let { key ->

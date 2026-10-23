@@ -51,6 +51,12 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     /**
+     * Rooms asked for from outside (a `supermessage://` link). Held here, not in the Activity, so
+     * a link that has not been shown yet survives the Activity being recreated.
+     */
+    val requests = NavigationRequests()
+
+    /**
      * Deliberately empty beyond `super.onCleared()`. See this class's own
      * KDoc above for why a genuine clear must not mean "signed out".
      *
@@ -64,12 +70,6 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
      * once a test-only teardown ran — it passed by exercising the test
      * harness, not this method, and it was removed once that was noticed.
      */
-    /**
-     * Rooms asked for from outside (a `supermessage://` link). Held here, not in the Activity, so
-     * a link that has not been shown yet survives the Activity being recreated.
-     */
-    val requests = NavigationRequests()
-
     override fun onCleared() {
         super.onCleared()
     }
