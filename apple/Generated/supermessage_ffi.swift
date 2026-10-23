@@ -4163,6 +4163,30 @@ fileprivate struct FfiConverterOptionTypeNotificationDto: FfiConverterRustBuffer
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeNotificationMode: FfiConverterRustBuffer {
+    typealias SwiftType = NotificationMode?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeNotificationMode.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeNotificationMode.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypePermissionAnswers: FfiConverterRustBuffer {
     typealias SwiftType = PermissionAnswers?
 
@@ -4251,6 +4275,30 @@ fileprivate struct FfiConverterOptionTypeRosterRow: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeRosterRow.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeTurnCard: FfiConverterRustBuffer {
+    typealias SwiftType = TurnCard?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeTurnCard.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeTurnCard.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -4481,6 +4529,31 @@ fileprivate struct FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeNotificationActionSpec: FfiConverterRustBuffer {
+    typealias SwiftType = [NotificationActionSpec]
+
+    public static func write(_ value: [NotificationActionSpec], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeNotificationActionSpec.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [NotificationActionSpec] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [NotificationActionSpec]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeNotificationActionSpec.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypePersonDto: FfiConverterRustBuffer {
     typealias SwiftType = [PersonDto]
 
@@ -4498,6 +4571,31 @@ fileprivate struct FfiConverterSequenceTypePersonDto: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypePersonDto.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypePlannedNotification: FfiConverterRustBuffer {
+    typealias SwiftType = [PlannedNotification]
+
+    public static func write(_ value: [PlannedNotification], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypePlannedNotification.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [PlannedNotification] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [PlannedNotification]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypePlannedNotification.read(from: &buf))
         }
         return seq
     }
@@ -4803,6 +4901,50 @@ fileprivate struct FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffe
     }
 }
 
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
+    public static func write(_ value: [String: String], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for (key, value) in value {
+            FfiConverterString.write(key, into: &buf)
+            FfiConverterString.write(value, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [String: String] {
+        let len: Int32 = try readInt(&buf)
+        var dict = [String: String]()
+        dict.reserveCapacity(Int(len))
+        for _ in 0..<len {
+            let key = try FfiConverterString.read(from: &buf)
+            let value = try FfiConverterString.read(from: &buf)
+            dict[key] = value
+        }
+        return dict
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -4936,6 +5078,16 @@ public func agentAvatarVariants() -> [AgentAvatarStyle] {
 })
 }
 /**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func answerFailedNotification(roomId: String) -> PlannedNotification {
+    return try!  FfiConverterTypePlannedNotification_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_answer_failed_notification(
+        FfiConverterString.lower(roomId),$0
+    )
+})
+}
+/**
  * A playing note's position as the clock under it reads — `"0:06"`,
  * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
  * rest arrives already formatted on `AudioView`; this is for the one number
@@ -5034,6 +5186,18 @@ public func foldTurn(roomId: String, inputs: [TurnInput]) -> TurnSnapshot? {
 })
 }
 /**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func genericNotification(roomId: String, eventId: String, title: String) -> PlannedNotification {
+    return try!  FfiConverterTypePlannedNotification_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_generic_notification(
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(eventId),
+        FfiConverterString.lower(title),$0
+    )
+})
+}
+/**
  * Runs the timeline grouping pass over `rows` — see
  * `core::timeline_grouping::group_rows`. For previews, fixtures and Kit tests
  * that build rows by hand; the live timeline is grouped by the core before it
@@ -5068,6 +5232,26 @@ public func nextNotificationMode(current: NotificationMode) -> NotificationMode 
 })
 }
 /**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func notificationActions(category: NotificationCategory) -> [NotificationActionSpec] {
+    return try!  FfiConverterSequenceTypeNotificationActionSpec.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notification_actions(
+        FfiConverterTypeNotificationCategory_lower(category),$0
+    )
+})
+}
+/**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func notificationAnswerForWidget(answer: WidgetAnswer) -> NotificationAnswer {
+    return try!  FfiConverterTypeNotificationAnswer_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notification_answer_for_widget(
+        FfiConverterTypeWidgetAnswer_lower(answer),$0
+    )
+})
+}
+/**
  * The `UNNotificationCategory` identifier for `category` — the value the
  * push gateway also sends as `aps.category`.
  */
@@ -5075,6 +5259,17 @@ public func notificationCategoryIdentifier(category: NotificationCategory) -> St
     return try!  FfiConverterString.lift(try! rustCall() {
     uniffi_supermessage_ffi_fn_func_notification_category_identifier(
         FfiConverterTypeNotificationCategory_lower(category),$0
+    )
+})
+}
+/**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func notificationDelivers(note: PlannedNotification, mode: NotificationMode?) -> Bool {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notification_delivers(
+        FfiConverterTypePlannedNotification_lower(note),
+        FfiConverterOptionTypeNotificationMode.lower(mode),$0
     )
 })
 }
@@ -5113,6 +5308,68 @@ public func notificationPermissionAnswers(decision: CustomEventDecision) -> Perm
     return try!  FfiConverterOptionTypePermissionAnswers.lift(try! rustCall() {
     uniffi_supermessage_ffi_fn_func_notification_permission_answers(
         FfiConverterTypeCustomEventDecision_lower(decision),$0
+    )
+})
+}
+/**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func notificationPresentsRemote(roomId: String?, eventId: String?, context: NotificationContext, alreadyNotified: [String]) -> Bool {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notification_presents_remote(
+        FfiConverterOptionString.lower(roomId),
+        FfiConverterOptionString.lower(eventId),
+        FfiConverterTypeNotificationContext_lower(context),
+        FfiConverterSequenceString.lower(alreadyNotified),$0
+    )
+})
+}
+/**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func notificationResponse(actionId: String, userInfo: [String: String], userText: String?) -> NotificationResponse {
+    return try!  FfiConverterTypeNotificationResponse_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notification_response(
+        FfiConverterString.lower(actionId),
+        FfiConverterDictionaryStringString.lower(userInfo),
+        FfiConverterOptionString.lower(userText),$0
+    )
+})
+}
+/**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func notificationUserInfo(note: PlannedNotification) -> [String: String] {
+    return try!  FfiConverterDictionaryStringString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notification_user_info(
+        FfiConverterTypePlannedNotification_lower(note),$0
+    )
+})
+}
+/**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func notificationsForRoster(previous: [RoomRow], next: [RoomRow], context: NotificationContext) -> [PlannedNotification] {
+    return try!  FfiConverterSequenceTypePlannedNotification.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notifications_for_roster(
+        FfiConverterSequenceTypeRoomRow.lower(previous),
+        FfiConverterSequenceTypeRoomRow.lower(next),
+        FfiConverterTypeNotificationContext_lower(context),$0
+    )
+})
+}
+/**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func notificationsForTimeline(roomId: String, roomName: String, rows: [TimelineRow], sinceMs: UInt64, alreadyNotified: [String], context: NotificationContext) -> [PlannedNotification] {
+    return try!  FfiConverterSequenceTypePlannedNotification.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_notifications_for_timeline(
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(roomName),
+        FfiConverterSequenceTypeTimelineRow.lower(rows),
+        FfiConverterUInt64.lower(sinceMs),
+        FfiConverterSequenceString.lower(alreadyNotified),
+        FfiConverterTypeNotificationContext_lower(context),$0
     )
 })
 }
@@ -5170,6 +5427,16 @@ public func peopleMatching(people: [PersonDto], query: String) -> [PersonDto] {
     uniffi_supermessage_ffi_fn_func_people_matching(
         FfiConverterSequenceTypePersonDto.lower(people),
         FfiConverterString.lower(query),$0
+    )
+})
+}
+/**
+ * A free function for the same reason as `notification_for_row`: it touches no session state.
+ */
+public func plannedFromDecided(note: NotificationDto) -> PlannedNotification {
+    return try!  FfiConverterTypePlannedNotification_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_planned_from_decided(
+        FfiConverterTypeNotificationDto_lower(note),$0
     )
 })
 }
@@ -5381,6 +5648,18 @@ public func spaceDisplayName(name: String) -> String {
 })
 }
 /**
+ * A turn in the Live Activity's words, or `None` for a turn that timed out —
+ * see `core::turn_card::turn_card`.
+ */
+public func turnCard(summary: TurnSummary, agentName: String) -> TurnCard? {
+    return try!  FfiConverterOptionTypeTurnCard.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_turn_card(
+        FfiConverterTypeTurnSummary_lower(summary),
+        FfiConverterString.lower(agentName),$0
+    )
+})
+}
+/**
  * "12s", "2m 5s" — see `core::turn_label::turn_duration_label`.
  */
 public func turnDurationLabel(elapsedMs: UInt64) -> String {
@@ -5422,6 +5701,38 @@ public func typingView(typers: [TypingUserDto], agentIds: [String], counterpart:
         FfiConverterSequenceTypeTypingUserDto.lower(typers),
         FfiConverterSequenceString.lower(agentIds),
         FfiConverterOptionTypeCounterpart.lower(counterpart),$0
+    )
+})
+}
+/**
+ * Whether a recording is long enough to send — see
+ * `core::voice_recording::long_enough`.
+ */
+public func voiceLongEnough(durationMs: UInt64) -> Bool {
+    return try!  FfiConverterBool.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_voice_long_enough(
+        FfiConverterUInt64.lower(durationMs),$0
+    )
+})
+}
+/**
+ * The voice recorder's numbers — see `core::voice_recording::spec`.
+ */
+public func voiceRecordingSpec() -> VoiceRecordingSpec {
+    return try!  FfiConverterTypeVoiceRecordingSpec_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_voice_recording_spec($0
+    )
+})
+}
+/**
+ * Meter readings (dBFS) as a waveform of at most `bins` levels between 0 and
+ * 1 — see `core::voice_recording::waveform`.
+ */
+public func voiceWaveform(decibels: [Float], bins: UInt32) -> [Float] {
+    return try!  FfiConverterSequenceFloat.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_voice_waveform(
+        FfiConverterSequenceFloat.lower(decibels),
+        FfiConverterUInt32.lower(bins),$0
     )
 })
 }
@@ -5537,6 +5848,18 @@ public func widgetSignedOut(stored: String?, nowMs: UInt64) -> WidgetWrite {
     )
 })
 }
+/**
+ * The stored snapshot as a widget draws it at `now_ms`, typed. Android's
+ * widgets read this; iOS keeps its own `Codable` mirror.
+ */
+public func widgetView(stored: String?, nowMs: UInt64) -> WidgetView {
+    return try!  FfiConverterTypeWidgetView_lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_widget_view(
+        FfiConverterOptionString.lower(stored),
+        FfiConverterUInt64.lower(nowMs),$0
+    )
+})
+}
 
 private enum InitializationResult {
     case ok
@@ -5560,6 +5883,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_agent_avatar_variants() != 3545) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_answer_failed_notification() != 56912) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_audio_clock_label() != 37901) {
@@ -5586,6 +5912,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_fold_turn() != 3050) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_generic_notification() != 32098) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_group_timeline_rows() != 27483) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5595,7 +5924,16 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_notification_actions() != 306) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_notification_answer_for_widget() != 33691) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_notification_category_identifier() != 36525) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_notification_delivers() != 3875) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_notification_for_row() != 16600) {
@@ -5605,6 +5943,21 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_notification_permission_answers() != 1058) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_notification_presents_remote() != 56334) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_notification_response() != 48417) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_notification_user_info() != 51097) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_notifications_for_roster() != 33821) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_notifications_for_timeline() != 12171) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_parse_matrix_link() != 33094) {
@@ -5617,6 +5970,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_people_matching() != 1897) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_planned_from_decided() != 53056) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_report_reason_remaining() != 11948) {
@@ -5670,6 +6026,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_space_display_name() != 32972) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_turn_card() != 11863) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_turn_duration_label() != 63524) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -5680,6 +6039,15 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_typing_view() != 62690) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_voice_long_enough() != 14509) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_voice_recording_spec() != 39288) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_voice_waveform() != 37120) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_widget_answer_for() != 34951) {
@@ -5707,6 +6075,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_widget_signed_out() != 55888) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_widget_view() != 14962) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_account() != 48469) {

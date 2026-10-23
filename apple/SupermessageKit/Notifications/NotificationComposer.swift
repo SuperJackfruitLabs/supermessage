@@ -1,6 +1,14 @@
 import Foundation
 import SupermessageFFI
 
+// Shared with the Notification Service Extension as source, which does not
+// compile Sendability.swift — so these conformances live here (as in
+// CoreLocation.swift). NotificationContext and NotificationAnswer get theirs
+// when the Swift copies of those two types are deleted.
+extension NotificationActionSpec: @retroactive @unchecked Sendable {}
+extension NotificationTextInput: @retroactive @unchecked Sendable {}
+extension PlannedNotification: @retroactive @unchecked Sendable {}
+
 /// One local notification this app has decided to post.
 ///
 /// A value, not a `UNNotificationRequest`: Kit imports no UI framework, and

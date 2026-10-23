@@ -693,6 +693,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_agent_avatar_variants(RustCallStatus 
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ANSWER_FAILED_NOTIFICATION
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_ANSWER_FAILED_NOTIFICATION
+RustBuffer uniffi_supermessage_ffi_fn_func_answer_failed_notification(RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_AUDIO_CLOCK_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_AUDIO_CLOCK_LABEL
 RustBuffer uniffi_supermessage_ffi_fn_func_audio_clock_label(uint64_t ms, RustCallStatus *_Nonnull out_status
@@ -734,6 +739,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_first_run_script(RustCallStatus *_Non
 RustBuffer uniffi_supermessage_ffi_fn_func_fold_turn(RustBuffer room_id, RustBuffer inputs, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GENERIC_NOTIFICATION
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GENERIC_NOTIFICATION
+RustBuffer uniffi_supermessage_ffi_fn_func_generic_notification(RustBuffer room_id, RustBuffer event_id, RustBuffer title, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GROUP_TIMELINE_ROWS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GROUP_TIMELINE_ROWS
 RustBuffer uniffi_supermessage_ffi_fn_func_group_timeline_rows(RustBuffer rows, RustCallStatus *_Nonnull out_status
@@ -750,9 +760,24 @@ uint32_t uniffi_supermessage_ffi_fn_func_long_read_graphemes(RustCallStatus *_No
 RustBuffer uniffi_supermessage_ffi_fn_func_next_notification_mode(RustBuffer current, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_ACTIONS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_ACTIONS
+RustBuffer uniffi_supermessage_ffi_fn_func_notification_actions(RustBuffer category, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_ANSWER_FOR_WIDGET
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_ANSWER_FOR_WIDGET
+RustBuffer uniffi_supermessage_ffi_fn_func_notification_answer_for_widget(RustBuffer answer, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_CATEGORY_IDENTIFIER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_CATEGORY_IDENTIFIER
 RustBuffer uniffi_supermessage_ffi_fn_func_notification_category_identifier(RustBuffer category, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_DELIVERS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_DELIVERS
+int8_t uniffi_supermessage_ffi_fn_func_notification_delivers(RustBuffer note, RustBuffer mode, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_FOR_ROW
@@ -768,6 +793,31 @@ RustBuffer uniffi_supermessage_ffi_fn_func_notification_gate_answers(RustBuffer 
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_PERMISSION_ANSWERS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_PERMISSION_ANSWERS
 RustBuffer uniffi_supermessage_ffi_fn_func_notification_permission_answers(RustBuffer decision, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_PRESENTS_REMOTE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_PRESENTS_REMOTE
+int8_t uniffi_supermessage_ffi_fn_func_notification_presents_remote(RustBuffer room_id, RustBuffer event_id, RustBuffer context, RustBuffer already_notified, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_RESPONSE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_RESPONSE
+RustBuffer uniffi_supermessage_ffi_fn_func_notification_response(RustBuffer action_id, RustBuffer user_info, RustBuffer user_text, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_USER_INFO
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATION_USER_INFO
+RustBuffer uniffi_supermessage_ffi_fn_func_notification_user_info(RustBuffer note, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATIONS_FOR_ROSTER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATIONS_FOR_ROSTER
+RustBuffer uniffi_supermessage_ffi_fn_func_notifications_for_roster(RustBuffer previous, RustBuffer next, RustBuffer context, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATIONS_FOR_TIMELINE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NOTIFICATIONS_FOR_TIMELINE
+RustBuffer uniffi_supermessage_ffi_fn_func_notifications_for_timeline(RustBuffer room_id, RustBuffer room_name, RustBuffer rows, uint64_t since_ms, RustBuffer already_notified, RustBuffer context, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PARSE_MATRIX_LINK
@@ -788,6 +838,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_people_label(RustBuffer user_ids, Rus
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_MATCHING
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PEOPLE_MATCHING
 RustBuffer uniffi_supermessage_ffi_fn_func_people_matching(RustBuffer people, RustBuffer query, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PLANNED_FROM_DECIDED
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_PLANNED_FROM_DECIDED
+RustBuffer uniffi_supermessage_ffi_fn_func_planned_from_decided(RustBuffer note, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_REPORT_REASON_REMAINING
@@ -875,6 +930,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_roster_state(RustBuffer row, uint64_t
 RustBuffer uniffi_supermessage_ffi_fn_func_space_display_name(RustBuffer name, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_CARD
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_CARD
+RustBuffer uniffi_supermessage_ffi_fn_func_turn_card(RustBuffer summary, RustBuffer agent_name, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_DURATION_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TURN_DURATION_LABEL
 RustBuffer uniffi_supermessage_ffi_fn_func_turn_duration_label(uint64_t elapsed_ms, RustCallStatus *_Nonnull out_status
@@ -893,6 +953,22 @@ RustBuffer uniffi_supermessage_ffi_fn_func_turn_status_word(RustBuffer ended_by,
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TYPING_VIEW
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_TYPING_VIEW
 RustBuffer uniffi_supermessage_ffi_fn_func_typing_view(RustBuffer typers, RustBuffer agent_ids, RustBuffer counterpart, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_VOICE_LONG_ENOUGH
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_VOICE_LONG_ENOUGH
+int8_t uniffi_supermessage_ffi_fn_func_voice_long_enough(uint64_t duration_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_VOICE_RECORDING_SPEC
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_VOICE_RECORDING_SPEC
+RustBuffer uniffi_supermessage_ffi_fn_func_voice_recording_spec(RustCallStatus *_Nonnull out_status
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_VOICE_WAVEFORM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_VOICE_WAVEFORM
+RustBuffer uniffi_supermessage_ffi_fn_func_voice_waveform(RustBuffer decibels, uint32_t bins, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_ANSWER_FOR
@@ -938,6 +1014,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_widget_mark_answered(RustBuffer store
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_SIGNED_OUT
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_SIGNED_OUT
 RustBuffer uniffi_supermessage_ffi_fn_func_widget_signed_out(RustBuffer stored, uint64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_VIEW
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_WIDGET_VIEW
+RustBuffer uniffi_supermessage_ffi_fn_func_widget_view(RustBuffer stored, uint64_t now_ms, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_FFI_SUPERMESSAGE_FFI_RUSTBUFFER_ALLOC
@@ -1238,6 +1319,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_agent_avatar_variants(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ANSWER_FAILED_NOTIFICATION
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_ANSWER_FAILED_NOTIFICATION
+uint16_t uniffi_supermessage_ffi_checksum_func_answer_failed_notification(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_AUDIO_CLOCK_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_AUDIO_CLOCK_LABEL
 uint16_t uniffi_supermessage_ffi_checksum_func_audio_clock_label(void
@@ -1286,6 +1373,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_fold_turn(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GENERIC_NOTIFICATION
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GENERIC_NOTIFICATION
+uint16_t uniffi_supermessage_ffi_checksum_func_generic_notification(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GROUP_TIMELINE_ROWS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GROUP_TIMELINE_ROWS
 uint16_t uniffi_supermessage_ffi_checksum_func_group_timeline_rows(void
@@ -1304,9 +1397,27 @@ uint16_t uniffi_supermessage_ffi_checksum_func_next_notification_mode(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_ACTIONS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_ACTIONS
+uint16_t uniffi_supermessage_ffi_checksum_func_notification_actions(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_ANSWER_FOR_WIDGET
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_ANSWER_FOR_WIDGET
+uint16_t uniffi_supermessage_ffi_checksum_func_notification_answer_for_widget(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_CATEGORY_IDENTIFIER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_CATEGORY_IDENTIFIER
 uint16_t uniffi_supermessage_ffi_checksum_func_notification_category_identifier(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_DELIVERS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_DELIVERS
+uint16_t uniffi_supermessage_ffi_checksum_func_notification_delivers(void
     
 );
 #endif
@@ -1325,6 +1436,36 @@ uint16_t uniffi_supermessage_ffi_checksum_func_notification_gate_answers(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_PERMISSION_ANSWERS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_PERMISSION_ANSWERS
 uint16_t uniffi_supermessage_ffi_checksum_func_notification_permission_answers(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_PRESENTS_REMOTE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_PRESENTS_REMOTE
+uint16_t uniffi_supermessage_ffi_checksum_func_notification_presents_remote(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_RESPONSE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_RESPONSE
+uint16_t uniffi_supermessage_ffi_checksum_func_notification_response(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_USER_INFO
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATION_USER_INFO
+uint16_t uniffi_supermessage_ffi_checksum_func_notification_user_info(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATIONS_FOR_ROSTER
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATIONS_FOR_ROSTER
+uint16_t uniffi_supermessage_ffi_checksum_func_notifications_for_roster(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATIONS_FOR_TIMELINE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NOTIFICATIONS_FOR_TIMELINE
+uint16_t uniffi_supermessage_ffi_checksum_func_notifications_for_timeline(void
     
 );
 #endif
@@ -1349,6 +1490,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_people_label(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PEOPLE_MATCHING
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PEOPLE_MATCHING
 uint16_t uniffi_supermessage_ffi_checksum_func_people_matching(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PLANNED_FROM_DECIDED
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_PLANNED_FROM_DECIDED
+uint16_t uniffi_supermessage_ffi_checksum_func_planned_from_decided(void
     
 );
 #endif
@@ -1454,6 +1601,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_space_display_name(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_CARD
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_CARD
+uint16_t uniffi_supermessage_ffi_checksum_func_turn_card(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_DURATION_LABEL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TURN_DURATION_LABEL
 uint16_t uniffi_supermessage_ffi_checksum_func_turn_duration_label(void
@@ -1475,6 +1628,24 @@ uint16_t uniffi_supermessage_ffi_checksum_func_turn_status_word(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TYPING_VIEW
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_TYPING_VIEW
 uint16_t uniffi_supermessage_ffi_checksum_func_typing_view(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_VOICE_LONG_ENOUGH
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_VOICE_LONG_ENOUGH
+uint16_t uniffi_supermessage_ffi_checksum_func_voice_long_enough(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_VOICE_RECORDING_SPEC
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_VOICE_RECORDING_SPEC
+uint16_t uniffi_supermessage_ffi_checksum_func_voice_recording_spec(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_VOICE_WAVEFORM
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_VOICE_WAVEFORM
+uint16_t uniffi_supermessage_ffi_checksum_func_voice_waveform(void
     
 );
 #endif
@@ -1529,6 +1700,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_widget_mark_answered(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_SIGNED_OUT
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_SIGNED_OUT
 uint16_t uniffi_supermessage_ffi_checksum_func_widget_signed_out(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_VIEW
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_WIDGET_VIEW
+uint16_t uniffi_supermessage_ffi_checksum_func_widget_view(void
     
 );
 #endif

@@ -1,5 +1,10 @@
 import Foundation
 import Observation
+import SupermessageFFI
+
+// Shared with the Notification Service Extension as source, which does not
+// compile Sendability.swift (see CoreLocation.swift).
+extension NotificationResponse: @retroactive @unchecked Sendable {}
 
 /// A request, from outside the view tree, to show a room.
 ///

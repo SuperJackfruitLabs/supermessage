@@ -53,11 +53,16 @@ import uniffi.supermessage_core.FfiConverterTypeLiveActivityTokenKind
 import uniffi.supermessage_core.FfiConverterTypeMatrixLinkTarget
 import uniffi.supermessage_core.FfiConverterTypeMentionable
 import uniffi.supermessage_core.FfiConverterTypeNeedsYouInbox
+import uniffi.supermessage_core.FfiConverterTypeNotificationActionSpec
+import uniffi.supermessage_core.FfiConverterTypeNotificationAnswer
 import uniffi.supermessage_core.FfiConverterTypeNotificationCategory
+import uniffi.supermessage_core.FfiConverterTypeNotificationContext
 import uniffi.supermessage_core.FfiConverterTypeNotificationDto
 import uniffi.supermessage_core.FfiConverterTypeNotificationMode
+import uniffi.supermessage_core.FfiConverterTypeNotificationResponse
 import uniffi.supermessage_core.FfiConverterTypePermissionAnswers
 import uniffi.supermessage_core.FfiConverterTypePersonDto
+import uniffi.supermessage_core.FfiConverterTypePlannedNotification
 import uniffi.supermessage_core.FfiConverterTypePlayableAudio
 import uniffi.supermessage_core.FfiConverterTypePushRegistration
 import uniffi.supermessage_core.FfiConverterTypeRichBlock
@@ -76,14 +81,18 @@ import uniffi.supermessage_core.FfiConverterTypeSearchResultDto
 import uniffi.supermessage_core.FfiConverterTypeSpaceSummary
 import uniffi.supermessage_core.FfiConverterTypeTimelineRow
 import uniffi.supermessage_core.FfiConverterTypeToolPhase
+import uniffi.supermessage_core.FfiConverterTypeTurnCard
 import uniffi.supermessage_core.FfiConverterTypeTurnEnding
 import uniffi.supermessage_core.FfiConverterTypeTurnInput
 import uniffi.supermessage_core.FfiConverterTypeTurnSnapshot
+import uniffi.supermessage_core.FfiConverterTypeTurnSummary
 import uniffi.supermessage_core.FfiConverterTypeTurnUpdate
 import uniffi.supermessage_core.FfiConverterTypeTypingUserDto
 import uniffi.supermessage_core.FfiConverterTypeTypingView
+import uniffi.supermessage_core.FfiConverterTypeVoiceRecordingSpec
 import uniffi.supermessage_core.FfiConverterTypeWidgetAnswer
 import uniffi.supermessage_core.FfiConverterTypeWidgetLiveTurn
+import uniffi.supermessage_core.FfiConverterTypeWidgetView
 import uniffi.supermessage_core.FfiConverterTypeWidgetWrite
 import uniffi.supermessage_core.FirstRunScript
 import uniffi.supermessage_core.FirstRunStep
@@ -93,11 +102,16 @@ import uniffi.supermessage_core.LiveActivityTokenKind
 import uniffi.supermessage_core.MatrixLinkTarget
 import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NeedsYouInbox
+import uniffi.supermessage_core.NotificationActionSpec
+import uniffi.supermessage_core.NotificationAnswer
 import uniffi.supermessage_core.NotificationCategory
+import uniffi.supermessage_core.NotificationContext
 import uniffi.supermessage_core.NotificationDto
 import uniffi.supermessage_core.NotificationMode
+import uniffi.supermessage_core.NotificationResponse
 import uniffi.supermessage_core.PermissionAnswers
 import uniffi.supermessage_core.PersonDto
+import uniffi.supermessage_core.PlannedNotification
 import uniffi.supermessage_core.PlayableAudio
 import uniffi.supermessage_core.PushRegistration
 import uniffi.supermessage_core.RichBlock
@@ -116,14 +130,18 @@ import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
 import uniffi.supermessage_core.TimelineRow
 import uniffi.supermessage_core.ToolPhase
+import uniffi.supermessage_core.TurnCard
 import uniffi.supermessage_core.TurnEnding
 import uniffi.supermessage_core.TurnInput
 import uniffi.supermessage_core.TurnSnapshot
+import uniffi.supermessage_core.TurnSummary
 import uniffi.supermessage_core.TurnUpdate
 import uniffi.supermessage_core.TypingUserDto
 import uniffi.supermessage_core.TypingView
+import uniffi.supermessage_core.VoiceRecordingSpec
 import uniffi.supermessage_core.WidgetAnswer
 import uniffi.supermessage_core.WidgetLiveTurn
+import uniffi.supermessage_core.WidgetView
 import uniffi.supermessage_core.WidgetWrite
 import uniffi.supermessage_core.RustBuffer as RustBufferAccountDto
 import uniffi.supermessage_core.RustBuffer as RustBufferAcknowledgement
@@ -140,11 +158,16 @@ import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityTokenKind
 import uniffi.supermessage_core.RustBuffer as RustBufferMatrixLinkTarget
 import uniffi.supermessage_core.RustBuffer as RustBufferMentionable
 import uniffi.supermessage_core.RustBuffer as RustBufferNeedsYouInbox
+import uniffi.supermessage_core.RustBuffer as RustBufferNotificationActionSpec
+import uniffi.supermessage_core.RustBuffer as RustBufferNotificationAnswer
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationCategory
+import uniffi.supermessage_core.RustBuffer as RustBufferNotificationContext
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationDto
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationMode
+import uniffi.supermessage_core.RustBuffer as RustBufferNotificationResponse
 import uniffi.supermessage_core.RustBuffer as RustBufferPermissionAnswers
 import uniffi.supermessage_core.RustBuffer as RustBufferPersonDto
+import uniffi.supermessage_core.RustBuffer as RustBufferPlannedNotification
 import uniffi.supermessage_core.RustBuffer as RustBufferPlayableAudio
 import uniffi.supermessage_core.RustBuffer as RustBufferPushRegistration
 import uniffi.supermessage_core.RustBuffer as RustBufferRichBlock
@@ -163,14 +186,18 @@ import uniffi.supermessage_core.RustBuffer as RustBufferSearchResultDto
 import uniffi.supermessage_core.RustBuffer as RustBufferSpaceSummary
 import uniffi.supermessage_core.RustBuffer as RustBufferTimelineRow
 import uniffi.supermessage_core.RustBuffer as RustBufferToolPhase
+import uniffi.supermessage_core.RustBuffer as RustBufferTurnCard
 import uniffi.supermessage_core.RustBuffer as RustBufferTurnEnding
 import uniffi.supermessage_core.RustBuffer as RustBufferTurnInput
 import uniffi.supermessage_core.RustBuffer as RustBufferTurnSnapshot
+import uniffi.supermessage_core.RustBuffer as RustBufferTurnSummary
 import uniffi.supermessage_core.RustBuffer as RustBufferTurnUpdate
 import uniffi.supermessage_core.RustBuffer as RustBufferTypingUserDto
 import uniffi.supermessage_core.RustBuffer as RustBufferTypingView
+import uniffi.supermessage_core.RustBuffer as RustBufferVoiceRecordingSpec
 import uniffi.supermessage_core.RustBuffer as RustBufferWidgetAnswer
 import uniffi.supermessage_core.RustBuffer as RustBufferWidgetLiveTurn
+import uniffi.supermessage_core.RustBuffer as RustBufferWidgetView
 import uniffi.supermessage_core.RustBuffer as RustBufferWidgetWrite
 
 // This is a helper for safely working with byte buffers returned from the Rust code.
@@ -1159,6 +1186,38 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1338,6 +1397,8 @@ internal interface UniffiLib : Library {
     ): RustBufferAgentAvatarStyle.ByValue
     fun uniffi_supermessage_ffi_fn_func_agent_avatar_variants(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_answer_failed_notification(`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferPlannedNotification.ByValue
     fun uniffi_supermessage_ffi_fn_func_audio_clock_label(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_collect_mentions(`text`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1354,19 +1415,37 @@ internal interface UniffiLib : Library {
     ): RustBufferFirstRunScript.ByValue
     fun uniffi_supermessage_ffi_fn_func_fold_turn(`roomId`: RustBuffer.ByValue,`inputs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_generic_notification(`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferPlannedNotification.ByValue
     fun uniffi_supermessage_ffi_fn_func_group_timeline_rows(`rows`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_long_read_graphemes(uniffi_out_err: UniffiRustCallStatus, 
     ): Int
     fun uniffi_supermessage_ffi_fn_func_next_notification_mode(`current`: RustBufferNotificationMode.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferNotificationMode.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notification_actions(`category`: RustBufferNotificationCategory.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notification_answer_for_widget(`answer`: RustBufferWidgetAnswer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferNotificationAnswer.ByValue
     fun uniffi_supermessage_ffi_fn_func_notification_category_identifier(`category`: RustBufferNotificationCategory.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notification_delivers(`note`: RustBufferPlannedNotification.ByValue,`mode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
     fun uniffi_supermessage_ffi_fn_func_notification_for_row(`row`: RustBufferTimelineRow.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`roomName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_notification_gate_answers(`decision`: RustBufferCustomEventDecision.ByValue,`gateId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_notification_permission_answers(`decision`: RustBufferCustomEventDecision.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notification_presents_remote(`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`context`: RustBufferNotificationContext.ByValue,`alreadyNotified`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    fun uniffi_supermessage_ffi_fn_func_notification_response(`actionId`: RustBuffer.ByValue,`userInfo`: RustBuffer.ByValue,`userText`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferNotificationResponse.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notification_user_info(`note`: RustBufferPlannedNotification.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notifications_for_roster(`previous`: RustBuffer.ByValue,`next`: RustBuffer.ByValue,`context`: RustBufferNotificationContext.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_notifications_for_timeline(`roomId`: RustBuffer.ByValue,`roomName`: RustBuffer.ByValue,`rows`: RustBuffer.ByValue,`sinceMs`: Long,`alreadyNotified`: RustBuffer.ByValue,`context`: RustBufferNotificationContext.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_parse_matrix_link(`href`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1376,6 +1455,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_people_matching(`people`: RustBuffer.ByValue,`query`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_planned_from_decided(`note`: RustBufferNotificationDto.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferPlannedNotification.ByValue
     fun uniffi_supermessage_ffi_fn_func_report_reason_remaining(`reason`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
     fun uniffi_supermessage_ffi_fn_func_rich_blocks_from_markdown(`source`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1410,6 +1491,8 @@ internal interface UniffiLib : Library {
     ): RustBufferAgentState.ByValue
     fun uniffi_supermessage_ffi_fn_func_space_display_name(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_turn_card(`summary`: RustBufferTurnSummary.ByValue,`agentName`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_turn_duration_label(`elapsedMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_turn_record_label(`thought`: Byte,`steps`: Int,`elapsedMs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1418,6 +1501,12 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_typing_view(`typers`: RustBuffer.ByValue,`agentIds`: RustBuffer.ByValue,`counterpart`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferTypingView.ByValue
+    fun uniffi_supermessage_ffi_fn_func_voice_long_enough(`durationMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): Byte
+    fun uniffi_supermessage_ffi_fn_func_voice_recording_spec(uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferVoiceRecordingSpec.ByValue
+    fun uniffi_supermessage_ffi_fn_func_voice_waveform(`decibels`: RustBuffer.ByValue,`bins`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_answer_for(`stored`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_apply_notification(`stored`: RustBuffer.ByValue,`note`: RustBufferNotificationDto.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -1436,6 +1525,8 @@ internal interface UniffiLib : Library {
     ): RustBufferWidgetWrite.ByValue
     fun uniffi_supermessage_ffi_fn_func_widget_signed_out(`stored`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferWidgetWrite.ByValue
+    fun uniffi_supermessage_ffi_fn_func_widget_view(`stored`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBufferWidgetView.ByValue
     fun ffi_supermessage_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun ffi_supermessage_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1554,6 +1645,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_agent_avatar_variants(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_answer_failed_notification(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_audio_clock_label(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_collect_mentions(
@@ -1570,19 +1663,37 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_fold_turn(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_generic_notification(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_group_timeline_rows(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_long_read_graphemes(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_next_notification_mode(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notification_actions(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notification_answer_for_widget(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_notification_category_identifier(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notification_delivers(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_notification_for_row(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_notification_gate_answers(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_notification_permission_answers(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notification_presents_remote(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notification_response(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notification_user_info(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notifications_for_roster(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_notifications_for_timeline(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_parse_matrix_link(
     ): Short
@@ -1591,6 +1702,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_people_label(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_people_matching(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_planned_from_decided(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_report_reason_remaining(
     ): Short
@@ -1626,6 +1739,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_space_display_name(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_turn_card(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_turn_duration_label(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_turn_record_label(
@@ -1633,6 +1748,12 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_turn_status_word(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_typing_view(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_voice_long_enough(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_voice_recording_spec(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_voice_waveform(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_widget_answer_for(
     ): Short
@@ -1651,6 +1772,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_widget_mark_answered(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_widget_signed_out(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_widget_view(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_account(
     ): Short
@@ -1830,6 +1953,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_func_agent_avatar_variants() != 3545.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_func_answer_failed_notification() != 56912.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_audio_clock_label() != 37901.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1854,6 +1980,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_func_fold_turn() != 3050.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_func_generic_notification() != 32098.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_group_timeline_rows() != 27483.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1863,7 +1992,16 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notification_actions() != 306.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notification_answer_for_widget() != 33691.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_notification_category_identifier() != 36525.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notification_delivers() != 3875.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_notification_for_row() != 16600.toShort()) {
@@ -1873,6 +2011,21 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_notification_permission_answers() != 1058.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notification_presents_remote() != 56334.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notification_response() != 48417.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notification_user_info() != 51097.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notifications_for_roster() != 33821.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_notifications_for_timeline() != 12171.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_parse_matrix_link() != 33094.toShort()) {
@@ -1885,6 +2038,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_people_matching() != 1897.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_planned_from_decided() != 53056.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_report_reason_remaining() != 11948.toShort()) {
@@ -1938,6 +2094,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_func_space_display_name() != 32972.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_func_turn_card() != 11863.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_turn_duration_label() != 63524.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -1948,6 +2107,15 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_typing_view() != 62690.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_voice_long_enough() != 14509.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_voice_recording_spec() != 39288.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_voice_waveform() != 37120.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_widget_answer_for() != 34951.toShort()) {
@@ -1975,6 +2143,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_widget_signed_out() != 55888.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_widget_view() != 14962.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_account() != 48469.toShort()) {
@@ -6676,6 +6847,38 @@ public object FfiConverterOptionalTypeNotificationDto: FfiConverterRustBuffer<No
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeNotificationMode: FfiConverterRustBuffer<NotificationMode?> {
+    override fun read(buf: ByteBuffer): NotificationMode? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeNotificationMode.read(buf)
+    }
+
+    override fun allocationSize(value: NotificationMode?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeNotificationMode.allocationSize(value)
+        }
+    }
+
+    override fun write(value: NotificationMode?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeNotificationMode.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypePermissionAnswers: FfiConverterRustBuffer<PermissionAnswers?> {
     override fun read(buf: ByteBuffer): PermissionAnswers? {
         if (buf.get().toInt() == 0) {
@@ -6794,6 +6997,38 @@ public object FfiConverterOptionalTypeRosterRow: FfiConverterRustBuffer<RosterRo
         } else {
             buf.put(1)
             FfiConverterTypeRosterRow.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeTurnCard: FfiConverterRustBuffer<TurnCard?> {
+    override fun read(buf: ByteBuffer): TurnCard? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeTurnCard.read(buf)
+    }
+
+    override fun allocationSize(value: TurnCard?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeTurnCard.allocationSize(value)
+        }
+    }
+
+    override fun write(value: TurnCard?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeTurnCard.write(value, buf)
         }
     }
 }
@@ -7068,6 +7303,34 @@ public object FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer<List<M
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeNotificationActionSpec: FfiConverterRustBuffer<List<NotificationActionSpec>> {
+    override fun read(buf: ByteBuffer): List<NotificationActionSpec> {
+        val len = buf.getInt()
+        return List<NotificationActionSpec>(len) {
+            FfiConverterTypeNotificationActionSpec.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<NotificationActionSpec>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeNotificationActionSpec.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<NotificationActionSpec>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeNotificationActionSpec.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypePersonDto: FfiConverterRustBuffer<List<PersonDto>> {
     override fun read(buf: ByteBuffer): List<PersonDto> {
         val len = buf.getInt()
@@ -7086,6 +7349,34 @@ public object FfiConverterSequenceTypePersonDto: FfiConverterRustBuffer<List<Per
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypePersonDto.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypePlannedNotification: FfiConverterRustBuffer<List<PlannedNotification>> {
+    override fun read(buf: ByteBuffer): List<PlannedNotification> {
+        val len = buf.getInt()
+        return List<PlannedNotification>(len) {
+            FfiConverterTypePlannedNotification.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<PlannedNotification>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypePlannedNotification.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<PlannedNotification>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypePlannedNotification.write(it, buf)
         }
     }
 }
@@ -7429,6 +7720,81 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
 
 
 
+/**
+ * @suppress
+ */
+public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.String, kotlin.String>> {
+    override fun read(buf: ByteBuffer): Map<kotlin.String, kotlin.String> {
+        val len = buf.getInt()
+        return buildMap<kotlin.String, kotlin.String>(len) {
+            repeat(len) {
+                val k = FfiConverterString.read(buf)
+                val v = FfiConverterString.read(buf)
+                this[k] = v
+            }
+        }
+    }
+
+    override fun allocationSize(value: Map<kotlin.String, kotlin.String>): ULong {
+        val spaceForMapSize = 4UL
+        val spaceForChildren = value.map { (k, v) ->
+            FfiConverterString.allocationSize(k) +
+            FfiConverterString.allocationSize(v)
+        }.sum()
+        return spaceForMapSize + spaceForChildren
+    }
+
+    override fun write(value: Map<kotlin.String, kotlin.String>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        // The parens on `(k, v)` here ensure we're calling the right method,
+        // which is important for compatibility with older android devices.
+        // Ref https://blog.danlew.net/2017/03/16/kotlin-puzzler-whose-line-is-it-anyways/
+        value.forEach { (k, v) ->
+            FfiConverterString.write(k, buf)
+            FfiConverterString.write(v, buf)
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -7655,6 +8021,18 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     
 
         /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `answerFailedNotification`(`roomId`: kotlin.String): PlannedNotification {
+            return FfiConverterTypePlannedNotification.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_answer_failed_notification(
+        FfiConverterString.lower(`roomId`),_status)
+}
+    )
+    }
+    
+
+        /**
          * A playing note's position as the clock under it reads — `"0:06"`,
          * `"1:02:03"` — truncated to the second. See `core::audio`: the length at
          * rest arrives already formatted on `AudioView`; this is for the one number
@@ -7768,6 +8146,18 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     
 
         /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `genericNotification`(`roomId`: kotlin.String, `eventId`: kotlin.String, `title`: kotlin.String): PlannedNotification {
+            return FfiConverterTypePlannedNotification.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_generic_notification(
+        FfiConverterString.lower(`roomId`),FfiConverterString.lower(`eventId`),FfiConverterString.lower(`title`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Runs the timeline grouping pass over `rows` — see
          * `core::timeline_grouping::group_rows`. For previews, fixtures and Kit tests
          * that build rows by hand; the live timeline is grouped by the core before it
@@ -7809,6 +8199,30 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     
 
         /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `notificationActions`(`category`: NotificationCategory): List<NotificationActionSpec> {
+            return FfiConverterSequenceTypeNotificationActionSpec.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_actions(
+        FfiConverterTypeNotificationCategory.lower(`category`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `notificationAnswerForWidget`(`answer`: WidgetAnswer): NotificationAnswer {
+            return FfiConverterTypeNotificationAnswer.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_answer_for_widget(
+        FfiConverterTypeWidgetAnswer.lower(`answer`),_status)
+}
+    )
+    }
+    
+
+        /**
          * The `UNNotificationCategory` identifier for `category` — the value the
          * push gateway also sends as `aps.category`.
          */ fun `notificationCategoryIdentifier`(`category`: NotificationCategory): kotlin.String {
@@ -7816,6 +8230,18 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_category_identifier(
         FfiConverterTypeNotificationCategory.lower(`category`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `notificationDelivers`(`note`: PlannedNotification, `mode`: NotificationMode?): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_delivers(
+        FfiConverterTypePlannedNotification.lower(`note`),FfiConverterOptionalTypeNotificationMode.lower(`mode`),_status)
 }
     )
     }
@@ -7856,6 +8282,66 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_permission_answers(
         FfiConverterTypeCustomEventDecision.lower(`decision`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `notificationPresentsRemote`(`roomId`: kotlin.String?, `eventId`: kotlin.String?, `context`: NotificationContext, `alreadyNotified`: List<kotlin.String>): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_presents_remote(
+        FfiConverterOptionalString.lower(`roomId`),FfiConverterOptionalString.lower(`eventId`),FfiConverterTypeNotificationContext.lower(`context`),FfiConverterSequenceString.lower(`alreadyNotified`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `notificationResponse`(`actionId`: kotlin.String, `userInfo`: Map<kotlin.String, kotlin.String>, `userText`: kotlin.String?): NotificationResponse {
+            return FfiConverterTypeNotificationResponse.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_response(
+        FfiConverterString.lower(`actionId`),FfiConverterMapStringString.lower(`userInfo`),FfiConverterOptionalString.lower(`userText`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `notificationUserInfo`(`note`: PlannedNotification): Map<kotlin.String, kotlin.String> {
+            return FfiConverterMapStringString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notification_user_info(
+        FfiConverterTypePlannedNotification.lower(`note`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `notificationsForRoster`(`previous`: List<RoomRow>, `next`: List<RoomRow>, `context`: NotificationContext): List<PlannedNotification> {
+            return FfiConverterSequenceTypePlannedNotification.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notifications_for_roster(
+        FfiConverterSequenceTypeRoomRow.lower(`previous`),FfiConverterSequenceTypeRoomRow.lower(`next`),FfiConverterTypeNotificationContext.lower(`context`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `notificationsForTimeline`(`roomId`: kotlin.String, `roomName`: kotlin.String, `rows`: List<TimelineRow>, `sinceMs`: kotlin.ULong, `alreadyNotified`: List<kotlin.String>, `context`: NotificationContext): List<PlannedNotification> {
+            return FfiConverterSequenceTypePlannedNotification.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_notifications_for_timeline(
+        FfiConverterString.lower(`roomId`),FfiConverterString.lower(`roomName`),FfiConverterSequenceTypeTimelineRow.lower(`rows`),FfiConverterULong.lower(`sinceMs`),FfiConverterSequenceString.lower(`alreadyNotified`),FfiConverterTypeNotificationContext.lower(`context`),_status)
 }
     )
     }
@@ -7920,6 +8406,18 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_people_matching(
         FfiConverterSequenceTypePersonDto.lower(`people`),FfiConverterString.lower(`query`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A free function for the same reason as `notification_for_row`: it touches no session state.
+         */ fun `plannedFromDecided`(`note`: NotificationDto): PlannedNotification {
+            return FfiConverterTypePlannedNotification.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_planned_from_decided(
+        FfiConverterTypeNotificationDto.lower(`note`),_status)
 }
     )
     }
@@ -8151,6 +8649,19 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     
 
         /**
+         * A turn in the Live Activity's words, or `None` for a turn that timed out —
+         * see `core::turn_card::turn_card`.
+         */ fun `turnCard`(`summary`: TurnSummary, `agentName`: kotlin.String): TurnCard? {
+            return FfiConverterOptionalTypeTurnCard.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_turn_card(
+        FfiConverterTypeTurnSummary.lower(`summary`),FfiConverterString.lower(`agentName`),_status)
+}
+    )
+    }
+    
+
+        /**
          * "12s", "2m 5s" — see `core::turn_label::turn_duration_label`.
          */ fun `turnDurationLabel`(`elapsedMs`: kotlin.ULong): kotlin.String {
             return FfiConverterString.lift(
@@ -8194,6 +8705,44 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_typing_view(
         FfiConverterSequenceTypeTypingUserDto.lower(`typers`),FfiConverterSequenceString.lower(`agentIds`),FfiConverterOptionalTypeCounterpart.lower(`counterpart`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Whether a recording is long enough to send — see
+         * `core::voice_recording::long_enough`.
+         */ fun `voiceLongEnough`(`durationMs`: kotlin.ULong): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_voice_long_enough(
+        FfiConverterULong.lower(`durationMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The voice recorder's numbers — see `core::voice_recording::spec`.
+         */ fun `voiceRecordingSpec`(): VoiceRecordingSpec {
+            return FfiConverterTypeVoiceRecordingSpec.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_voice_recording_spec(
+        _status)
+}
+    )
+    }
+    
+
+        /**
+         * Meter readings (dBFS) as a waveform of at most `bins` levels between 0 and
+         * 1 — see `core::voice_recording::waveform`.
+         */ fun `voiceWaveform`(`decibels`: List<kotlin.Float>, `bins`: kotlin.UInt): List<kotlin.Float> {
+            return FfiConverterSequenceFloat.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_voice_waveform(
+        FfiConverterSequenceFloat.lower(`decibels`),FfiConverterUInt.lower(`bins`),_status)
 }
     )
     }
@@ -8302,6 +8851,19 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
             return FfiConverterTypeWidgetWrite.lift(
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_signed_out(
+        FfiConverterOptionalString.lower(`stored`),FfiConverterULong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * The stored snapshot as a widget draws it at `now_ms`, typed. Android's
+         * widgets read this; iOS keeps its own `Codable` mirror.
+         */ fun `widgetView`(`stored`: kotlin.String?, `nowMs`: kotlin.ULong): WidgetView {
+            return FfiConverterTypeWidgetView.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_widget_view(
         FfiConverterOptionalString.lower(`stored`),FfiConverterULong.lower(`nowMs`),_status)
 }
     )
