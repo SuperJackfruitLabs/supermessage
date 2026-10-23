@@ -1,201 +1,191 @@
-// What the live view holds, and — more importantly — when it lets go.
-//
-// The failure this guards against is a duplicate the reader would actually
-// notice: the streamed text sitting on screen underneath the room's own copy
-// of the same answer, because nobody cleared it when the turn ended.
+// What the live mirror holds, and when it lets go. The failure this guards
+// against is a duplicate the reader would notice: streamed text sitting under
+// the room's own copy of the same answer.
 //
 // Fakes only — no Tauri runtime.
 
 import { describe, expect, it } from "vitest";
 import { createLiveStore } from "./live.svelte";
-import type { LivePayload, ToolPayload } from "$lib/ipc";
+import type { LivePayload, TurnSnapshot, TurnSummary, TurnUpdate } from "$lib/ipc";
 
-/**
- * Fake to-device channel; captures the handler synchronously.
- *
- * Generic over the payload so the same fake stands in for all three channels —
- * they differ in meaning, not in plumbing.
- */
-function makeChannel<T = LivePayload>() {
-  let handler: ((payload: T) => void) | null = null;
+function channel<T>() {
+  let handler: ((p: T) => void) | null = null;
   return {
-    onLive: (onPayload: (payload: T) => void) => {
-      handler = onPayload;
-      return Promise.resolve(() => {
-        handler = null;
-      });
+    on: (h: (p: T) => void) => {
+      handler = h;
+      return Promise.resolve(() => {});
     },
-    emit: (payload: T) => handler?.(payload),
+    emit: (p: T) => handler?.(p),
   };
 }
 
 const ROOM = "!krishna:id.agentpod.dev";
 const OTHER = "!ganesha:id.agentpod.dev";
 
-describe("liveStore", () => {
-  it("has nothing to say about a room with no agent writing", () => {
-    const channel = makeChannel();
-    const store = createLiveStore({ onLive: channel.onLive });
-
-    expect(store.get(ROOM)).toBeNull();
-    expect(store.get(null)).toBeNull();
-  });
-
-  it("shows the answer so far, replacing it as it grows", () => {
-    const channel = makeChannel();
-    const store = createLiveStore({ onLive: channel.onLive });
-
-    // Each delta carries the whole answer, not the increment — see the store's
-    // module comment for why the wire format is cumulative.
-    channel.emit({ roomId: ROOM, seq: 1, text: "I looked at the node.", done: false });
-    expect(store.get(ROOM)).toBe("I looked at the node.");
-
-    channel.emit({
-      roomId: ROOM,
-      seq: 2,
-      text: "I looked at the node. It is online.",
-      done: false,
-    });
-    expect(store.get(ROOM)).toBe("I looked at the node. It is online.");
-  });
-
-  it("lets go the moment the turn ends, so the room's own copy stands alone", () => {
-    const channel = makeChannel();
-    const store = createLiveStore({ onLive: channel.onLive });
-
-    channel.emit({ roomId: ROOM, seq: 1, text: "Working on it.", done: false });
-    channel.emit({ roomId: ROOM, seq: 2, text: "Working on it. Done.", done: true });
-
-    expect(store.get(ROOM)).toBeNull();
-  });
-
-  it("keeps two rooms apart, because two agents can write at once", () => {
-    const channel = makeChannel();
-    const store = createLiveStore({ onLive: channel.onLive });
-
-    channel.emit({ roomId: ROOM, seq: 1, text: "Krishna is thinking.", done: false });
-    channel.emit({ roomId: OTHER, seq: 1, text: "Ganesha is thinking.", done: false });
-
-    expect(store.get(ROOM)).toBe("Krishna is thinking.");
-    expect(store.get(OTHER)).toBe("Ganesha is thinking.");
-
-    channel.emit({ roomId: ROOM, seq: 2, text: "Krishna is done.", done: true });
-
-    expect(store.get(ROOM)).toBeNull();
-    expect(store.get(OTHER)).toBe("Ganesha is thinking.");
-  });
-});
-
-// An agent's reasoning, on its own channel.
-//
-// The same payload as the answer and a different meaning: this is never in the
-// room, on either side of the bridge. It is watchable while it happens and then
-// gone.
-describe("liveStore: reasoning", () => {
-  it("keeps reasoning apart from the answer for the same room", () => {
-    const channel = makeChannel();
-    const thoughts = makeChannel();
-    const store = createLiveStore({ onLive: channel.onLive, onThought: thoughts.onLive });
-
-    channel.emit({ roomId: ROOM, seq: 1, text: "The answer.", done: false });
-    thoughts.emit({ roomId: ROOM, seq: 1, text: "The reasoning.", done: false });
-
-    expect(store.get(ROOM)).toBe("The answer.");
-    expect(store.thought(ROOM)).toBe("The reasoning.");
-  });
-
-  it("lets go of reasoning when the turn ends", () => {
-    const channel = makeChannel();
-    const thoughts = makeChannel();
-    const store = createLiveStore({ onLive: channel.onLive, onThought: thoughts.onLive });
-
-    thoughts.emit({ roomId: ROOM, seq: 1, text: "Thinking.", done: false });
-    thoughts.emit({ roomId: ROOM, seq: 2, text: "Thought.", done: true });
-
-    expect(store.thought(ROOM)).toBeNull();
-  });
-});
-
-// Tool calls.
-//
-// The ordering rule lives here rather than in the core: a tool update carries no
-// `done`, so the core cannot tell when a turn ended and would drop the next
-// turn's updates as stale. Here it sits next to the clear that bounds it.
-describe("liveStore: tool calls", () => {
-  const tool = (over: Partial<ToolPayload> = {}): ToolPayload => ({
+function summary(over: Partial<TurnSummary> = {}): TurnSummary {
+  return {
     roomId: ROOM,
-    seq: 1,
-    toolCallId: "c1",
-    title: "Read src/main.ts",
-    kind: "read",
+    turnId: 1,
+    revision: 1,
+    inProgress: true,
+    endedBy: null,
+    startedAtMs: 0,
+    endedAtMs: null,
+    lastActivityMs: 0,
+    answering: false,
+    hasThought: false,
+    totalSteps: 0,
+    completedSteps: 0,
+    failedStep: null,
+    currentStepTitle: "",
+    stepIsTool: false,
+    recordLabel: null,
+    ...over,
+  };
+}
+
+function stepOf(id: string): TurnSnapshot["steps"][number] {
+  return {
+    id,
+    title: id,
+    kind: null,
+    status: "completed",
+    phase: "done",
+    statusLabel: "Done",
+    locations: [],
     input: null,
     output: null,
-    status: "in_progress",
-    phase: "running",
-    statusLabel: "Running",
-    locations: ["src/main.ts"],
-    ...over,
+    seq: 1,
+    hasDetail: false,
+  };
+}
+
+function setup(turn: (roomId: string) => Promise<TurnSnapshot | null> = async () => null) {
+  const live = channel<LivePayload>();
+  const thought = channel<LivePayload>();
+  const turns = channel<TurnUpdate>();
+  const store = createLiveStore({ onLive: live.on, onThought: thought.on, onTurn: turns.on, turn });
+  return { store, live, thought, turns };
+}
+
+const text = (roomId: string, seq: number, t: string, done = false): LivePayload => ({ roomId, seq, text: t, done });
+
+describe("liveStore", () => {
+  it("has nothing to say before a room is focused", () => {
+    const { store } = setup();
+    expect(store.isLive).toBe(false);
+    expect(store.answer).toBeNull();
+    expect(store.inProgress).toBe(false);
+    expect(store.finished).toBe(false);
   });
 
-  it("has nothing to show for a room where nothing is running", () => {
-    const store = createLiveStore({ onLive: makeChannel().onLive });
-    expect(store.tools(ROOM)).toEqual([]);
-    expect(store.tools(null)).toEqual([]);
+  it("focus restores the room's turn from the core", async () => {
+    const snap: TurnSnapshot = {
+      summary: summary({ revision: 4, inProgress: false, endedBy: "done" }),
+      steps: [],
+      thought: "I thought.",
+    };
+    const { store } = setup(async () => snap);
+    await store.focus(ROOM);
+    expect(store.summary?.revision).toBe(4);
+    expect(store.thought).toBe("I thought.");
+    expect(store.finished).toBe(true);
+    expect(store.inProgress).toBe(false);
   });
 
-  it("shows a tool call, and merges an update onto it", () => {
-    const tools = makeChannel<ToolPayload>();
-    const store = createLiveStore({ onLive: makeChannel().onLive, onTool: tools.onLive });
-
-    tools.emit(tool());
-    tools.emit(tool({ seq: 2, status: "completed", phase: "done", statusLabel: "Done" }));
-
-    expect(store.tools(ROOM)).toEqual([
-      {
-        toolCallId: "c1",
-        title: "Read src/main.ts",
-        kind: "read",
-        status: "completed",
-        phase: "done",
-        statusLabel: "Done",
-        locations: ["src/main.ts"],
-      },
-    ]);
+  it("a restore for a room left meanwhile is dropped", async () => {
+    let release!: (s: TurnSnapshot | null) => void;
+    const slow = new Promise<TurnSnapshot | null>((r) => (release = r));
+    const { store } = setup((id) => (id === ROOM ? slow : Promise.resolve(null)));
+    const first = store.focus(ROOM);
+    await store.focus(OTHER);
+    release({ summary: summary(), steps: [], thought: "stale" });
+    await first;
+    expect(store.roomId).toBe(OTHER);
+    expect(store.summary).toBeNull();
+    expect(store.thought).toBeNull();
   });
 
-  it("keeps the order tools were first seen in", () => {
-    const tools = makeChannel<ToolPayload>();
-    const store = createLiveStore({ onLive: makeChannel().onLive, onTool: tools.onLive });
-
-    tools.emit(tool({ toolCallId: "first", seq: 1 }));
-    tools.emit(tool({ toolCallId: "second", seq: 2 }));
-    tools.emit(tool({ toolCallId: "first", seq: 3, status: "completed", phase: "done", statusLabel: "Done" }));
-
-    expect(store.tools(ROOM).map((t) => t.toolCallId)).toEqual(["first", "second"]);
+  it("the streamed answer comes from the live channel and goes on done", async () => {
+    const { store, live } = setup();
+    await store.focus(ROOM);
+    live.emit(text(ROOM, 1, "I looked."));
+    expect(store.answer).toBe("I looked.");
+    expect(store.isLive).toBe(true);
+    live.emit(text(ROOM, 2, "I looked. It is up.", true));
+    expect(store.answer).toBeNull();
   });
 
-  it("forgets a room's tools when its turn ends", () => {
-    // Bounded by the answer's `done`, which is the only signal that says a turn
-    // is over — and the reason the core cannot apply this rule itself.
-    const channel = makeChannel();
-    const tools = makeChannel<ToolPayload>();
-    const store = createLiveStore({ onLive: channel.onLive, onTool: tools.onLive });
-
-    tools.emit(tool());
-    expect(store.tools(ROOM)).toHaveLength(1);
-
-    channel.emit({ roomId: ROOM, seq: 1, text: "Done.", done: true });
-    expect(store.tools(ROOM)).toEqual([]);
+  it("ignores text and updates for a room that is not focused", async () => {
+    const { store, live, thought, turns } = setup();
+    await store.focus(ROOM);
+    live.emit(text(OTHER, 1, "Ganesha."));
+    thought.emit(text(OTHER, 1, "Ganesha thinks."));
+    turns.emit({ summary: summary({ roomId: OTHER }), step: null });
+    expect(store.answer).toBeNull();
+    expect(store.thought).toBeNull();
+    expect(store.summary).toBeNull();
   });
 
-  it("keeps two rooms' tools apart", () => {
-    const tools = makeChannel<ToolPayload>();
-    const store = createLiveStore({ onLive: makeChannel().onLive, onTool: tools.onLive });
+  it("mirrors turn updates and the reasoning for the focused room", async () => {
+    const { store, thought, turns } = setup();
+    await store.focus(ROOM);
+    turns.emit({ summary: summary({ revision: 2 }), step: null });
+    thought.emit(text(ROOM, 1, "Hmm."));
+    expect(store.inProgress).toBe(true);
+    expect(store.thought).toBe("Hmm.");
+    // The thought's own `done` keeps the text: the record's reasoning.
+    thought.emit(text(ROOM, 2, "Hmm.", true));
+    expect(store.thought).toBe("Hmm.");
+  });
 
-    tools.emit(tool({ roomId: ROOM, toolCallId: "a" }));
-    tools.emit(tool({ roomId: OTHER, toolCallId: "b" }));
+  it("an older revision does not rewind the mirror", async () => {
+    const { store, turns } = setup();
+    await store.focus(ROOM);
+    turns.emit({ summary: summary({ revision: 7, completedSteps: 2 }), step: null });
+    turns.emit({ summary: summary({ revision: 6, completedSteps: 1 }), step: null });
+    expect(store.summary?.completedSteps).toBe(2);
+  });
 
-    expect(store.tools(ROOM).map((t) => t.toolCallId)).toEqual(["a"]);
-    expect(store.tools(OTHER).map((t) => t.toolCallId)).toEqual(["b"]);
+  it("the header's name is kept per room", () => {
+    const { store } = setup();
+    store.setAgentName("Krishna", ROOM);
+    store.setAgentName("Ganesha", OTHER);
+    expect(store.agentName(ROOM)).toBe("Krishna");
+    expect(store.agentName(OTHER)).toBe("Ganesha");
+    store.setAgentName(null, ROOM);
+    expect(store.agentName(ROOM)).toBeNull();
+  });
+
+  it("a step past the end asks the core for the record instead of leaving a hole", async () => {
+    const full: TurnSnapshot = {
+      summary: summary({ revision: 6, totalSteps: 3 }),
+      steps: [0, 1, 2].map((i) => ({ ...stepOf(`s${i}`) })),
+      thought: null,
+    };
+    let calls = 0;
+    const { store, turns } = setup(async () => (calls++ === 0 ? null : full));
+    await store.focus(ROOM);
+    turns.emit({ summary: summary({ revision: 5, totalSteps: 3 }), step: { index: 2, step: stepOf("s2") } });
+    expect(store.steps).toHaveLength(0);
+    expect(store.summary).toBeNull();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toBe(2);
+    expect(store.steps.map((x) => x.id)).toEqual(["s0", "s1", "s2"]);
+  });
+
+  it("a summary that counts more steps than are held also refreshes", async () => {
+    const full: TurnSnapshot = {
+      summary: summary({ revision: 4, totalSteps: 2 }),
+      steps: [stepOf("s0"), stepOf("s1")],
+      thought: null,
+    };
+    let calls = 0;
+    const { store, turns } = setup(async () => (calls++ === 0 ? null : full));
+    await store.focus(ROOM);
+    turns.emit({ summary: summary({ revision: 3, totalSteps: 2 }), step: null });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.steps).toHaveLength(2);
+    expect(store.summary?.revision).toBe(4);
   });
 });

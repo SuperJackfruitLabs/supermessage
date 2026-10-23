@@ -1,4 +1,4 @@
-import type { TypingUser } from "$lib/ipc";
+import type { TurnStep, TurnSummary, TypingUser } from "$lib/ipc";
 import type { LiveTool } from "$lib/stores/live.svelte";
 
 /**
@@ -154,3 +154,97 @@ export const reasoningLong =
   "`surface-raised`, since the ramp runs the other way.";
 
 export const reasoningNone = null;
+
+// ───────────────────────────── turns ─────────────────────────────
+//
+// What the core's `core::turns` hands a host. Hand-written here (a story has no
+// core), with the same fields the core fills; the words (`statusLabel`,
+// `recordLabel`) are what it says for these states.
+
+const TURN_START = 1_757_700_000_000;
+
+export function turnStep(overrides: Partial<TurnStep> = {}): TurnStep {
+  return {
+    id: "t1",
+    title: "read scripts/tokens/model.py",
+    kind: "read",
+    status: "completed",
+    phase: "done",
+    statusLabel: "Done",
+    locations: [],
+    input: null,
+    output: null,
+    seq: 1,
+    hasDetail: false,
+    ...overrides,
+  };
+}
+
+export function turnSummary(overrides: Partial<TurnSummary> = {}): TurnSummary {
+  return {
+    roomId: "!story:example.org",
+    turnId: 1,
+    revision: 1,
+    inProgress: true,
+    endedBy: null,
+    startedAtMs: TURN_START,
+    endedAtMs: null,
+    lastActivityMs: TURN_START,
+    answering: false,
+    hasThought: false,
+    totalSteps: 0,
+    completedSteps: 0,
+    failedStep: null,
+    currentStepTitle: "Starting",
+    stepIsTool: false,
+    recordLabel: null,
+    ...overrides,
+  };
+}
+
+/**
+ * iOS `ComposerRevampFixtures.longTurn()`: 1m 04s in, two steps done, one
+ * failed, one running. `finished` adds the last step's completion and the end.
+ */
+export function longTurn(finished = false): { summary: TurnSummary; steps: TurnStep[]; thought: string } {
+  const steps = [
+    turnStep({ id: "t1", title: "read scripts/tokens/model.py", kind: "read", seq: 2, locations: ["scripts/tokens/model.py"], hasDetail: true }),
+    turnStep({ id: "t2", title: "run pytest scripts/tests", kind: "execute", seq: 3, output: "41 passed", hasDetail: true }),
+    turnStep({
+      id: "t3",
+      title: "write design/tokens.toml",
+      kind: "edit",
+      seq: 4,
+      status: "failed",
+      phase: "failed",
+      statusLabel: "Failed",
+      locations: ["design/tokens.toml"],
+      output: "permission denied",
+      hasDetail: true,
+    }),
+    turnStep({
+      id: "t4",
+      title: "regenerate the token targets",
+      kind: "execute",
+      seq: 5,
+      status: finished ? "completed" : "in_progress",
+      phase: finished ? "done" : "running",
+      statusLabel: finished ? "Done" : "Running",
+    }),
+  ];
+  const summary = turnSummary({
+    revision: 9,
+    inProgress: !finished,
+    endedBy: finished ? "done" : null,
+    endedAtMs: finished ? TURN_START + 71_000 : null,
+    lastActivityMs: TURN_START + (finished ? 71_000 : 64_000),
+    hasThought: true,
+    totalSteps: 4,
+    completedSteps: finished ? 3 : 2,
+    failedStep: "write design/tokens.toml",
+    currentStepTitle: "regenerate the token targets",
+    stepIsTool: !finished,
+    recordLabel: finished ? "Thought for 12s · 4 steps" : null,
+  });
+  return { summary, steps, thought: "The failing test is in the token emitter." };
+}

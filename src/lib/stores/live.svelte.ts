@@ -1,31 +1,34 @@
-// What an agent is saying, thinking and doing right now, before the room has
-// any of it.
+// What an agent is saying, thinking and doing in the focused room, before the
+// room has any of it.
 //
 // AgentPod pushes a turn's text to this account's devices as it is written and
-// sends the finished answer to the room once (see the hub's `matrix-as/live.ts`
-// for why those are separate channels). This store holds the ephemeral half:
-// the answer so far, the reasoning behind it, and the tool calls in flight.
+// sends the finished answer to the room once. The core folds those into a turn
+// record (`core::turns`) and sends it on `sm://turn`; this store mirrors that
+// record for the room being looked at (`liveTurn.ts` holds the rules) and adds
+// the answer text, which is not part of the record and streams on its own
+// channel.
 //
-// **Nothing here is history.** It is not persisted, not paginated, not
-// searchable, and a device that was asleep never sees it. The timeline remains
-// the only account of what was said; this is a view of a turn that has not
-// landed yet, and it is discarded the moment it does.
+// **Nothing here is history.** It is not persisted or searchable, and a device
+// that was asleep never sees it. The timeline remains the only account of what
+// was said. The core drops stale and duplicate deltas and stale tool reports
+// before they cross IPC, so what arrives is applied as given; the one guard
+// kept here is the revision, because events and the `turn` snapshot race.
 //
-// The core drops stale and duplicate *text* deltas before they cross IPC
-// (`core::live::LiveState`), and stale tool reports too (`core::turns`: a
-// report at or below the call's last sequence is refused), so both are applied
-// as given.
+// There is no `onTool` subscription: steps arrive on `sm://turn`.
 
 import {
   onLive as defaultOnLive,
   onThought as defaultOnThought,
-  onTool as defaultOnTool,
+  onTurn as defaultOnTurn,
+  turn as defaultTurn,
   type LivePayload,
-  type ToolPayload,
   type ToolPhase,
+  type TurnUpdate,
 } from "$lib/ipc";
+import { untrack } from "svelte";
+import { applyTurnUpdate, emptyTurn, restoreTurn, turnHasGap, type LiveTurnState } from "./liveTurn";
 
-/** One tool call, as the reader sees it. */
+/** One tool call, as the story fixtures write it (`$lib/fixtures/live`). */
 export interface LiveTool {
   toolCallId: string;
   title: string;
@@ -41,106 +44,139 @@ export interface LiveTool {
 
 export interface LiveStoreDeps {
   onLive: typeof defaultOnLive;
-  onThought?: typeof defaultOnThought;
-  onTool?: typeof defaultOnTool;
+  onThought: typeof defaultOnThought;
+  onTurn: typeof defaultOnTurn;
+  turn: typeof defaultTurn;
 }
 
 const defaultDeps: LiveStoreDeps = {
   onLive: defaultOnLive,
   onThought: defaultOnThought,
-  onTool: defaultOnTool,
+  onTurn: defaultOnTurn,
+  turn: defaultTurn,
 };
 
 export function createLiveStore(deps: LiveStoreDeps = defaultDeps) {
-  // Keyed by room: two rooms can have agents working at once, and the reader
-  // may be looking at either.
-  let turns = $state<Record<string, string>>({});
-  let thoughts = $state<Record<string, string>>({});
-  let running = $state<Record<string, LiveTool[]>>({});
+  let state = $state<LiveTurnState>(emptyTurn(null));
+  let agentNames = $state<Record<string, string>>({});
+  // Bumped by every focus() and clear(): a restore that finds it moved is for a room left.
+  let generation = 0;
 
-  /** Everything ephemeral about a room, dropped together when its turn ends. */
-  function forget(roomId: string): void {
-    const { [roomId]: _answer, ...restTurns } = turns;
-    turns = restTurns;
-    const { [roomId]: _thought, ...restThoughts } = thoughts;
-    thoughts = restThoughts;
-    const { [roomId]: _tools, ...restRunning } = running;
-    running = restRunning;
-  }
+  const guard = (what: string) => (err: unknown) => {
+    console.error(`liveStore: failed to subscribe to ${what}`, err);
+  };
+
+  // Asks the core for the whole record again: an update arrived that cannot be
+  // applied without leaving a hole, or the record is still short of its count.
+  // Steps are never appended past a gap; the core's snapshot is the only repair.
+  const refetch = async () => {
+    const roomId = state.roomId;
+    if (roomId === null) return;
+    const mine = generation;
+    try {
+      const snap = await deps.turn(roomId);
+      if (mine !== generation) return;
+      state = restoreTurn(state, snap);
+    } catch (err) {
+      console.error("liveStore: could not refresh the turn", err);
+    }
+  };
+
+  deps
+    .onTurn((u: TurnUpdate) => {
+      const gap = turnHasGap(state, u);
+      state = applyTurnUpdate(state, u);
+      if (gap || (state.summary !== null && state.steps.length < state.summary.totalSteps)) void refetch();
+    })
+    .catch(guard("turn updates"));
 
   deps
     .onLive((payload: LivePayload) => {
-      if (payload.done) {
-        // The room has the real message now. Dropping the live view here is
-        // what stops it sitting underneath its own permanent copy — the one
-        // duplicate a reader would actually notice. The reasoning and the tool
-        // list go with it: they described the turn that just ended.
-        forget(payload.roomId);
-        return;
-      }
-      turns = { ...turns, [payload.roomId]: payload.text };
+      if (payload.roomId !== state.roomId) return;
+      // done: the room has the real message now. Dropping the text here is what
+      // stops it sitting underneath its own permanent copy.
+      state = { ...state, answer: payload.done ? null : payload.text };
     })
-    .catch((err: unknown) => {
-      console.error("liveStore: failed to subscribe to live turns", err);
-    });
+    .catch(guard("live turns"));
 
   deps
-    .onThought?.((payload: LivePayload) => {
-      if (payload.done) {
-        const { [payload.roomId]: _gone, ...rest } = thoughts;
-        thoughts = rest;
-        return;
-      }
-      thoughts = { ...thoughts, [payload.roomId]: payload.text };
+    .onThought((payload: LivePayload) => {
+      if (payload.roomId !== state.roomId) return;
+      // A thought's own `done` keeps the text (iOS `LiveStore.handleThought`):
+      // it is the record's reasoning, and the answer's row shows it once the
+      // turn has ended. A new turn clears it (`applyTurnUpdate`).
+      if (payload.done) return;
+      state = { ...state, thought: payload.text };
     })
-    .catch((err: unknown) => {
-      console.error("liveStore: failed to subscribe to agent reasoning", err);
-    });
-
-  deps
-    .onTool?.((payload: ToolPayload) => {
-      // No ordering rule here: the core drops a report the network delivered
-      // late (`core::turns`, per tool call and turn) and forwards nothing for it.
-      const next: LiveTool = {
-        toolCallId: payload.toolCallId,
-        title: payload.title,
-        kind: payload.kind,
-        status: payload.status,
-        phase: payload.phase,
-        statusLabel: payload.statusLabel,
-        locations: payload.locations,
-      };
-      const current = running[payload.roomId] ?? [];
-      const at = current.findIndex((t) => t.toolCallId === payload.toolCallId);
-      // Replaced in place rather than moved to the end: the list reads as the
-      // order the work happened in, and a tool finishing should not reorder it.
-      const updated =
-        at === -1
-          ? [...current, next]
-          : [...current.slice(0, at), next, ...current.slice(at + 1)];
-      running = { ...running, [payload.roomId]: updated };
-    })
-    .catch((err: unknown) => {
-      console.error("liveStore: failed to subscribe to tool calls", err);
-    });
+    .catch(guard("agent reasoning"));
 
   return {
-    /** What the agent in this room has said so far, or null if none is writing. */
-    get(roomId: string | null): string | null {
-      if (roomId === null) return null;
-      return turns[roomId] ?? null;
+    get summary() {
+      return state.summary;
     },
-    /** What the agent in this room is thinking, or null if it is not saying. */
-    thought(roomId: string | null): string | null {
-      if (roomId === null) return null;
-      return thoughts[roomId] ?? null;
+    get steps() {
+      return state.steps;
     },
-    /** The tool calls this room's agent has made this turn, oldest first. */
-    tools(roomId: string | null): LiveTool[] {
-      if (roomId === null) return [];
-      return running[roomId] ?? [];
+    get thought() {
+      return state.thought;
+    },
+    get answer() {
+      return state.answer;
+    },
+    get inProgress(): boolean {
+      return state.summary?.inProgress ?? false;
+    },
+    get finished(): boolean {
+      return state.summary?.endedBy != null;
+    },
+    get isLive(): boolean {
+      return state.summary !== null || state.answer !== null;
+    },
+    /** The room the mirror is looking at. */
+    get roomId(): string | null {
+      return state.roomId;
+    },
+
+    /** Looks at `roomId`: forgets the last room's turn and restores this one's from the core. */
+    async focus(roomId: string | null): Promise<void> {
+      const mine = ++generation;
+      state = emptyTurn(roomId);
+      if (roomId === null) return;
+      try {
+        const snap = await deps.turn(roomId);
+        if (mine !== generation) return;
+        state = restoreTurn(state, snap);
+      } catch (err) {
+        console.error("liveStore: could not restore the turn", err);
+      }
+    },
+
+    // Reads the map untracked: a caller inside an `$effect` (the page's name
+    // effect) would otherwise depend on the state it writes and loop until
+    // `effect_update_depth_exceeded`. Unchanged names write nothing.
+    setAgentName(name: string | null, roomId: string): void {
+      const current = untrack(() => agentNames);
+      if (name === null) {
+        if (!(roomId in current)) return;
+        const { [roomId]: _gone, ...rest } = current;
+        agentNames = rest;
+      } else {
+        if (current[roomId] === name) return;
+        agentNames = { ...current, [roomId]: name };
+      }
+    },
+    agentName(roomId: string | null): string | null {
+      return roomId === null ? null : (agentNames[roomId] ?? null);
+    },
+
+    clear(): void {
+      generation++;
+      state = emptyTurn(null);
+      agentNames = {};
     },
   };
 }
+
+export type LiveStore = ReturnType<typeof createLiveStore>;
 
 export const liveStore = createLiveStore();

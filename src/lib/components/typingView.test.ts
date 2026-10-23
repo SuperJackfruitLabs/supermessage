@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boundTypers } from "./typingView";
+import { boundTypers, typingArgs } from "./typingView";
 import type { TypingUser } from "$lib/ipc";
 
 function user(userId: string, label: string): TypingUser {
@@ -23,5 +23,28 @@ describe("boundTypers", () => {
   it("counts code points, not UTF-16 units", () => {
     const [bounded] = boundTypers([user("@a:x.org", "😀".repeat(40))]);
     expect(Array.from(bounded.label)).toHaveLength(33);
+  });
+});
+
+describe("typingArgs", () => {
+  const cast = {
+    roomId: "!a:x",
+    people: [],
+    counterpart: { userId: "@k:x.org", name: "Krishna" },
+    agentIds: ["@k:x.org"],
+    addressee: null,
+    mentionables: [],
+  };
+
+  it("the typing line is asked with the room's cast", () => {
+    const args = typingArgs([user("@k:x.org", "Krishna")], cast, "!a:x");
+    expect(args.agentIds).toEqual(["@k:x.org"]);
+    expect(args.counterpart).toEqual({ userId: "@k:x.org", name: "Krishna" });
+    expect(args.typers).toHaveLength(1);
+  });
+
+  it("another room's cast, or none, asks with nothing", () => {
+    expect(typingArgs([], cast, "!b:x")).toMatchObject({ agentIds: [], counterpart: null });
+    expect(typingArgs([], null, "!a:x")).toMatchObject({ agentIds: [], counterpart: null });
   });
 });

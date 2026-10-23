@@ -151,7 +151,13 @@ export function nextFollowBottom(
   current: boolean,
   distanceFromBottom: number,
   readerDriven: boolean,
+  jumping = false,
 ): boolean {
+  // A smooth jump (to a quoted message) starts inside the tail band and its
+  // first frames still read as "at the tail". Counting them would switch
+  // following back on, and the jump would be re-pinned once the reader-input
+  // window had lapsed mid-glide.
+  if (jumping) return current;
   const atTail = distanceFromBottom < TAIL_THRESHOLD;
   if (atTail) return true;
   return readerDriven ? false : current;
@@ -207,6 +213,7 @@ export function shouldRepinAfterScroll(
   followBottom: boolean,
   distanceFromBottom: number,
   readerDriven: boolean,
+  jumping = false,
 ): boolean {
-  return followBottom && !readerDriven && distanceFromBottom >= TAIL_THRESHOLD;
+  return followBottom && !jumping && !readerDriven && distanceFromBottom >= TAIL_THRESHOLD;
 }

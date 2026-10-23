@@ -67,6 +67,11 @@ export type TimelineDisplayRow =
       continuesRun: boolean;
       /** Whether this row is the last of its run (the core's; absent on the wire means false). */
       endsRun: boolean;
+      /** The core's row facts, carried through (absent on the wire means false). */
+      isAgent: boolean;
+      isLongRead: boolean;
+      hidesQuote: boolean;
+      showsRuntime: boolean;
     }
   | { type: "membershipGroup"; key: string; items: TimelineItem[]; text: string }
   /**
@@ -78,7 +83,18 @@ export type TimelineDisplayRow =
    * A run of messages this device has no keys for, drawn as one row with a
    * count and a way to recovery — never a column of identical lines.
    */
-  | { type: "undecryptableGroup"; key: string; items: TimelineItem[]; count: number };
+  | { type: "undecryptableGroup"; key: string; items: TimelineItem[]; count: number }
+  /**
+   * The turn in progress: one row at the newest end (iOS
+   * `TimelineCollectionView.swift:886-913`). Not history, never an arrival.
+   */
+  | { type: "liveTurn"; key: "live-turn" };
+
+/** What the display list is built around besides the items themselves. */
+export interface GroupingOptions {
+  /** A turn is in progress, so the live card is the last row. */
+  liveTurn?: boolean;
+}
 
 /**
  * A row's key: its identity, plus whatever changes the row's *shape*.
@@ -183,6 +199,7 @@ const NOTHING_OPENED: ReadonlySet<string> = new Set();
 export function groupTimelineItems(
   source: readonly TimelineRow[],
   expanded: ReadonlySet<string> = NOTHING_OPENED,
+  options: GroupingOptions = {},
 ): TimelineDisplayRow[] {
   const rows: TimelineDisplayRow[] = [];
   // Where each open run or stretch sits in `rows`, so its later rows land in it.
@@ -241,9 +258,15 @@ export function groupTimelineItems(
       replyPreview: row.replyPreview,
       continuesRun: row.continuesRun ?? false,
       endsRun: row.endsRun ?? false,
+      isAgent: row.isAgent ?? false,
+      isLongRead: row.isLongRead ?? false,
+      hidesQuote: row.hidesQuote ?? false,
+      showsRuntime: row.showsRuntime ?? false,
     });
   }
   flushUndecryptable();
+  // A finished turn has no row: its record is drawn in its answer's row.
+  if (options.liveTurn === true) rows.push({ type: "liveTurn", key: "live-turn" });
 
   return rows;
 }

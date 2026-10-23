@@ -15,7 +15,7 @@ describe("Timeline and reports", () => {
     // The core groups as if a reported row were absent and marks it `hidden`;
     // `groupTimelineItems` skips it (timelineGrouping.test.ts). A host filter
     // before or after grouping would be a second copy of that rule.
-    expect(source).toContain("groupTimelineItems(timelineStore.items, expanded)");
+    expect(source).toContain("groupTimelineItems(timelineStore.items, expanded");
     expect(source).not.toContain("safetyStore.visible(");
   });
 

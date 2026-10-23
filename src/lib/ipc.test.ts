@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, account, peopleLabel, sendPermissionAnswer, onIgnoredUsers } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, onIgnoredUsers } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -315,6 +315,7 @@ describe("session commands", () => {
     ["setRoomPinned passes roomId and pinned", () => setRoomPinned("!r:x", true), "set_room_pinned", { roomId: "!r:x", pinned: true }],
     ["knownPeople passes an explicit null query", () => knownPeople(), "known_people", { query: null }],
     ["knownPeople passes the query", () => knownPeople("ate"), "known_people", { query: "ate" }],
+    ["roomMentionCandidates passes roomId and query", () => roomMentionCandidates("!r:x", "at"), "room_mention_candidates", { roomId: "!r:x", query: "at" }],
     ["directRoomWith passes userId", () => directRoomWith("@a:x"), "direct_room_with", { userId: "@a:x" }],
     ["roomInviter passes roomId", () => roomInviter("!r:x"), "room_inviter", { roomId: "!r:x" }],
     ["account invokes account", () => account(), "account", undefined],

@@ -2209,6 +2209,14 @@ export async function acknowledgement(
   });
 }
 
+/**
+ * The people an `@` query offers in `roomId`: its cast, agents first, matched by the core, at
+ * most six. One call per query; the cast is a few dozen people.
+ */
+export async function roomMentionCandidates(roomId: string, query: string): Promise<PersonDto[]> {
+  return invoke<PersonDto[]>("room_mention_candidates", { roomId, query });
+}
+
 /** Subscribes to focused-timeline diff envelopes on {@link TIMELINE_DIFF_EVENT}. */
 export function onTimelineDiff(handler: (env: DiffEnvelope<TimelineRow>) => void): Promise<UnlistenFn> {
   return listen<DiffEnvelope<TimelineRow>>(TIMELINE_DIFF_EVENT, (event) => handler(event.payload));
