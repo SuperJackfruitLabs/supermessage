@@ -272,6 +272,12 @@ class MentionPickerTest {
 
         override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? = null
 
+        // The pane asks the core what the dock says; these tests have nothing to say.
+        override fun acknowledgement(
+            roomId: String, addressee: String?, agentIds: List<String>,
+            typingAgents: List<String>, turnInProgress: Boolean,
+        ): uniffi.supermessage_core.Acknowledgement? = null
+
         override fun roomCast(roomId: String): RoomCast = casts.getValue(roomId)
         override fun restoreSession(sink: EventSink): Boolean = true
         override fun roomsSnapshot() = RoomsSnapshot(

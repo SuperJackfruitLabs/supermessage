@@ -1211,6 +1211,12 @@ class RosterReachabilityTest {
         // The composer asks for the room's cast on opening it; nobody here is mentioned.
         override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? = null
 
+        // The pane asks the core what the dock says; these tests have nothing to say.
+        override fun acknowledgement(
+            roomId: String, addressee: String?, agentIds: List<String>,
+            typingAgents: List<String>, turnInProgress: Boolean,
+        ): uniffi.supermessage_core.Acknowledgement? = null
+
         override fun roomCast(roomId: String) = uniffi.supermessage_core.RoomCast(
             roomId = roomId, people = emptyList(), counterpart = null,
             agentIds = emptyList(), addressee = null, mentionables = emptyList(),
