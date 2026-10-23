@@ -7,15 +7,15 @@ describe("rowMenuItems", () => {
   });
   it("a muted, pinned room offers Unmute and Unpin", () => {
     const items = rowMenuItems("compose", { notifications: "muted", pinned: true });
-    expect(items.map((i) => i.label)).toEqual(["Unmute", "Unpin"]);
-    expect(items.map((i) => i.id)).toEqual(["mute", "pin"]);
+    expect(items.map((i) => i.label)).toEqual(["Mark read", "Unmute", "Unpin"]);
+    expect(items.map((i) => i.id)).toEqual(["markRead", "mute", "pin"]);
     expect(items.some((i) => i.destructive)).toBe(false);
   });
   it("a room the core could not describe reads Mute and Pin", () => {
-    expect(rowMenuItems("compose", null).map((i) => i.label)).toEqual(["Mute", "Pin"]);
+    expect(rowMenuItems("compose", null).map((i) => i.label)).toEqual(["Mark read", "Mute", "Pin"]);
   });
   it("a plain room reads Mute and Pin", () => {
-    expect(rowMenuItems("compose", { notifications: "default", pinned: false }).map((i) => i.label)).toEqual(["Mute", "Pin"]);
+    expect(rowMenuItems("compose", { notifications: "default", pinned: false }).map((i) => i.label)).toEqual(["Mark read", "Mute", "Pin"]);
   });
   it("nothing offers nothing", () => {
     expect(rowMenuItems("nothing", null)).toEqual([]);

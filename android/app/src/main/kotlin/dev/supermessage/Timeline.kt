@@ -60,6 +60,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.DisplayRow
 import dev.supermessage.kit.TimelineAnimation
@@ -219,6 +220,8 @@ fun Timeline(
     faceUri: (mxcUri: String) -> String? = { null },
     loadFace: suspend (mxcUri: String) -> Unit = {},
     roomId: String = "",
+    /** Height the pane floats over the list's bottom (the dock and the pill): content padding, so nothing is covered. */
+    bottomReserve: Dp = 0.dp,
     modifier: Modifier = Modifier,
 ) {
     // Per list, so per room (the pane keys the list by room), and above the
@@ -640,7 +643,7 @@ fun Timeline(
                     .fillMaxWidth()
                     .dismissKeyboardOnDrag()
                     .testTag("timeline-list"),
-                contentPadding = PaddingValues(vertical = 8.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp + bottomReserve),
             ) {
                 // A turn in progress is the newest thing in the room: index 0,
                 // below every history row. A finished turn has no cell here;
@@ -704,7 +707,7 @@ fun Timeline(
         if (!isAtNewest) {
             JumpToNewestButton(
                 onClick = { scope.launch { listState.animateScrollToItem(0) } },
-                modifier = Modifier.align(Alignment.BottomEnd),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = bottomReserve),
             )
         }
     }

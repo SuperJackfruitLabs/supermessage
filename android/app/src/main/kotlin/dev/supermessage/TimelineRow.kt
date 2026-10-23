@@ -539,10 +539,10 @@ private fun MessageBlock(
     }
 }
 
-/** How long a jumped-to message stays lit, `TimelineCollectionView.swift:921-935`. */
 private val CardMeasure = 600.dp
 private val OwnMeasure = 520.dp
 
+/** How long a jumped-to message stays lit, `TimelineCollectionView.swift:921-935`. */
 const val QuoteHighlightMs = 1_400L
 
 /**

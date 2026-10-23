@@ -65,7 +65,7 @@ private const val ReadHint = "Opens the whole message in a reading view"
  */
 @Composable
 internal fun LongReadBody(blocks: List<RichBlock>, fontFamily: FontFamily, title: String) {
-    var reading by remember { mutableStateOf(false) }
+    var reading by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     // Focus goes back to "Read" when the reading view closes, so a keyboard or
     // switch user lands where they were rather than at the top of the window.
     val readFocus = remember { FocusRequester() }

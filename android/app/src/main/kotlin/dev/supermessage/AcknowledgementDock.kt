@@ -40,7 +40,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -169,13 +171,24 @@ private fun TypingGlyph(tint: Color) {
 }
 
 /**
- * The dock, then the typing pill, above the composer, leading-aligned
- * (`TimelineView.swift:123-146`): spacing 4, padding 12, bottom 4 only when
- * something shows. The dock enters from below with a fade, the pill fades; both
- * 0.22 s, none when motion is reduced. Translation and opacity only.
+ * The dock, then the typing pill, leading-aligned (`TimelineView.swift:123-146`):
+ * spacing 4, padding 12. The dock enters from below with a fade, the pill fades;
+ * both 0.22 s, none when motion is reduced. Translation and opacity only.
+ *
+ * Each line has a slot that is always as tall as the line, drawn invisible while
+ * the line is away. The stack therefore has one constant height, which
+ * [onHeight] reports so the pane can keep the list clear of it: the newest
+ * message is never covered and never moves when a line comes or goes. The dock's
+ * slot exists only when [reserveDock] (a room with an agent) or a dock shows.
  */
 @Composable
-internal fun ComposerAccessories(ack: Acknowledgement?, typingLine: String?, modifier: Modifier = Modifier) {
+internal fun ComposerAccessories(
+    ack: Acknowledgement?,
+    typingLine: String?,
+    modifier: Modifier = Modifier,
+    reserveDock: Boolean = true,
+    onHeight: (Int) -> Unit = {},
+) {
     val reduce = reducesMotion()
     // The last value is kept so the exit has something to draw while it fades.
     var lastAck by remember { mutableStateOf(ack) }
@@ -183,18 +196,46 @@ internal fun ComposerAccessories(ack: Acknowledgement?, typingLine: String?, mod
     var lastLine by remember { mutableStateOf(typingLine) }
     if (typingLine != null) lastLine = typingLine
     Column(
-        modifier.padding(start = 12.dp, end = 12.dp, bottom = if (ack != null || typingLine != null) 4.dp else 0.dp),
+        modifier.onSizeChanged { onHeight(it.height) }.padding(start = 12.dp, end = 12.dp, bottom = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        AnimatedVisibility(
-            visible = ack != null,
-            enter = slideInVertically(motion(reduce, tween(220))) { it } + fadeIn(motion(reduce, tween(220))),
-            exit = fadeOut(motion(reduce, tween(220))),
-        ) { lastAck?.let { AcknowledgementDock(it) } }
-        AnimatedVisibility(
+        if (reserveDock || ack != null) {
+            AccessorySlot(
+                visible = ack != null,
+                enter = slideInVertically(motion(reduce, tween(220))) { it } + fadeIn(motion(reduce, tween(220))),
+                exit = fadeOut(motion(reduce, tween(220))),
+                placeholder = { LineStandIn(horizontal = 12.dp, vertical = 7.dp) },
+            ) { lastAck?.let { AcknowledgementDock(it) } }
+        }
+        AccessorySlot(
             visible = typingLine != null,
             enter = fadeIn(motion(reduce, tween(220))),
             exit = fadeOut(motion(reduce, tween(220))),
+            placeholder = { LineStandIn(horizontal = 10.dp, vertical = 5.dp) },
         ) { lastLine?.let { TypingPill(it) } }
+    }
+}
+
+/** A line's place: as tall as the line from the first frame (an invisible stand-in), with the line fading in and out over it. */
+@Composable
+private fun AccessorySlot(
+    visible: Boolean,
+    enter: androidx.compose.animation.EnterTransition,
+    exit: androidx.compose.animation.ExitTransition,
+    placeholder: @Composable () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Box {
+        Box(Modifier.alpha(0f).clearAndSetSemantics {}) { placeholder() }
+        AnimatedVisibility(visible = visible, enter = enter, exit = exit) { content() }
+    }
+}
+
+/** The height of a one-line dock or pill (a 14dp glyph beside a label line, the same padding), drawn as nothing and carrying no tags. */
+@Composable
+private fun LineStandIn(horizontal: androidx.compose.ui.unit.Dp, vertical: androidx.compose.ui.unit.Dp) {
+    Row(Modifier.padding(horizontal = horizontal, vertical = vertical), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(14.dp))
+        Text(" ", style = MaterialTheme.typography.labelMedium, maxLines = 1)
     }
 }

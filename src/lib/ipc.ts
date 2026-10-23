@@ -2065,6 +2065,65 @@ export async function attachmentDiscard(token: string): Promise<void> {
 }
 
 /**
+ * The recorder's numbers, from `core::voice_recording::spec` (camelCase). The desktop keeps no
+ * copy of them.
+ */
+export interface VoiceRecordingSpec {
+  fileStem: string;
+  sampleRate: number;
+  channels: number;
+  bitRate: number;
+  meterIntervalMs: number;
+  waveformBins: number;
+  shortestMs: number;
+}
+
+/** `core::voice_recording::spec`. */
+export async function voiceRecordingSpec(): Promise<VoiceRecordingSpec> {
+  return invoke<VoiceRecordingSpec>("voice_recording_spec");
+}
+
+/**
+ * `core::voice_recording::waveform`: the meter's dBFS readings as 0..1 levels, squeezed into at
+ * most `bins` points. Readings must be finite (silence is -160): JSON turns `-Infinity` into
+ * `null`, which the command refuses.
+ */
+export async function voiceWaveform(decibels: number[], bins: number): Promise<number[]> {
+  return invoke<number[]>("voice_waveform", { decibels, bins });
+}
+
+/** `core::voice_recording::long_enough`: whether a recording this long is a message at all. */
+export async function voiceLongEnough(durationMs: number): Promise<boolean> {
+  return invoke<boolean>("voice_long_enough", { durationMs });
+}
+
+/**
+ * Stages a finished recording for `roomId`. The bytes travel as the raw IPC body and the room
+ * and the recorder's mime type as headers; the core never hands back a path. Resolves with the
+ * staged file, which is then marked with {@link attachmentMarkVoice} and sent.
+ */
+export async function attachmentStageRecording(
+  roomId: string,
+  mime: string,
+  body: Blob,
+): Promise<StagedAttachment> {
+  const bytes = new Uint8Array(await body.arrayBuffer());
+  return invoke<StagedAttachment>("attachment_stage_recording", bytes, {
+    headers: { "x-room-id": roomId, "x-mime": mime },
+  });
+}
+
+/** Marks a staged recording as a voice message with its length and waveform (0..1 levels). */
+export async function attachmentMarkVoice(
+  roomId: string,
+  token: string,
+  durationMs: number,
+  waveform: number[],
+): Promise<void> {
+  await invoke<void>("attachment_mark_voice", { roomId, token, durationMs, waveform });
+}
+
+/**
  * Subscribes to files dropped on the window and staged by the core, on
  * {@link STAGED_ATTACHMENT_EVENT}.
  *
@@ -2094,6 +2153,16 @@ export async function attachmentDiscard(token: string): Promise<void> {
  */
 export function onStagedAttachment(handler: (staged: StagedAttachment) => void): Promise<UnlistenFn> {
   return listen<StagedAttachment>(STAGED_ATTACHMENT_EVENT, (event) => handler(event.payload));
+}
+
+const NOTIFICATION_OPEN_EVENT = "sm://notification/open";
+
+/**
+ * A notification asked for a room to be opened (the reader clicked it). The window is already
+ * in front; selecting the room is the page's.
+ */
+export function onNotificationOpen(handler: (roomId: string) => void): Promise<UnlistenFn> {
+  return listen<{ roomId: string }>(NOTIFICATION_OPEN_EVENT, (event) => handler(event.payload.roomId));
 }
 
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */
@@ -2589,6 +2658,108 @@ export async function peopleLabel(userIds: string[]): Promise<string> {
  */
 export async function sendPermissionAnswer(roomId: string, optionId: string): Promise<void> {
   await invoke<void>("send_permission_answer", { roomId, optionId });
+}
+
+/** What the OS says about posting notifications. */
+export type NotificationPermission = "granted" | "denied" | "prompt";
+
+/**
+ * Whether the app may post notifications. With `prompt` set the OS is asked when
+ * the answer is still open; pass it after a fresh sign-in only, never on a restore.
+ */
+export async function notificationPermission(prompt: boolean): Promise<NotificationPermission> {
+  return await invoke<NotificationPermission>("notification_permission", { prompt });
+}
+
+/** Puts the Needs you count in the window title ("(3) supermessage"; zero is the plain name). */
+export async function setAttention(needsYou: number): Promise<void> {
+  await invoke<void>("set_attention", { needsYou });
+}
+
+/** Removes every delivered notification (sign-out). */
+export async function notificationClearAll(): Promise<void> {
+  await invoke<void>("notification_clear_all");
+}
+
+/**
+ * `Session::send_gate_decision_to`: answers a gate in `roomId`, open or not.
+ * Rejects `protocol` for a malformed room id before anything is sent.
+ */
+export async function sendGateDecisionTo(
+  roomId: string, gateId: string, optionId: string, comment: string | null,
+  inReplyTo: string, prompt: string,
+): Promise<void> {
+  await invoke<void>("send_gate_decision_to", { roomId, gateId, optionId, comment, inReplyTo, prompt });
+}
+
+/** `core::notification::NotificationCategory`. */
+export type NotificationCategory = "message" | "permission" | "gate" | "decision";
+
+/** `core::notification::PermissionAnswers`: the two option ids a PERMISSION note answers with. */
+export interface PermissionAnswers {
+  allowOptionId: string;
+  rejectOptionId: string;
+}
+
+/** `core::notification::GateAnswers`: what a GATE note needs to answer with no room open. */
+export interface GateAnswers {
+  gateId: string;
+  prompt: string;
+  optionIds: string[];
+}
+
+/** `core::notification_policy::NotificationContext`: what the app is doing when the core decides. */
+export interface NotificationContext {
+  /** The room on screen, or null on the roster. */
+  openRoomId: string | null;
+  /** Whether the window is focused. */
+  appActive: boolean;
+  /** The room the timeline is subscribed to. */
+  timelineRoomId: string | null;
+  /** Always false on the desktop: there is no push. */
+  remotePush: boolean;
+}
+
+/** `core::notification_policy::PlannedNotification`: one note to post, worded and categorised by the core. */
+export interface PlannedNotification {
+  id: string;
+  roomId: string;
+  eventId: string | null;
+  title: string;
+  subtitle: string | null;
+  body: string;
+  category: NotificationCategory;
+  permission: PermissionAnswers | null;
+  gate: GateAnswers | null;
+}
+
+/** Notes for rooms whose row changed between two rosters (the first roster is a baseline). */
+export async function notificationsForRoster(
+  previous: RoomRow[], next: RoomRow[], context: NotificationContext,
+): Promise<PlannedNotification[]> {
+  return await invoke<PlannedNotification[]>("notifications_for_roster", { previous, next, context });
+}
+
+/**
+ * Notes for new rows in the focused timeline, which the core reads itself. Rejects `roomChanged`
+ * when the focused room is not `roomId` and `notReady` when none is.
+ */
+export async function notificationsForFocused(
+  roomId: string, roomName: string, sinceMs: number, alreadyNotified: string[], context: NotificationContext,
+): Promise<PlannedNotification[]> {
+  return await invoke<PlannedNotification[]>("notifications_for_focused", {
+    roomId, roomName, sinceMs, alreadyNotified, context,
+  });
+}
+
+/** Whether the room's notification setting lets `note` through. */
+export async function notificationDelivers(note: PlannedNotification, mode: NotificationMode | null): Promise<boolean> {
+  return await invoke<boolean>("notification_delivers", { note, mode });
+}
+
+/** Posts `note` locally, with the buttons the core gives its category. */
+export async function notificationPost(note: PlannedNotification): Promise<void> {
+  await invoke<void>("notification_post", { note });
 }
 
 /** `core::safety::IGNORED_USERS_EVENT`: the blocked list, emitted by the core. */
