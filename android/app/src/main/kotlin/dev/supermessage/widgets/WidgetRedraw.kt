@@ -76,8 +76,13 @@ open class WidgetRedraw(
         if (reload) redraw() else arm()
     }
 
-    /** Every registered widget is drawn from the snapshot as it stands, and the schedule is set again. */
+    /**
+     * Every registered widget is drawn from the snapshot as it stands, and the schedule is set
+     * again. A widget whose session is running reads the snapshot again ([WidgetSnapshots]);
+     * `updateAll` starts a session for one that has none.
+     */
     suspend fun redraw() {
+        WidgetSnapshots.changed()
         try {
             for (widget in widgets()) update(widget, context)
         } finally {

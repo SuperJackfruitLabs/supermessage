@@ -29,7 +29,6 @@ import androidx.glance.layout.padding
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import dev.supermessage.AppCore
 import java.util.Date
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -56,10 +55,14 @@ class AgentsWidget : GlanceAppWidget() {
     override val sizeMode: SizeMode = SizeMode.Responsive(setOf(WIDE, MEDIUM, LARGE))
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val now = System.currentTimeMillis()
-        // A file read and a core call: off the main thread.
-        val view = withContext(Dispatchers.IO) { AppCore.widgets(context).view(now) }
-        provideContent { AgentsContent(view, now) }
+        // Read again in composition after every change, or a running session would keep
+        // drawing this first read ([WidgetSnapshots]).
+        val seen = WidgetSnapshots.current
+        val first = withContext(Dispatchers.IO) { WidgetSnapshots.read(context) }
+        provideContent {
+            val drawn = followSnapshot(context, first, seen)
+            AgentsContent(drawn.view, drawn.nowMs)
+        }
     }
 
     companion object {
