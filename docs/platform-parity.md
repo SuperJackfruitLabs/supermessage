@@ -4,6 +4,28 @@
 date; the commands that produce them are given so a stale number can be
 caught rather than trusted.
 
+> **Updated 2026-10-23, after the iOS parity work (M0 to M7).** This page is
+> about catalogues: which components and preview states each platform has.
+> For whether each platform *behaves* like iOS, feature by feature, read the
+> [2026-10-23 parity verification](research/2026-10-23-ios-parity-verification/README.md),
+> which supersedes the [2026-10-22 parity matrix](research/2026-10-22-ios-parity/README.md).
+> Its result, in short:
+>
+> | | Desktop | Android |
+> |---|---|---|
+> | At parity with iOS | 52 of 60 rows | 57 of 60 rows |
+> | Partial | 3: voice recording, the staged-image thumbnail, notifications on macOS and Windows | 2: the voice waveform, push needing a UnifiedPush distributor |
+> | Missing | 0 | 0 |
+> | Not applicable, or blocked everywhere | 5 | 1 (Stop, blocked on AgentPod) |
+> | Seen running | Linux, read-only, against a live account | Nothing against an account; the tablet AVD never run |
+>
+> Every write is still unverified on both platforms, and one core defect
+> (D1: a pending decision never lights Needs you) affects all three. §3's
+> "What only one platform has" is brought up to date below. The counts in §2
+> and the table in §3 are still the 2026-09-12 figures. Re-run on 2026-10-23,
+> the three commands give 287 stories, 147 iOS previews and 182 Android
+> previews; the per-component counts were not re-taken.
+
 ## 1. How much of this is measured
 
 Two of the three columns below are mechanical. The third is not, and the
@@ -111,23 +133,30 @@ states.
 
 ### What only one platform has
 
-- **Block and report** (#60) is iOS-only as UI. The core and both sets of
-  bindings carry it (`ignore_user`, `report_event`, `report_room`,
-  `report_user`, `FfiEvent::IgnoredUsers`); Android handles the event and
-  the two new errors but draws nothing, and the desktop emits
-  `sm://ignored-users` to a webview that does not listen yet.
+*Rewritten 2026-10-23. On 2026-09-12 this list named three gaps: block and
+report were iOS-only as UI, no native platform had a mention menu, and Android
+had no spaces surface. All three are closed:*
 
-- **A mention menu** (`composer/MentionMenu`, 4 states). Neither native
-  platform has one at all. `Mentionable` crosses the FFI boundary and both
-  native composers ignore it.
-- **A spaces surface.** Web has a rail, iOS has a pill strip, **Android has
-  neither** — no space filter exists on Android, so an account with spaces
-  cannot narrow by one there.
-- **`Shimmer`** is web-only as a component; iOS reimplements the idea in
-  `StreamingTextView` at glyph granularity via `TextRenderer`, and Android
-  folds pacing into `LiveTurn` through `:kit`'s `StreamingText`. Three
-  implementations of one idea, and no shared statement of what it should look
-  like.
+- **Block and report** now have UI on all three platforms: desktop in parity M3
+  (#133, `safety/ReportSheet.svelte`, `safety/MemberActions.svelte`), Android in
+  M3 (#137, `ReportSheet.kt`, member actions in `RoomInfo.kt`).
+- **A mention menu** exists on all three: the web's `composer/MentionMenu`,
+  iOS's `MentionPicker` in `ComposerView.swift`, and Android's `MentionPicker`
+  in `Composer.kt` (M2, #135), each listing the room's cast from the core with
+  agents marked.
+- **A spaces surface** exists on all three: the web's rail, iOS's space menu
+  and Android's `SpaceMenu.kt` (M2, #135), with names from the core.
+
+Still true: **`Shimmer`** is web-only as a component; iOS reimplements the
+idea in `StreamingTextView` at glyph granularity via `TextRenderer`, and
+Android folds pacing into `LiveTurn` through `:kit`'s `StreamingText`. Three
+implementations of one idea, and no shared statement of what it should look
+like.
+
+Desktop-only features that iOS lacks, from the parity matrix and still
+present: drag-and-drop attach, save and download of media, a searchable emoji
+picker, "Jump to unread", in-app matrix.to routing, the room aliases list,
+space invitations in the rail, and a third roster arrangement (Machine).
 
 ## 4. The design language, platform by platform — judgement, not detection
 
