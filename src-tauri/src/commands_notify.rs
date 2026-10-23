@@ -62,9 +62,10 @@ pub async fn notification_clear_all(poster: State<'_, Arc<dyn Poster>>) -> Resul
 
 /// Notifications for rooms whose roster row changed between two snapshots. The core
 /// decides what is news (`notification_policy::for_roster`); the first roster, with
-/// an empty `previous`, is a baseline.
+/// an empty `previous`, is a baseline. Async so the two roster copies are read off the
+/// main thread: the page asks on every roster change.
 #[tauri::command]
-pub fn notifications_for_roster(
+pub async fn notifications_for_roster(
     previous: Vec<RoomRow>,
     next: Vec<RoomRow>,
     context: NotificationContext,
