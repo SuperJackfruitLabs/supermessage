@@ -127,8 +127,8 @@ mod tests {
         assert_eq!(level(f32::NEG_INFINITY), 0.0);
     }
 
-    /// Mutation seen failing: taking the first of each bin instead of the mean
-    /// fails both cases.
+    /// Mutation seen failing: taking the first of each bin (`slice[0]`) instead
+    /// of the mean fails the alternating case (all `0.0` where `0.5` is wanted).
     #[test]
     fn a_long_recording_is_averaged_into_its_bins() {
         let alternating: Vec<f32> = (0..120)
@@ -144,7 +144,9 @@ mod tests {
         }
     }
 
-    /// Mutation seen failing: dropping the `bins == 0` guard divides by zero.
+    /// Mutation seen failing: dropping the `bins == 0` guard returns an empty
+    /// vector, since `0..0` is empty, so the zero-bins equality fails
+    /// (`left: []`).
     #[test]
     fn fewer_levels_than_bins_pass_through_and_zero_bins_changes_nothing() {
         assert_eq!(waveform(&[-50.0; 5], 60).len(), 5);

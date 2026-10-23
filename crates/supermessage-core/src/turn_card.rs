@@ -176,7 +176,9 @@ mod tests {
     /// `FleetCardTests.swift:146-157`.
     ///
     /// Mutation seen failing: dropping the `min(c, t)` clamp reads "step 9 of
-    /// 7"; dropping the "Working" fallback leaves an empty headline.
+    /// 7" (the `7 of 7` assertion); replacing the `is_empty()` test of the
+    /// "Working" fallback with `false` leaves an empty headline (`left: ""`,
+    /// `right: "Working"`).
     #[test]
     fn the_heros_words_while_working() {
         let card = turn_card(&running("Running the tests", 3, 7), NAME).unwrap();
@@ -196,8 +198,8 @@ mod tests {
 
     /// `FleetCardTests.swift:159-173`.
     ///
-    /// Mutation seen failing: `turn_duration_label` ("1m 4s") for
-    /// `elapsed_label` fails the "1m 04s" case.
+    /// Mutation seen failing: `turn_duration_label(end - start)` in place of
+    /// `elapsed_label` reads "Done in 1m 4s · 1 step" where "1m 04s" is wanted.
     #[test]
     fn a_finish_reads_like_a_delivery() {
         assert_eq!(
@@ -228,7 +230,8 @@ mod tests {
     /// `FleetCardTests.swift:163-164`.
     ///
     /// Mutation seen failing: dropping the capitalisation reads "after 1m
-    /// 12s" in the c = 0 case.
+    /// 12s" in the c = 0 case; dropping the `min(c, t)` clamp on the failed
+    /// path reads "At step 9 of 7" (the c = 9 case).
     #[test]
     fn a_failure_says_where_and_after_how_long() {
         let card = turn_card(&failed("cargo test", Some(72_000), 4, 7), "Writer Quill").unwrap();
@@ -242,6 +245,15 @@ mod tests {
             ))
             .1,
             "After 1m 12s"
+        );
+        // Completed past the total: the clamp holds on the failed path too.
+        assert_eq!(
+            words(turn_card(
+                &failed("cargo test", Some(72_000), 9, 7),
+                "Writer Quill"
+            ))
+            .1,
+            "At step 7 of 7 · after 1m 12s"
         );
         assert_eq!(
             words(turn_card(&failed("cargo test", None, 0, 7), "Writer Quill")).1,
@@ -267,8 +279,13 @@ mod tests {
         assert_eq!(turn_card(&timed_out_failed, NAME), None);
     }
 
-    /// Mutation seen failing: checking `failed_step` before `in_progress`
-    /// makes the card say "failed".
+    /// Mutation seen failing: letting a failed step win over `in_progress`
+    /// (`if summary.in_progress && summary.failed_step.is_none()`) fails the
+    /// `in_progress && !failed` assertion.
+    ///
+    /// `ended_by: None` with `in_progress: false` reads as finished, which is
+    /// deliberate: the turn book cannot produce it (`turns.rs:226-227`,
+    /// `:359-360`).
     #[test]
     fn a_running_turn_with_a_failed_tool_still_reads_as_running() {
         let turn = TurnSummary {
