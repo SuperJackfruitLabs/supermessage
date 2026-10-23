@@ -2165,6 +2165,16 @@ export function onNotificationOpen(handler: (roomId: string) => void): Promise<U
   return listen<{ roomId: string }>(NOTIFICATION_OPEN_EVENT, (event) => handler(event.payload.roomId));
 }
 
+const NAVIGATE_EVENT = "sm://navigate";
+
+/**
+ * The tray asked the page to go somewhere (its "Open Needs you"). The window is already in
+ * front; `to` names a sidebar destination, and choosing it is the page's.
+ */
+export function onNavigate(handler: (to: string) => void): Promise<UnlistenFn> {
+  return listen<{ to: string }>(NAVIGATE_EVENT, (event) => handler(event.payload.to));
+}
+
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */
 export function onRoomsDiff(handler: (env: DiffEnvelope<RoomRow>) => void): Promise<UnlistenFn> {
   return listen<DiffEnvelope<RoomRow>>(ROOMS_DIFF_EVENT, (event) => handler(event.payload));
@@ -2671,9 +2681,20 @@ export async function notificationPermission(prompt: boolean): Promise<Notificat
   return await invoke<NotificationPermission>("notification_permission", { prompt });
 }
 
-/** Puts the Needs you count in the window title ("(3) supermessage"; zero is the plain name). */
-export async function setAttention(needsYou: number): Promise<void> {
-  await invoke<void>("set_attention", { needsYou });
+/**
+ * Puts the Needs you count in the window title ("(3) supermessage"; zero is the plain name) and
+ * both counts on the tray, which the core words.
+ */
+export async function setAttention(needsYou: number, working: number): Promise<void> {
+  await invoke<void>("set_attention", { needsYou, working });
+}
+
+/**
+ * Tells Rust whether closing the window should hide it to the tray instead of quitting.
+ * Resolves to whether that can happen: false where no tray could be created.
+ */
+export async function windowCloseBehaviour(keepRunning: boolean): Promise<boolean> {
+  return invoke<boolean>("window_close_behaviour", { keepRunning });
 }
 
 /** Removes every delivered notification (sign-out). */
@@ -2760,6 +2781,19 @@ export async function notificationDelivers(note: PlannedNotification, mode: Noti
 /** Posts `note` locally, with the buttons the core gives its category. */
 export async function notificationPost(note: PlannedNotification): Promise<void> {
   await invoke<void>("notification_post", { note });
+}
+
+/** `core::turn_card::TurnCard`: a turn in the Live Activity's words. */
+export interface TurnCard {
+  headline: string;
+  subtitle: string;
+  inProgress: boolean;
+  failed: boolean;
+}
+
+/** A turn in the Live Activity's words (`core::turn_card::turn_card`); null for a timed-out turn. */
+export async function turnCard(summary: TurnSummary, agentName: string): Promise<TurnCard | null> {
+  return await invoke<TurnCard | null>("turn_card", { summary, agentName });
 }
 
 /** `core::safety::IGNORED_USERS_EVENT`: the blocked list, emitted by the core. */

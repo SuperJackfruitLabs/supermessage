@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, voiceRecordingSpec, voiceWaveform, voiceLongEnough, attachmentStageRecording, attachmentMarkVoice, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, windowCloseBehaviour, voiceRecordingSpec, voiceWaveform, voiceLongEnough, attachmentStageRecording, attachmentMarkVoice, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, turnCard, onIgnoredUsers, onNotificationOpen, onNavigate } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -342,13 +342,15 @@ describe("session commands", () => {
     ["voiceWaveform passes decibels and bins", () => voiceWaveform([-60, -10], 60), "voice_waveform", { decibels: [-60, -10], bins: 60 }],
     ["voiceLongEnough passes the length camelCased", () => voiceLongEnough(599), "voice_long_enough", { durationMs: 599 }],
     ["attachmentMarkVoice passes room, token, length and waveform camelCased", () => attachmentMarkVoice("!r:x", "tok", 3200, [0.5]), "attachment_mark_voice", { roomId: "!r:x", token: "tok", durationMs: 3200, waveform: [0.5] }],
-    ["setAttention passes the count camelCased", () => setAttention(3), "set_attention", { needsYou: 3 }],
+    ["setAttention passes both counts camelCased", () => setAttention(3, 2), "set_attention", { needsYou: 3, working: 2 }],
+    ["windowCloseBehaviour passes the choice camelCased", () => windowCloseBehaviour(true), "window_close_behaviour", { keepRunning: true }],
     ["notificationClearAll takes no arguments", () => notificationClearAll(), "notification_clear_all", undefined],
     ["sendGateDecisionTo passes camelCase args", () => sendGateDecisionTo("!r:x", "g1", "approve", null, "$e", "Ship it?"), "send_gate_decision_to", { roomId: "!r:x", gateId: "g1", optionId: "approve", comment: null, inReplyTo: "$e", prompt: "Ship it?" }],
     ["notificationsForRoster passes both rosters and the context", () => notificationsForRoster([], [], CTX), "notifications_for_roster", { previous: [], next: [], context: CTX }],
     ["notificationsForFocused passes camelCase args", () => notificationsForFocused("!r:x", "Atlas", 42, ["$a"], CTX), "notifications_for_focused", { roomId: "!r:x", roomName: "Atlas", sinceMs: 42, alreadyNotified: ["$a"], context: CTX }],
     ["notificationDelivers passes the mode", () => notificationDelivers(NOTE, "muted"), "notification_delivers", { note: NOTE, mode: "muted" }],
     ["notificationPost passes the note", () => notificationPost(NOTE), "notification_post", { note: NOTE }],
+    ["turnCard passes the summary and the agent's name camelCased", () => turnCard({ roomId: "!r:x" } as never, "Atlas"), "turn_card", { summary: { roomId: "!r:x" }, agentName: "Atlas" }],
   ];
 
   it.each(calls)("%s", async (_name, call, command, args) => {
@@ -368,6 +370,18 @@ describe("session commands", () => {
     const callback = listenMock.mock.calls[0][1] as (e: { payload: { roomId: string } }) => void;
     callback({ payload: { roomId: "!r:x" } });
     expect(handler).toHaveBeenCalledWith("!r:x");
+  });
+
+  it("onNavigate listens on sm://navigate and hands over the destination", async () => {
+    const listenMock = vi.mocked(listen);
+    listenMock.mockReset();
+    listenMock.mockResolvedValue(() => {});
+    const handler = vi.fn();
+    await onNavigate(handler);
+    expect(listenMock.mock.calls[0][0]).toBe("sm://navigate");
+    const callback = listenMock.mock.calls[0][1] as (e: { payload: { to: string } }) => void;
+    callback({ payload: { to: "needsYou" } });
+    expect(handler).toHaveBeenCalledWith("needsYou");
   });
 
   it("onIgnoredUsers listens on sm://ignored-users and hands over the ids", async () => {
