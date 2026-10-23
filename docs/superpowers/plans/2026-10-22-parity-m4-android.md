@@ -13,6 +13,12 @@ hidden under its parent), D11 (one name per person on the typing line and the li
 (generated agent tiles, the dot on the avatar, two-line rows, runtime out of the row) — and pass
 roadmap Review Focus 1 and 2 in the running app (M4's exit).
 
+> **Superseded in part (dated 2026-10-23, after the whole-branch review).** The glide **was ported**,
+> per owner decision Q5, so "Android does not port the glide" (Decision 2), Review Focus 5 "History
+> rows do not glide" and the Excluded row "Not ported" no longer hold. The README Android cells are
+> updated, and the dated parity matrix is superseded by a dated record, never edited. The dock and the
+> typing pill float over the timeline and the list reserves their constant height as bottom padding.
+
 **Core prerequisites — read first.** `.superpowers/sdd/planning-m4/core-prereqs.md`:
 - **P1** `Core.acknowledgement(roomId, addressee, agentIds, typingAgents, turnInProgress)` — Task 5
   consumes it. If it has not merged when Task 5 starts, Task 5 uses the existing free

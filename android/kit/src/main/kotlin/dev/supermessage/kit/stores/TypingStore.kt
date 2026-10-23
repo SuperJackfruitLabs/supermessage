@@ -79,8 +79,9 @@ class TypingStore {
     fun focus(roomId: String?) {
         this.roomId = roomId
         _typers.value = emptyList()
-        // Signing out focuses nothing, and nothing from that account may
-        // survive into the next one.
+        // Focusing nothing (signing out, or `closeRoom()`) clears every cast:
+        // nothing from that account may survive into the next one. The pane
+        // reloads its room's cast when it opens, so closing a room loses nothing.
         if (roomId == null) casts.clear()
         rebuildView()
     }

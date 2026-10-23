@@ -2,10 +2,10 @@
 
 import type { NotificationMode, RoomAffordance } from "$lib/ipc";
 
-export type RowMenuItem = { id: "mute" | "pin" | "decline"; label: string; destructive: boolean };
+export type RowMenuItem = { id: "markRead" | "mute" | "pin" | "decline"; label: string; destructive: boolean };
 
 /**
- * An invitation offers Decline; a joined room offers Mute/Unmute and Pin/Unpin, worded from what
+ * An invitation offers Decline; a joined room offers Mark read, Mute/Unmute and Pin/Unpin, worded from what
  * the core said the room is set to (`null`, when it could not say, reads "Mute" and "Pin");
  * anything else offers nothing.
  */
@@ -18,6 +18,8 @@ export function rowMenuItems(
       return [{ id: "decline", label: "Decline", destructive: true }];
     case "compose":
       return [
+        // iOS's leading swipe (`RoomListView.swift:261-267`), offered on every joined row.
+        { id: "markRead", label: "Mark read", destructive: false },
         { id: "mute", label: info?.notifications === "muted" ? "Unmute" : "Mute", destructive: false },
         { id: "pin", label: info?.pinned ? "Unpin" : "Pin", destructive: false },
       ];

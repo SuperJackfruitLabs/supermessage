@@ -15,9 +15,14 @@
     sendLabel: string;
     canSend: boolean;
     onSend: () => void;
+    /**
+     * The mic, which takes Send's place while the field is empty and nothing is staged (iOS
+     * `ComposerView.swift:189-197`), and stays under the pointer during a held recording.
+     */
+    mic?: Snippet;
   }
 
-  let { top, field, onAttach, attachDisabled, sendLabel, canSend, onSend }: Props = $props();
+  let { top, field, onAttach, attachDisabled, sendLabel, canSend, onSend, mic }: Props = $props();
 </script>
 
 <div class="w-full min-w-0 flex-1 rounded-card border border-border bg-surface">
@@ -74,6 +79,9 @@
       goes from empty to non-empty, which is on the first keystroke of every
       message.
     -->
+    {#if mic}
+      {@render mic()}
+    {:else}
     <button
       type="button"
       onclick={onSend}
@@ -84,5 +92,6 @@
       {sendLabel}
       <span aria-hidden="true" class="opacity-80">⏎</span>
     </button>
+    {/if}
   </div>
 </div>

@@ -1,0 +1,199 @@
+// The voice recorder's state machine: a port of `VoiceRecorder.swift:18-190` over an injected
+// capture. The recorder's numbers (sample every 100 ms, at most 60 levels), the waveform maths
+// and whether a recording is long enough to send are the core's (`core::voice_recording`),
+// passed in as `spec`, `waveform` and `longEnough`; nothing here restates them.
+
+import type { AttachmentSendOutcome, StagedAttachment, VoiceRecordingSpec } from "$lib/ipc";
+
+/** `VoiceRecorder.swift:78-81`. */
+export const MIC_REFUSED = "Microphone access is off. Turn it on in Settings to record.";
+/** `VoiceRecorder.swift:100`, `:116`. */
+export const START_FAILED = "Couldn't start recording.";
+
+/**
+ * The webview has no recorder (WebKitGTK without GStreamer's good plugins). *(no iOS copy)*
+ * The mic is withdrawn afterwards, since pressing it again could only fail the same way.
+ */
+export const NOT_SUPPORTED = "Voice messages can't be recorded on this computer.";
+
+/** What silence reads as. JSON turns `-Infinity` into `null`, which the core's `Vec<f32>` refuses. */
+export const SILENCE_DB = -160;
+
+/** The microphone and encoder, behind the browser APIs. */
+export interface Capture {
+  /**
+   * Opens the microphone and starts recording. `isCurrent` is asked once the microphone is
+   * granted and before anything records: when it says no (the start was cancelled while the
+   * grant was pending), the tracks are stopped at once, nothing records, and this resolves
+   * `false`.
+   */
+  start(isCurrent: () => boolean): Promise<boolean>;
+  /** Stops and returns the finished recording; its `type` is the recorder's mime type. */
+  stop(): Promise<Blob>;
+  /** The current input level in dBFS. */
+  levelDb(): number;
+}
+
+export interface VoiceDeps {
+  capture: Capture;
+  spec: VoiceRecordingSpec;
+  now(): number;
+  /** Calls `fn` every `ms` until the returned function is called. */
+  every(fn: () => void, ms: number): () => void;
+  /** `core::voice_recording::waveform`. */
+  waveform(decibels: number[], bins: number): Promise<number[]>;
+  /** `core::voice_recording::long_enough`: shorter is a slip of the thumb, not a message. */
+  longEnough(durationMs: number): Promise<boolean>;
+  stageRecording(roomId: string, mime: string, body: Blob): Promise<StagedAttachment>;
+  markVoice(roomId: string, token: string, durationMs: number, waveform: number[]): Promise<void>;
+  sendStaged(roomId: string, token: string, caption: string | null): Promise<AttachmentSendOutcome>;
+  discard(token: string): void;
+  /** A note playing aloud would be recorded into the new one (`ComposerView.swift:204`). */
+  stopPlayback(): void;
+  /** Called after every change of `phase` or `failure`. */
+  onChange?(): void;
+}
+
+export type VoicePhase = { kind: "idle" } | { kind: "recording"; startedAt: number; held: boolean };
+
+function finiteDb(db: number): number {
+  return Number.isFinite(db) ? db : SILENCE_DB;
+}
+
+export function createVoiceRecorder(deps: VoiceDeps) {
+  let phase: VoicePhase = { kind: "idle" };
+  let failure: string | null = null;
+  let starting = false;
+  let unsupported = false;
+  /**
+   * Bumped by everything that ends a start before it has begun (`cancel`, a hold released
+   * early): a start that comes back from `getUserMedia` under an older generation was
+   * abandoned, and must not record.
+   */
+  let generation = 0;
+  let levels: number[] = [];
+  let stopMeter: (() => void) | null = null;
+
+  const changed = () => deps.onChange?.();
+
+  function endMeter(): void {
+    stopMeter?.();
+    stopMeter = null;
+  }
+
+  /** Stops the capture and returns the recording with how long it ran and what was sampled. */
+  async function finish(): Promise<{ blob: Blob; durationMs: number; decibels: number[] } | null> {
+    if (phase.kind !== "recording") return null;
+    const durationMs = Math.round(deps.now() - phase.startedAt);
+    const decibels = levels;
+    endMeter();
+    phase = { kind: "idle" };
+    levels = [];
+    changed();
+    const blob = await deps.capture.stop();
+    if (!(await deps.longEnough(durationMs))) return null;
+    return { blob, durationMs, decibels };
+  }
+
+  return {
+    get phase(): VoicePhase {
+      return phase;
+    },
+    get failure(): string | null {
+      return failure;
+    },
+    /** The webview cannot record at all: the composer stops offering the mic. */
+    get unsupported(): boolean {
+      return unsupported;
+    },
+    get isRecording(): boolean {
+      return phase.kind === "recording";
+    },
+    get isHeld(): boolean {
+      return phase.kind === "recording" && phase.held;
+    },
+
+    /** Starts recording; asks for the microphone the first time. `held` when the mic is held down. */
+    async start(held: boolean): Promise<boolean> {
+      if (phase.kind !== "idle" || starting) return false;
+      const mine = ++generation;
+      const current = () => mine === generation;
+      starting = true;
+      failure = null;
+      changed();
+      deps.stopPlayback();
+      let began: boolean;
+      try {
+        began = await deps.capture.start(current);
+      } catch (err) {
+        const name = (err as { name?: string } | null)?.name;
+        if (name === "NotSupportedError") unsupported = true;
+        // A start the reader already walked away from fails silently.
+        if (current())
+          failure =
+            name === "NotAllowedError" || name === "SecurityError"
+              ? MIC_REFUSED
+              : unsupported
+                ? NOT_SUPPORTED
+                : START_FAILED;
+        starting = false;
+        changed();
+        return false;
+      }
+      starting = false;
+      if (!began) return false;
+      if (!current()) {
+        // Cancelled between the capture starting and this line: stop it before it is used.
+        await deps.capture.stop().catch(() => undefined);
+        return false;
+      }
+      levels = [];
+      phase = { kind: "recording", startedAt: deps.now(), held };
+      stopMeter = deps.every(() => levels.push(finiteDb(deps.capture.levelDb())), deps.spec.meterIntervalMs);
+      changed();
+      return true;
+    },
+
+    /** A hold ended before recording had begun. */
+    abandonPendingStart(): void {
+      if (starting) generation++;
+    },
+
+    /**
+     * Stops and throws the recording away. Stages nothing. While the microphone is still being
+     * granted, it abandons that start: when the grant comes back the tracks are stopped and
+     * nothing records (a room switch, sign-out or unmount during the prompt).
+     */
+    async cancel(): Promise<void> {
+      generation++;
+      if (phase.kind !== "recording") return;
+      endMeter();
+      phase = { kind: "idle" };
+      levels = [];
+      changed();
+      await deps.capture.stop().catch(() => undefined);
+    },
+
+    /**
+     * Stops, then stages the recording, marks it as a voice message with the core's waveform and
+     * sends it with no text (`ComposerView.swift:304-317`). Resolves `"discarded"` for a slip of
+     * the thumb. Rejects when staging or marking fails (a staged file is discarded); a send that
+     * fails is the send's own outcome.
+     */
+    async send(roomId: string): Promise<"discarded" | AttachmentSendOutcome> {
+      const recording = await finish();
+      if (recording === null) return "discarded";
+      const waveform = await deps.waveform(recording.decibels, deps.spec.waveformBins);
+      const staged = await deps.stageRecording(roomId, recording.blob.type, recording.blob);
+      try {
+        await deps.markVoice(roomId, staged.token, recording.durationMs, waveform);
+      } catch (err) {
+        deps.discard(staged.token);
+        throw err;
+      }
+      return deps.sendStaged(roomId, staged.token, null);
+    },
+  };
+}
+
+export type VoiceRecorder = ReturnType<typeof createVoiceRecorder>;

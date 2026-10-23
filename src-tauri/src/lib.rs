@@ -14,11 +14,19 @@
 // crate-type are this binary and its own test targets.
 
 use serde::Serialize;
+use std::sync::Arc;
 use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 
+mod attention;
 mod commands;
+mod commands_notify;
 mod commands_session;
+mod commands_voice;
 mod host;
+mod notify;
+// Only Linux reports a press (see `notify::PluginPoster`), so elsewhere nothing calls in.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod notify_actions;
 
 use crate::commands::{
     acknowledgement, agent_avatar_style, agent_avatar_variants, attachment_discard,
@@ -37,11 +45,19 @@ use crate::commands::{
     timeline_subscribe, toggle_reaction, turn, turn_duration_label, turn_record_label,
     turn_status_word, typing_view,
 };
+use crate::commands_notify::{
+    notification_clear_all, notification_delivers, notification_permission, notification_post,
+    notifications_for_focused, notifications_for_roster, send_gate_decision_to,
+};
 use crate::commands_session::{
     account, blocked_users, direct_room_with, ignore_user, known_people, people_label,
     report_event, report_reason_remaining, report_room, report_user, room_inviter,
     room_mention_candidates, send_permission_answer, set_room_notification_mode, set_room_pinned,
     unignore_user,
+};
+use crate::commands_voice::{
+    attachment_mark_voice, attachment_stage_recording, voice_long_enough, voice_recording_spec,
+    voice_waveform,
 };
 use supermessage_core::secrets::KeyringStore;
 use supermessage_core::{session::Session, tls};
@@ -69,6 +85,55 @@ async fn core_status() -> CoreStatus {
         "core_status requested by webview"
     );
     status
+}
+
+/// Whether a webview permission request may be granted: the microphone alone (audio, no
+/// video), and only while the view shows the app's own content. Everything else is denied.
+/// Asked by WebKitGTK only, so unused on macOS and Windows.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn allows_user_media(audio: bool, video: bool, uri: &Url) -> bool {
+    audio && !video && is_app_origin(uri)
+}
+
+/// Turns on `getUserMedia` in WebKitGTK and answers its permission requests without a prompt:
+/// the microphone for the app's own origin, nothing else. Without this WebKitGTK denies every
+/// request, so the composer's mic would never record.
+#[cfg(target_os = "linux")]
+fn allow_microphone(window: &tauri::WebviewWindow) {
+    use webkit2gtk::glib::prelude::Cast;
+    use webkit2gtk::{
+        PermissionRequestExt, SettingsExt, UserMediaPermissionRequest,
+        UserMediaPermissionRequestExt, WebViewExt,
+    };
+    let result = window.with_webview(|webview| {
+        let view = webview.inner();
+        if let Some(settings) = WebViewExt::settings(&view) {
+            settings.set_enable_media_stream(true);
+        }
+        view.connect_permission_request(|view, request| {
+            let allowed = request
+                .downcast_ref::<UserMediaPermissionRequest>()
+                .is_some_and(|media| {
+                    let uri = WebViewExt::uri(view).and_then(|u| Url::parse(&u).ok());
+                    uri.is_some_and(|uri| {
+                        allows_user_media(
+                            media.is_for_audio_device(),
+                            media.is_for_video_device(),
+                            &uri,
+                        )
+                    })
+                });
+            if allowed {
+                request.allow();
+            } else {
+                request.deny();
+            }
+            true
+        });
+    });
+    if let Err(e) = result {
+        tracing::warn!(error = %e, "couldn't set up the microphone permission");
+    }
 }
 
 /// The Vite dev server's fixed port — duplicated from `tauri.conf.json`'s
@@ -169,6 +234,11 @@ pub fn run() {
         // webview opened would hand *the webview* a path, and the
         // attachments design (§3) exists to stop exactly that.
         .plugin(tauri_plugin_dialog::init())
+        // Registered for its **Rust** API only, like the dialog plugin above: it
+        // posts on macOS and Windows and answers the permission question. No
+        // `notification:*` permission is granted, so the webview cannot post;
+        // it asks Rust (`notify::Poster`).
+        .plugin(tauri_plugin_notification::init())
         // The Rust-side drag-drop handler the attachments design §3 requires.
         // Tauri also emits its own `tauri://drag-drop` (carrying raw paths)
         // to the webview and offers no way to suppress just that —
@@ -196,18 +266,23 @@ pub fn run() {
             // config has no way to express — can be attached here, before
             // the window is actually built. See `is_app_origin`'s doc
             // comment for what this blocks and why it matters.
-            WebviewWindowBuilder::from_config(app.handle(), &app.config().app.windows[0])?
-                .on_navigation(|url| {
-                    let allowed = is_app_origin(url);
-                    if !allowed {
-                        tracing::warn!(
-                            url = %url,
-                            "blocked a webview navigation outside the app's own origin"
-                        );
-                    }
-                    allowed
-                })
-                .build()?;
+            let _window =
+                WebviewWindowBuilder::from_config(app.handle(), &app.config().app.windows[0])?
+                    .on_navigation(|url| {
+                        let allowed = is_app_origin(url);
+                        if !allowed {
+                            tracing::warn!(
+                                url = %url,
+                                "blocked a webview navigation outside the app's own origin"
+                            );
+                        }
+                        allowed
+                    })
+                    .build()?;
+            #[cfg(target_os = "linux")]
+            allow_microphone(&_window);
+            // A recording left by the last run is single-use and can no longer be staged.
+            commands_voice::sweep_recordings(app.handle());
 
             let data_dir = app.path().app_data_dir().expect("app data dir");
             let session = Session::new(data_dir, Box::new(KeyringStore));
@@ -224,9 +299,35 @@ pub fn run() {
             // all three must see the *one* map the session owns.
             app.manage(session.staged_attachments());
             app.manage(session);
+            // Where notifications go: the Desktop Notifications protocol over the session
+            // bus on Linux, which can carry answer buttons, the plugin elsewhere. The receiver is what Linux button
+            // presses arrive on; it waits to be taken.
+            #[cfg(target_os = "linux")]
+            {
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                let poster: Arc<dyn notify::Poster> = Arc::new(notify::XdgPoster::new(
+                    Arc::new(notify::SessionBusBackend::new()),
+                    tx,
+                ));
+                app.manage(poster);
+                app.manage(notify::ActionInbox::new(rx));
+                spawn_action_consumer(app.handle().clone());
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let poster: Arc<dyn notify::Poster> =
+                    Arc::new(notify::PluginPoster::new(app.handle().clone()));
+                app.manage(poster);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            attention::set_attention,
+            attachment_stage_recording,
+            attachment_mark_voice,
+            voice_recording_spec,
+            voice_waveform,
+            voice_long_enough,
             core_status,
             ignore_user,
             unignore_user,
@@ -244,6 +345,13 @@ pub fn run() {
             account,
             people_label,
             send_permission_answer,
+            notification_permission,
+            notification_clear_all,
+            notifications_for_roster,
+            notifications_for_focused,
+            notification_delivers,
+            notification_post,
+            send_gate_decision_to,
             connection_state,
             login,
             restore_session,
@@ -318,13 +426,62 @@ pub fn run() {
             attachment_send,
             attachment_discard,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Notifications belong to the running app; none should outlive it.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(poster) = tauri::Manager::try_state::<Arc<dyn notify::Poster>>(app) {
+                    poster.withdraw_all();
+                }
+            }
+        });
+}
+
+/// Takes the buttons the reader presses and answers each in its own task, so one slow send
+/// does not hold the next press.
+#[cfg(target_os = "linux")]
+fn spawn_action_consumer(app: tauri::AppHandle) {
+    let Some(mut inbox) = app.state::<notify::ActionInbox>().take() else {
+        return;
+    };
+    tauri::async_runtime::spawn(async move {
+        while let Some(taken) = inbox.recv().await {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let poster = app.state::<Arc<dyn notify::Poster>>().inner().clone();
+                notify_actions::handle(
+                    taken,
+                    &*app.state::<Session>(),
+                    &notify_actions::WindowOpener(app.clone()),
+                    poster,
+                )
+                .await;
+            });
+        }
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_permission_handler_allows_only_audio_for_the_app_origin() {
+        let app = Url::parse("tauri://localhost/index.html").unwrap();
+        let elsewhere = Url::parse("https://example.org/").unwrap();
+        assert!(allows_user_media(true, false, &app));
+        assert!(
+            !allows_user_media(true, true, &app),
+            "a camera is never allowed"
+        );
+        assert!(!allows_user_media(false, true, &app));
+        assert!(!allows_user_media(false, false, &app));
+        assert!(
+            !allows_user_media(true, false, &elsewhere),
+            "only the app's own content"
+        );
+    }
 
     #[test]
     fn is_app_origin_allows_the_tauri_custom_protocol_origin() {

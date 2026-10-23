@@ -16,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import dev.supermessage.kit.CoreClient
@@ -183,6 +184,7 @@ class AgentExperienceTest {
         initial: Map<String, List<TimelineRow>> = mapOf(atlasRoom to listOf(row("\$ls", "ls", own = true))),
         io: Boolean = false,
         openName: String? = "Atlas",
+        fontScale: Float? = null,
     ) {
         core = FakeCore(roomsList, castOf).also { c -> initial.forEach { (k, v) -> c.rows[k] = v.toMutableList() } }
         session = Session(
@@ -192,7 +194,11 @@ class AgentExperienceTest {
         val file = File.createTempFile("agent-experience", ".preferences_pb")
         val prefs = RosterPreferences(PreferenceDataStoreFactory.create(scope = CoroutineScope(Dispatchers.Unconfined)) { file })
         compose.setContent {
-            CompositionLocalProvider(LocalReduceMotion provides true) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            CompositionLocalProvider(
+                LocalReduceMotion provides true,
+                androidx.compose.ui.platform.LocalDensity provides if (fontScale == null) density else androidx.compose.ui.unit.Density(density.density, fontScale),
+            ) {
                 Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) { AppRoot(session = session, prefs = prefs) }
             }
         }
@@ -274,6 +280,42 @@ class AgentExperienceTest {
         val shell = compose.onNodeWithTag("timeline-list").fetchSemanticsNode().boundsInRoot.bottom
         assertTrue("the newest row ends at the timeline's bottom edge ($bottom vs $shell)", bottom <= shell + 1f)
     }
+
+    /** Newest row's bottom above the top of the dock and the pill; Jump to newest too (the list reserves their height). */
+    private fun assertNothingIsCovered() {
+        val newest = compose.onNodeWithTag("row-\$ls").fetchSemanticsNode().boundsInRoot
+        val dock = compose.onNodeWithTag("dock", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val pill = compose.onNodeWithTag("typing-pill", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val top = minOf(dock.top, pill.top)
+        assertTrue("the newest row ends at ${newest.bottom}, under the dock/pill that start at $top", newest.bottom <= top + 0.5f)
+    }
+
+    private fun theDockAndPillCoverNothing(fontScale: Float?) {
+        val older = (0 until 40).map { row("\$r$it", "older message $it", own = false) }
+        open(
+            castOf = { cast(it, listOf("@atlas:x"), "@atlas:x", "@atlas:x", people = listOf("@atlas:x", "@k:x")) },
+            initial = mapOf(atlasRoom to older + row("\$ls", "ls", own = true)),
+            fontScale = fontScale,
+        )
+        waitFor("Sent to Atlas") { textShown("Sent to Atlas") }
+        compose.runOnUiThread { core.event(FfiEvent.Typing(atlasRoom, listOf(TypingUserDto("@k:x", "Krishna", "Krishna")))) }
+        waitFor("the pill") { textShown("Krishna is typing…") }
+        assertNothingIsCovered()
+
+        // Scrolled back, the way home must not sit under the dock either.
+        compose.onNodeWithTag("timeline-list").performScrollToIndex(30)
+        waitFor("Jump to newest") { !gone("jump-to-newest") }
+        val jump = compose.onNodeWithTag("jump-to-newest", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val dock = compose.onNodeWithTag("dock", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val pill = compose.onNodeWithTag("typing-pill", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("Jump to newest ends at ${jump.bottom}, under the dock/pill from ${minOf(dock.top, pill.top)}", jump.bottom <= minOf(dock.top, pill.top) + 0.5f)
+    }
+
+    @Test
+    fun theDockAndPillCoverNeitherTheNewestMessageNorJumpToNewest() = theDockAndPillCoverNothing(null)
+
+    @Test
+    fun theDockAndPillCoverNothingAtFontScaleTwo() = theDockAndPillCoverNothing(2f)
 
     // -- RF2 ------------------------------------------------------------------
 
