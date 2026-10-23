@@ -1,5 +1,6 @@
 package dev.supermessage
 
+import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.runtime.CompositionLocalProvider
@@ -264,9 +265,20 @@ class ReportSheetTest {
         assertEquals(1, closed)
     }
 
+    /**
+     * Back for the sheet, delivered the way the platform would once it routes
+     * the key: to the back dispatcher of the sheet's own window (a
+     * `ModalBottomSheet` is a separate window, and its back handler registers
+     * with the dispatcher of that window, not the activity's). An injected
+     * KEYCODE_BACK never reaches the app on the CI AVD, so key routing is left
+     * out; the sheet's BackHandler -> dismiss request path is what runs.
+     */
     private fun pressSystemBack() {
-        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
-            .sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+        val sheetView = (compose.onNodeWithTag("report-sheet").fetchSemanticsNode().root as androidx.compose.ui.platform.ViewRootForTest).view
+        val dispatcher = checkNotNull(sheetView.findViewTreeOnBackPressedDispatcherOwner()) {
+            "the sheet window has no back dispatcher"
+        }.onBackPressedDispatcher
+        compose.runOnUiThread { dispatcher.onBackPressed() }
     }
 
     /** The system back button is the other way out, and it asks the sheet like the scrim does. */

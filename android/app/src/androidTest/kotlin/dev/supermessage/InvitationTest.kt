@@ -96,6 +96,11 @@ class InvitationTest {
         var reporting by androidx.compose.runtime.mutableStateOf(false)
         val session = sessionOf(FakeCore(roomInviterResult = { null }))
         compose.setContent {
+            // A button takes focus only in keyboard input mode (touch mode makes
+            // clickables unfocusable), and focus coming back is for keyboard and
+            // switch users. The device starts in touch mode, so say so here.
+            val inputMode = androidx.compose.ui.platform.LocalInputModeManager.current
+            androidx.compose.runtime.SideEffect { inputMode.requestInputMode(androidx.compose.ui.input.InputMode.Keyboard) }
             InvitationView(
                 roomId = "!room:example.org",
                 roomName = "Ops Room",
