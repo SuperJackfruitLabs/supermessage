@@ -1469,6 +1469,8 @@ mod tests {
 
             struct Notifications {
                 hung: Arc<AtomicBool>,
+                /// How many calls the hung server has taken and is holding.
+                held: Arc<AtomicU32>,
                 next: AtomicU32,
             }
 
@@ -1487,6 +1489,7 @@ mod tests {
                     _expire_timeout: i32,
                 ) -> u32 {
                     if self.hung.load(Ordering::SeqCst) {
+                        self.held.fetch_add(1, Ordering::SeqCst);
                         std::future::pending::<()>().await;
                     }
                     match replaces_id {
@@ -1536,6 +1539,8 @@ mod tests {
             pub struct Peer {
                 /// While set, the server takes every call and never answers it.
                 pub hung: Arc<AtomicBool>,
+                /// How many `Notify` calls the hung server is holding.
+                pub held: Arc<AtomicU32>,
                 /// What `GetNameOwner` answers next; set before the first call.
                 pub owner_script: Arc<Mutex<VecDeque<OwnerReply>>>,
                 server: std::thread::JoinHandle<zbus::blocking::Connection>,
@@ -1546,8 +1551,10 @@ mod tests {
             pub fn start(timeout: Duration) -> (SessionBusBackend, Peer) {
                 let (client, server) = UnixStream::pair().unwrap();
                 let hung = Arc::new(AtomicBool::new(false));
+                let held = Arc::new(AtomicU32::new(0));
                 let notifications = Notifications {
                     hung: Arc::clone(&hung),
+                    held: Arc::clone(&held),
                     next: AtomicU32::new(0),
                 };
                 let owner_script = Arc::new(Mutex::new(VecDeque::new()));
@@ -1581,6 +1588,7 @@ mod tests {
                     backend,
                     Peer {
                         hung,
+                        held,
                         owner_script,
                         server,
                     },
@@ -1634,6 +1642,7 @@ mod tests {
             for id in ["$a", "$b", "$c", "$e", "$f"] {
                 poster.post(&note(id, vec![])).unwrap();
             }
+            let held = Arc::clone(&peer.held);
             let (server, hung) = peer.connected();
             hung.store(true, std::sync::atomic::Ordering::SeqCst);
 
@@ -1642,6 +1651,12 @@ mod tests {
                 let poster = Arc::clone(&poster);
                 move || poster.post(&note("$d", vec![]))
             });
+            // The press is sent only once the server is wedged on $d's Notify, so the post is
+            // certainly waiting when it comes.
+            assert!(
+                eventually(|| held.load(std::sync::atomic::Ordering::SeqCst) > 0),
+                "the server holds $d's Notify"
+            );
             // The server is wedged on $d's Notify, but its signals still come.
             peer::emit(
                 &server,
@@ -1656,6 +1671,11 @@ mod tests {
                 move || rx.lock().unwrap().try_recv().is_ok()
             });
             assert!(heard, "a press is heard while a post waits on the server");
+            assert!(
+                started.elapsed() < TIMEOUT,
+                "heard before the post's call timed out, not after: {:?}",
+                started.elapsed()
+            );
 
             let posted = within(TIMEOUT * 5, move || posting.join().unwrap());
             let posted = posted.expect("the post returns once the call times out");

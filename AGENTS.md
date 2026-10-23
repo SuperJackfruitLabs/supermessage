@@ -219,6 +219,13 @@ nothing to proxy to there. Use the WebDriver server a debug build embeds
 (`tauri-plugin-wdio-webdriver`, on by default via the `wdio` feature) on
 `127.0.0.1:4445` instead: run `pnpm dev`, then `target/debug/supermessage`.
 
+The app is single-instance (`tauri-plugin-single-instance`), and every copy
+shares the one instance, as it shares the data directory: `pnpm tauri dev`,
+the e2e `target/debug/supermessage` and an installed release. Launching any of
+them while another runs (even hidden in the tray) exits at once and raises the
+other's window, so the new copy's WebDriver server never answers. Quit the
+running copy first.
+
 This harness is what caught the "opening a room shows one message" bug — it
 is worth reaching for before trusting a UI claim made from code reading alone.
 

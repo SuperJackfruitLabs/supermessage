@@ -122,6 +122,7 @@ jobs:
               - 'static/favicon.svg'
               - 'android/app/src/main/res/values/generated_theme_colors.xml'
               - 'android/app/src/main/res/drawable/ic_launcher_*.xml'
+              - 'src-tauri/src/tokens.rs'
             docs:
               - *workflow
               - 'docs-site/**'

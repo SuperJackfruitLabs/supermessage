@@ -201,6 +201,20 @@ pub fn run() {
 
     let builder = tauri::Builder::default();
 
+    // A second launch reveals this app instead of starting another process. First in the chain,
+    // as the plugin asks, so the second process exits before it opens a store or (in a debug
+    // build) starts the WebDriver server below. Debug, e2e and release copies share the one
+    // instance, as they share the data directory (AGENTS.md, "Driving the real UI").
+    //
+    // Upstream limits, on Linux (`tauri-plugin-single-instance` 2.5.2): its two blocking D-Bus
+    // calls (the second process's `ExecuteCallback`, and `release_name` at exit) have no method
+    // timeout, and an unparsable `DBUS_SESSION_BUS_ADDRESS` panics at start-up (a missing bus
+    // only means no single instance).
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        tray::reveal_running_app(app);
+    }));
+
     // The embedded WebDriver server, so this app's UI can be driven and its
     // DOM read without a human at the keyboard — the only way to test what a
     // row actually renders as, which is the whole symptom of the timeline bug
@@ -221,13 +235,6 @@ pub fn run() {
     // asked for it with `--features mcp`.
     #[cfg(all(debug_assertions, feature = "mcp"))]
     let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
-
-    // A second launch reveals this app instead of starting another process. First in the chain,
-    // as the plugin asks, so the second process exits before it opens a store.
-    #[cfg(desktop)]
-    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        tray::reveal_running_app(app);
-    }));
 
     builder
         .on_page_load(|webview, payload| {
