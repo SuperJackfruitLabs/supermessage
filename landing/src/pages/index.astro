@@ -12,6 +12,14 @@
 //
 // Amber is used for exactly one thing: the item that is waiting on a person.
 //
+// Two bands carry a small three.js scene (src/scripts/scenes), set in one post room: the
+// homeserver is a wall of pigeonholes, SuperMessage a reading desk with no shelves, an agent a pod
+// across the floor. How it works walks its three steps beside one pinned stage (sign in, an
+// agent's card lands, your answer goes back and the card stops waiting on you); What it's like
+// shows live text going straight to the desk and only the finished turn landing in the room. One
+// canvas visits every stage, loaded only near the first; public/scenes holds a still per scene,
+// beat and sun phase for reduced motion and no WebGL. The scenes use amber the same way.
+//
 // Every capability sentence here maps to an entry in the SJL claims ledger
 // (sjl-marketing foundation/products.md, SM-01..SM-05). Those entries are
 // `limited`, and their caveats sit in the same section as the claim. Do not
@@ -274,8 +282,33 @@ const jsonLd = {
       .limits b { color: var(--color-content); font-weight: 600; }
 
 
+      /* ── the scenes: one lazy three.js canvas (src/scripts/scenes) visits these stages ──
+         How it works walks its steps one at a time: on a wide screen they stand in a column beside
+         one pinned stage, each tall enough to be the only one in focus; on a narrow one each step
+         has its own stage above its text. loader.js marks the step at the viewport's middle current. */
+      .stage { position: relative; margin: 0; width: 100%; aspect-ratio: 4 / 3; }
+      /* The canvas is made by script, so it carries no scoped-style attribute: hence :global. */
+      .stage img, .stage :global(canvas) { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+      .stage :global(canvas) { opacity: 0; transition: opacity .5s ease; touch-action: pan-y; }
+      .stage img { transition: opacity .5s ease; }
+      .stage.live :global(canvas) { opacity: 1; }
+      .stage.live img, .stage.pending img { opacity: 0; }
+      .walk, .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 56px; }
+      .walk .cell { min-height: 62vh; display: flex; flex-direction: column; justify-content: center; transition: opacity .35s ease; }
+      .walk.walking .cell:not(.current) { opacity: .5; }
+      .walk .per-step { display: none; }
+      .pin { position: relative; }
+      .pinned { position: sticky; top: calc(50vh - 180px); }
+
       @media (max-width: 899px) {
         .grid { grid-template-columns: 1fr; gap: 32px; }
+        .walk, .split { grid-template-columns: 1fr; gap: 0; }
+        .walk .pin { display: none; }
+        .walk .per-step { display: block; order: -1; margin-bottom: 18px; }
+        .walk .cell { min-height: 0; padding-bottom: 44px; }
+        .walk.walking .cell:not(.current) { opacity: 1; }
+        .split .pin { order: -1; margin-bottom: 24px; }
+        .split .pinned { position: relative; top: auto; }
         section.band .wrap { padding-top: 64px; padding-bottom: 64px; }
       }
 
@@ -397,30 +430,51 @@ const jsonLd = {
     <section class="band">
       <div class="wrap">
         <h2>How it works</h2>
-        <ol class="grid steps">
-          <li class="cell">
+        <div class="walk" data-steps>
+        <ol class="steps">
+          <li class="cell" data-step="1">
+            <figure class="stage per-step" data-scene="post" data-beat="1" aria-hidden="true">
+              <img data-still alt="" width="480" height="360" loading="lazy" decoding="async" />
+              <noscript><img src="/scenes/post-1-noon.webp" alt="" width="480" height="360" loading="lazy" decoding="async" /></noscript>
+            </figure>
             <h3>Sign in to a Matrix homeserver</h3>
             <p>Any homeserver, with a password. SuperMessage is a client and keeps no store of
               its own; the people you talk to can use Element or Cinny.</p>
           </li>
-          <li class="cell">
+          <li class="cell" data-step="2">
+            <figure class="stage per-step" data-scene="post" data-beat="2" aria-hidden="true">
+              <img data-still alt="" width="480" height="360" loading="lazy" decoding="async" />
+              <noscript><img src="/scenes/post-2-noon.webp" alt="" width="480" height="360" loading="lazy" decoding="async" /></noscript>
+            </figure>
             <h3>Agents post into the room</h3>
             <p>SuperMessage does not run agents. Agents running under AgentPod post turns and
               permission requests; SuperPipeline posts approval gates. Each renders as a card,
               and only as well as what the sender included.</p>
           </li>
-          <li class="cell">
+          <li class="cell" data-step="3">
+            <figure class="stage per-step" data-scene="post" data-beat="3" aria-hidden="true">
+              <img data-still alt="" width="480" height="360" loading="lazy" decoding="async" />
+              <noscript><img src="/scenes/post-3-noon.webp" alt="" width="480" height="360" loading="lazy" decoding="async" /></noscript>
+            </figure>
             <h3>You answer on the card</h3>
             <p>Answered is not resolved. After you choose, a gate card reads “waiting for the
               board” until the board's receipt arrives in the room. That needs the AgentPod
               application service; ordinary chat does not.</p>
           </li>
         </ol>
+        <div class="pin">
+          <figure class="stage pinned" data-scene="post" data-beat="1" aria-hidden="true">
+              <img data-still alt="" width="480" height="360" loading="lazy" decoding="async" />
+              <noscript><img src="/scenes/post-1-noon.webp" alt="" width="480" height="360" loading="lazy" decoding="async" /></noscript>
+            </figure>
+        </div>
+        </div>
       </div>
     </section>
 
     <section class="band">
-      <div class="wrap prose">
+      <div class="wrap split">
+        <div class="prose">
         <h2>What it's like to use</h2>
         <p>
           Say you ask in a room where a migration got to. The agent working on it answers with a
@@ -440,6 +494,13 @@ const jsonLd = {
           A colleague in the same room on Element sees each card as a plain sentence instead.
           Nothing about the room depends on SuperMessage.
         </p>
+        </div>
+        <div class="pin">
+          <figure class="stage pinned" data-scene="live" aria-hidden="true">
+              <img data-still alt="" width="480" height="360" loading="lazy" decoding="async" />
+              <noscript><img src="/scenes/live-noon.webp" alt="" width="480" height="360" loading="lazy" decoding="async" /></noscript>
+            </figure>
+        </div>
       </div>
     </section>
 
@@ -499,6 +560,9 @@ const jsonLd = {
 
     </Frame>
 
+    <script>
+      import '../scripts/scenes/loader.js';
+    </script>
     <script is:inline>
       (function () {
         var room = document.querySelector('.hero-demo .room');
