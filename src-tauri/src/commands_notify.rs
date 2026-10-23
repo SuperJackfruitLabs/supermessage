@@ -50,10 +50,14 @@ pub fn notification_permission<R: Runtime>(
     Ok(permission_word(state).to_owned())
 }
 
-/// Removes every delivered notification (`LocalNotifier.swift:101-107`).
+/// Removes every delivered notification (`LocalNotifier.swift:101-107`). Each close
+/// is a bus round trip, so they run on the blocking pool, never on the main thread.
 #[tauri::command]
-pub fn notification_clear_all(poster: State<'_, Arc<dyn Poster>>) {
-    poster.withdraw_all();
+pub async fn notification_clear_all(poster: State<'_, Arc<dyn Poster>>) -> Result<(), String> {
+    let poster = Arc::clone(&poster);
+    tokio::task::spawn_blocking(move || poster.withdraw_all())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Notifications for rooms whose roster row changed between two snapshots. The core
@@ -203,13 +207,14 @@ mod tests {
         }
     }
 
-    struct Recording(Mutex<u32>);
+    /// Records the thread each withdraw ran on.
+    struct Recording(Mutex<Vec<std::thread::ThreadId>>);
     impl Poster for Recording {
         fn post(&self, _: &crate::notify::PostedNote) -> Result<(), String> {
             Ok(())
         }
         fn withdraw_all(&self) {
-            *self.0.lock().unwrap() += 1;
+            self.0.lock().unwrap().push(std::thread::current().id());
         }
     }
 
@@ -224,14 +229,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn notification_clear_all_withdraws_through_the_poster() {
+    #[tokio::test]
+    async fn notification_clear_all_withdraws_through_the_poster_off_this_thread() {
         let app = tauri::test::mock_app();
-        let rec = Arc::new(Recording(Mutex::new(0)));
+        let rec = Arc::new(Recording(Mutex::new(Vec::new())));
         let poster: Arc<dyn Poster> = rec.clone();
         app.manage(poster);
-        notification_clear_all(app.state::<Arc<dyn Poster>>());
-        assert_eq!(*rec.0.lock().unwrap(), 1);
+        notification_clear_all(app.state::<Arc<dyn Poster>>())
+            .await
+            .unwrap();
+        let on = rec.0.lock().unwrap();
+        assert_eq!(on.len(), 1, "withdrawn once");
+        assert_ne!(on[0], std::thread::current().id(), "on the blocking pool");
     }
 
     /// Signed in against a mock homeserver that records every request, so the test

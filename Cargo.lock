@@ -6551,7 +6551,6 @@ dependencies = [
  "matrix-sdk-test",
  "matrix-sdk-ui",
  "mime",
- "notify-rust",
  "rand 0.9.5",
  "rustls",
  "serde",
@@ -6570,6 +6569,7 @@ dependencies = [
  "tracing-subscriber",
  "webkit2gtk",
  "wiremock",
+ "zbus",
 ]
 
 [[package]]

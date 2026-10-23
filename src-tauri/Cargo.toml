@@ -75,8 +75,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 tauri-plugin-dialog = "2"
 
 # Desktop notifications (parity M6). Posts on macOS and Windows and answers the
-# permission question; its Actions API is mobile-only, so Linux, where answer
-# buttons are wanted (open question Q4), posts through `notify-rust` directly.
+# permission question. Linux, where answer buttons are wanted (open question
+# Q4), speaks the Desktop Notifications protocol itself over `zbus`.
 # The webview is granted no `notification:*` permission: Rust posts, the page
 # only asks Rust to.
 tauri-plugin-notification = "=2.7.0"
@@ -134,10 +134,12 @@ tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
 tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 
 
-# The plugin's own Linux backend (it resolves the same copy), used directly
-# because the plugin cannot carry answer buttons on desktop (Q4).
+# The D-Bus client the notification plugin and `notify-rust` already resolve,
+# used directly so one session-bus connection carries every notification and
+# hears every press (`notify::SessionBusBackend`), rather than `notify-rust`'s
+# connection (and executor thread) per shown notification.
 [target.'cfg(target_os = "linux")'.dependencies]
-notify-rust = "=4.18.0"
+zbus = "=5.19.0"
 # WebKitGTK's settings and permission-request signal, for the microphone (C2). The copy wry resolves.
 webkit2gtk = "2.0"
 

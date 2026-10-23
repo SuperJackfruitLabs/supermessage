@@ -7,7 +7,6 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::Value;
 use supermessage_core::error::CoreResult;
 use supermessage_core::notification_policy::{self, NotificationAnswer, NotificationResponse};
 use supermessage_core::session::Session;
@@ -82,19 +81,6 @@ impl<R: Runtime> Opener for WindowOpener<R> {
         let _ = window.set_focus();
         let _ = window.emit(OPEN_EVENT, serde_json::json!({ "roomId": room_id }));
     }
-}
-
-/// The press's info as the core's string map. Anything that is not a string is dropped.
-pub fn info_map(user_info: &Value) -> HashMap<String, String> {
-    user_info
-        .as_object()
-        .map(|object| {
-            object
-                .iter()
-                .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_owned())))
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 /// Carries out what the core says a press means.
@@ -427,13 +413,10 @@ mod tests {
         let (poster, server, mut rx) = crate::notify::fake::poster(true);
         post_planned(&poster, note).unwrap();
         server.press(server.last_id(), action);
-        let taken = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .expect("the press is reported")
-            .expect("the channel is open");
+        let taken = rx.try_recv().expect("the press is reported");
         handle(
             taken.action_id,
-            info_map(&taken.user_info),
+            taken.user_info,
             &**rec,
             &**rec,
             rec.clone(),
@@ -495,12 +478,5 @@ mod tests {
         press_through_the_poster(&rec, &permission_note(), ACTION_ALLOW_ONCE).await;
         assert_eq!(*rec.sent.lock().unwrap(), ["permission !r:x allow_once"]);
         assert!(rec.opened.lock().unwrap().is_empty());
-    }
-
-    #[test]
-    fn a_press_info_keeps_only_strings() {
-        let info = info_map(&serde_json::json!({ "roomId": "!r:x", "n": 3 }));
-        assert_eq!(info.len(), 1);
-        assert_eq!(info["roomId"], "!r:x");
     }
 }

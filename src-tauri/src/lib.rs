@@ -301,7 +301,7 @@ pub fn run() {
             {
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
                 let poster: Arc<dyn notify::Poster> = Arc::new(notify::XdgPoster::new(
-                    Arc::new(notify::NotifyRustBackend),
+                    Arc::new(notify::SessionBusBackend::new()),
                     tx,
                 ));
                 app.manage(poster);
@@ -446,7 +446,7 @@ fn spawn_action_consumer(app: tauri::AppHandle) {
                 let poster = app.state::<Arc<dyn notify::Poster>>().inner().clone();
                 notify_actions::handle(
                     taken.action_id,
-                    notify_actions::info_map(&taken.user_info),
+                    taken.user_info,
                     &*app.state::<Session>(),
                     &notify_actions::WindowOpener(app.clone()),
                     poster,
