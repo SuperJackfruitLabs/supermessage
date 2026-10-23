@@ -127,20 +127,34 @@ pub fn notification_delivers(note: PlannedNotification, mode: Option<Notificatio
     notification_policy::delivers(&note, mode)
 }
 
-/// Shows `note` with the buttons and info the core gives its category.
+/// Shows `note` with the buttons and info the core gives its category, for the account
+/// signed in now.
 #[tauri::command]
 pub async fn notification_post(
     note: PlannedNotification,
     poster: State<'_, Arc<dyn Poster>>,
+    session: State<'_, Session>,
 ) -> Result<(), String> {
     let poster = Arc::clone(&poster);
+    let account = signed_in_account(&session).await;
     // The server round trip blocks; keep it off the async workers.
-    tokio::task::spawn_blocking(move || post_planned(poster.as_ref(), &note))
+    tokio::task::spawn_blocking(move || post_planned(poster.as_ref(), &note, account))
         .await
         .map_err(|e| e.to_string())?
 }
 
-pub(crate) fn post_planned(poster: &dyn Poster, note: &PlannedNotification) -> Result<(), String> {
+/// The Matrix user id signed in now, if any.
+pub(crate) async fn signed_in_account(session: &Session) -> Option<String> {
+    let client = session.client().await?;
+    client.user_id().map(ToString::to_string)
+}
+
+/// Posts `note` for `account`, the one signed in when it was planned.
+pub(crate) fn post_planned(
+    poster: &dyn Poster,
+    note: &PlannedNotification,
+    account: Option<String>,
+) -> Result<(), String> {
     let actions = notification_policy::actions(note.category)
         .into_iter()
         // The notification's own click already opens the room; "Open" as well would
@@ -159,6 +173,7 @@ pub(crate) fn post_planned(poster: &dyn Poster, note: &PlannedNotification) -> R
         body: body_with_subtitle(note.subtitle.as_deref(), &note.body),
         actions,
         user_info: notification_policy::user_info(note),
+        account,
     })
 }
 
@@ -481,7 +496,7 @@ mod tests {
     #[test]
     fn notification_post_carries_the_cores_actions_and_user_info() {
         let rec = Capturing(Mutex::new(Vec::new()));
-        post_planned(&rec, &planned(NotificationCategory::Permission)).unwrap();
+        post_planned(&rec, &planned(NotificationCategory::Permission), None).unwrap();
         let posted = rec.0.lock().unwrap();
         let note = &posted[0];
         assert_eq!(note.id, "$ask");
@@ -500,6 +515,18 @@ mod tests {
     }
 
     #[test]
+    fn a_note_is_posted_for_the_account_it_was_planned_for() {
+        let rec = Capturing(Mutex::new(Vec::new()));
+        post_planned(
+            &rec,
+            &planned(NotificationCategory::Message),
+            Some("@me:x".into()),
+        )
+        .unwrap();
+        assert_eq!(rec.0.lock().unwrap()[0].account.as_deref(), Some("@me:x"));
+    }
+
+    #[test]
     fn a_note_without_actions_still_carries_its_room() {
         // A message has no actions and a decision's only one is the click itself; the
         // click must still find its room (`notification_policy::response`).
@@ -508,7 +535,7 @@ mod tests {
             NotificationCategory::Decision,
         ] {
             let rec = Capturing(Mutex::new(Vec::new()));
-            post_planned(&rec, &planned(category)).unwrap();
+            post_planned(&rec, &planned(category), None).unwrap();
             let posted = rec.0.lock().unwrap();
             assert!(posted[0].actions.is_empty());
             assert_eq!(
@@ -523,10 +550,10 @@ mod tests {
     fn a_decision_note_has_no_button_of_its_own() {
         // "Open" is the notification's own click; a second button would repeat it.
         let rec = Capturing(Mutex::new(Vec::new()));
-        post_planned(&rec, &planned(NotificationCategory::Decision)).unwrap();
+        post_planned(&rec, &planned(NotificationCategory::Decision), None).unwrap();
         assert!(rec.0.lock().unwrap()[0].actions.is_empty());
         let rec = Capturing(Mutex::new(Vec::new()));
-        post_planned(&rec, &planned(NotificationCategory::Gate)).unwrap();
+        post_planned(&rec, &planned(NotificationCategory::Gate), None).unwrap();
         let ids: Vec<String> = rec.0.lock().unwrap()[0]
             .actions
             .iter()

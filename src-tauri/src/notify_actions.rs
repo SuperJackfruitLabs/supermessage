@@ -2,7 +2,6 @@
 //! room, and the body opens that room. The core decides which (`notification_policy::response`,
 //! the port of `NotificationRouter.swift:113-160`); this file only carries it out.
 
-use std::collections::HashMap;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,7 +12,7 @@ use supermessage_core::session::Session;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 use crate::commands_notify::post_planned;
-use crate::notify::Poster;
+use crate::notify::{ActionTaken, Poster};
 
 /// The page listens for this and selects the room.
 pub const OPEN_EVENT: &str = "sm://notification/open";
@@ -25,8 +24,11 @@ const XDG_DEFAULT_ACTION: &str = "default";
 /// (`NotificationAnswerer.swift:22`). A desktop has no system limit; this is iOS's number.
 pub const ANSWER_BUDGET: Duration = Duration::from_secs(15);
 
-/// Sends an answer into its room, open or not.
+/// The signed-in session: who it is, and how it sends an answer into a room, open or not.
 pub trait Answerer: Send + Sync {
+    /// The Matrix user id signed in now, if any.
+    fn account(&self) -> impl Future<Output = Option<String>> + Send;
+
     fn permission(
         &self,
         room_id: &str,
@@ -45,6 +47,10 @@ pub trait Answerer: Send + Sync {
 }
 
 impl Answerer for Session {
+    async fn account(&self) -> Option<String> {
+        crate::commands_notify::signed_in_account(self).await
+    }
+
     async fn permission(&self, room_id: &str, option_id: &str) -> CoreResult<()> {
         self.send_permission_answer(room_id, option_id).await
     }
@@ -83,33 +89,34 @@ impl<R: Runtime> Opener for WindowOpener<R> {
     }
 }
 
-/// Carries out what the core says a press means.
+/// Carries out what the core says a press means, if the note's account is still the one
+/// signed in.
 pub async fn handle(
-    action_id: String,
-    user_info: HashMap<String, String>,
+    taken: ActionTaken,
     answerer: &impl Answerer,
     opener: &impl Opener,
     poster: Arc<dyn Poster>,
 ) {
-    handle_within(
-        ANSWER_BUDGET,
-        action_id,
-        user_info,
-        answerer,
-        opener,
-        poster,
-    )
-    .await;
+    handle_within(ANSWER_BUDGET, taken, answerer, opener, poster).await;
 }
 
 async fn handle_within(
     budget: Duration,
-    action_id: String,
-    user_info: HashMap<String, String>,
+    taken: ActionTaken,
     answerer: &impl Answerer,
     opener: &impl Opener,
     poster: Arc<dyn Poster>,
 ) {
+    let ActionTaken {
+        action_id,
+        user_info,
+        account,
+    } = taken;
+    // A note left from another account (or from before a sign-out) acts on nothing: not
+    // an answer, not even opening a room, in the session signed in now.
+    if account.is_none() || answerer.account().await != account {
+        return;
+    }
     // The XDG protocol calls a click on the notification itself "default"; it is the core's Open.
     let action_id = if action_id == XDG_DEFAULT_ACTION {
         notification_policy::ACTION_OPEN.to_owned()
@@ -126,9 +133,10 @@ async fn handle_within(
             if !matches!(sent, Ok(Ok(()))) {
                 // The server round trip blocks; keep it off the async workers.
                 let failure = notification_policy::answer_failed(&room_id);
-                let _ =
-                    tokio::task::spawn_blocking(move || post_planned(poster.as_ref(), &failure))
-                        .await;
+                let _ = tokio::task::spawn_blocking(move || {
+                    post_planned(poster.as_ref(), &failure, account)
+                })
+                .await;
             }
         }
     }
@@ -173,14 +181,32 @@ mod tests {
         ACTION_REJECT_GATE,
     };
 
-    #[derive(Default)]
+    /// The account the tests' notes are posted for and the session is signed in as.
+    const ME: &str = "@me:x";
+
     struct Recording {
+        /// Who the session is signed in as.
+        account: Option<String>,
         sent: Mutex<Vec<String>>,
         opened: Mutex<Vec<String>>,
         posted: Mutex<Vec<PostedNote>>,
         posted_on: Mutex<Vec<std::thread::ThreadId>>,
         refuse: bool,
         hang: bool,
+    }
+
+    impl Default for Recording {
+        fn default() -> Self {
+            Self {
+                account: Some(ME.into()),
+                sent: Default::default(),
+                opened: Default::default(),
+                posted: Default::default(),
+                posted_on: Default::default(),
+                refuse: false,
+                hang: false,
+            }
+        }
     }
 
     impl Recording {
@@ -197,6 +223,9 @@ mod tests {
     }
 
     impl Answerer for Recording {
+        async fn account(&self) -> Option<String> {
+            self.account.clone()
+        }
         async fn permission(&self, room_id: &str, option_id: &str) -> CoreResult<()> {
             self.outcome(format!("permission {room_id} {option_id}"))
                 .await
@@ -270,15 +299,16 @@ mod tests {
         }
     }
 
+    fn taken(action: &str, note: &PlannedNotification, account: Option<&str>) -> ActionTaken {
+        ActionTaken {
+            action_id: action.to_owned(),
+            user_info: notification_policy::user_info(note),
+            account: account.map(Into::into),
+        }
+    }
+
     async fn press(rec: &Arc<Recording>, action: &str, note: &PlannedNotification) {
-        handle(
-            action.to_owned(),
-            notification_policy::user_info(note),
-            &**rec,
-            &**rec,
-            rec.clone(),
-        )
-        .await;
+        handle(taken(action, note, Some(ME)), &**rec, &**rec, rec.clone()).await;
     }
 
     #[tokio::test]
@@ -380,8 +410,7 @@ mod tests {
         let note = permission_note();
         handle_within(
             Duration::from_millis(100),
-            ACTION_ALLOW_ONCE.to_owned(),
-            notification_policy::user_info(&note),
+            taken(ACTION_ALLOW_ONCE, &note, Some(ME)),
             &*rec,
             &*rec,
             rec.clone(),
@@ -411,17 +440,10 @@ mod tests {
         action: &str,
     ) {
         let (poster, server, mut rx) = crate::notify::fake::poster(true);
-        post_planned(&poster, note).unwrap();
+        post_planned(&poster, note, Some(ME.into())).unwrap();
         server.press(server.last_id(), action);
         let taken = rx.try_recv().expect("the press is reported");
-        handle(
-            taken.action_id,
-            taken.user_info,
-            &**rec,
-            &**rec,
-            rec.clone(),
-        )
-        .await;
+        handle(taken, &**rec, &**rec, rec.clone()).await;
     }
 
     #[cfg(target_os = "linux")]
@@ -478,5 +500,63 @@ mod tests {
         press_through_the_poster(&rec, &permission_note(), ACTION_ALLOW_ONCE).await;
         assert_eq!(*rec.sent.lock().unwrap(), ["permission !r:x allow_once"]);
         assert!(rec.opened.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_press_on_another_accounts_note_does_nothing() {
+        // Signed in as B; the note was posted for A and outlived A's sign-out (the
+        // withdraw failed, or the OS cannot withdraw).
+        let rec = Arc::new(Recording {
+            account: Some("@b:x".into()),
+            ..Default::default()
+        });
+        for action in [ACTION_ALLOW_ONCE, "default"] {
+            handle(
+                taken(action, &permission_note(), Some("@a:x")),
+                &*rec,
+                &*rec,
+                rec.clone(),
+            )
+            .await;
+        }
+        assert!(rec.sent.lock().unwrap().is_empty(), "no answer as B");
+        assert!(rec.opened.lock().unwrap().is_empty(), "no room opened");
+        assert!(rec.posted.lock().unwrap().is_empty(), "nothing posted");
+    }
+
+    #[tokio::test]
+    async fn a_press_while_signed_out_does_nothing() {
+        let rec = Arc::new(Recording {
+            account: None,
+            ..Default::default()
+        });
+        handle(
+            taken("default", &permission_note(), Some(ME)),
+            &*rec,
+            &*rec,
+            rec.clone(),
+        )
+        .await;
+        // A note posted with no account known never acts either.
+        let rec2 = Arc::new(Recording::default());
+        handle(
+            taken("default", &permission_note(), None),
+            &*rec2,
+            &*rec2,
+            rec2.clone(),
+        )
+        .await;
+        assert!(rec.opened.lock().unwrap().is_empty());
+        assert!(rec2.opened.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_failure_note_is_posted_for_the_same_account() {
+        let rec = Arc::new(Recording {
+            refuse: true,
+            ..Default::default()
+        });
+        press(&rec, ACTION_ALLOW_ONCE, &permission_note()).await;
+        assert_eq!(rec.posted.lock().unwrap()[0].account.as_deref(), Some(ME));
     }
 }

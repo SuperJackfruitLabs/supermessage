@@ -445,8 +445,7 @@ fn spawn_action_consumer(app: tauri::AppHandle) {
             tauri::async_runtime::spawn(async move {
                 let poster = app.state::<Arc<dyn notify::Poster>>().inner().clone();
                 notify_actions::handle(
-                    taken.action_id,
-                    taken.user_info,
+                    taken,
                     &*app.state::<Session>(),
                     &notify_actions::WindowOpener(app.clone()),
                     poster,

@@ -37,6 +37,11 @@ pub struct PostedNote {
     /// with every press, the click on the note itself included.
     #[serde(default)]
     pub user_info: HashMap<String, String>,
+    /// The account (Matrix user id) signed in when the note was posted. A press on the
+    /// note acts only while that account is still the one signed in, so a note that
+    /// outlived its sign-out can never act on the next account.
+    #[serde(default)]
+    pub account: Option<String>,
 }
 
 /// A button the core offered for a note.
@@ -75,6 +80,8 @@ pub struct ActionTaken {
     pub action_id: String,
     /// The note's own info, as the core gave it ([`PostedNote::user_info`]).
     pub user_info: HashMap<String, String>,
+    /// Who the note was posted for ([`PostedNote::account`]).
+    pub account: Option<String>,
 }
 
 /// Receives the buttons the reader presses (Linux); `notify_actions` consumes them.
@@ -167,6 +174,7 @@ mod xdg {
         note_id: String,
         server_id: u32,
         user_info: HashMap<String, String>,
+        account: Option<String>,
     }
 
     #[derive(Default)]
@@ -209,6 +217,7 @@ mod xdg {
                     let _ = sender.send(ActionTaken {
                         action_id: action,
                         user_info: known.user_info,
+                        account: known.account,
                     });
                 }
             }
@@ -298,6 +307,7 @@ mod xdg {
                     note_id: note.id.clone(),
                     server_id,
                     user_info: note.user_info.clone(),
+                    account: note.account.clone(),
                 });
                 let excess = state.known.len().saturating_sub(MAX_KNOWN);
                 state.known.drain(..excess).map(|k| k.server_id).collect()
@@ -456,6 +466,13 @@ mod xdg {
 }
 
 /// macOS and Windows: informational notifications through the plugin.
+///
+/// Two known limits, both the plugin's (`tauri-plugin-notification` 2.7.0,
+/// `desktop.rs`): it cannot remove a shown notification there, by id or all at once,
+/// so sign-out leaves the last account's notes in Notification Center / Action Center
+/// (RF5); and since no action handler is registered, a click reports nothing, so such a
+/// note can never act on the next account (and, through [`PostedNote::account`] and
+/// `notify_actions::handle`, would not if one were).
 #[cfg(not(target_os = "linux"))]
 pub struct PluginPoster<R: tauri::Runtime> {
     app: tauri::AppHandle<R>,
@@ -483,6 +500,8 @@ impl<R: tauri::Runtime> Poster for PluginPoster<R> {
 
     fn withdraw_all(&self) {
         use tauri_plugin_notification::NotificationExt;
+        // A no-op on macOS and Windows today (see above); kept so a plugin that learns to
+        // remove notes there does so without a change here.
         let _ = self.app.notification().remove_all_active();
     }
 }
@@ -647,6 +666,7 @@ mod tests {
                 body: "Ship it?".into(),
                 actions,
                 user_info: HashMap::from([("sm.roomId".to_owned(), "!r:x".to_owned())]),
+                account: Some("@me:x".into()),
             }
         }
 
@@ -768,7 +788,13 @@ mod tests {
                 .insert("sm.allowOptionId".into(), "allow_once".into());
             poster.post(&posted).unwrap();
             server.press(101, "approve");
-            assert_eq!(rx.try_recv().unwrap().user_info, posted.user_info);
+            let taken = rx.try_recv().unwrap();
+            assert_eq!(taken.user_info, posted.user_info);
+            assert_eq!(
+                taken.account.as_deref(),
+                Some("@me:x"),
+                "and who it was for"
+            );
         }
 
         #[test]
