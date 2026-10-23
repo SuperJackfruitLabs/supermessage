@@ -197,6 +197,7 @@ struct PreviewClient: SessionClient {
 
     func setRoomNotifications(roomId: String, mode: NotificationMode) async throws {}
     func setRoomPinned(roomId: String, pinned: Bool) async throws {}
+    func markRoomReadFromList(roomId: String) async throws -> Bool { false }
     func roomInfo(roomId: String) async throws -> RoomInfoDto { PreviewFixtures.roomInfo }
     func roomAvatarFull(roomId: String) async throws -> String? { nil }
 

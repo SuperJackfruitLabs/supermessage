@@ -447,6 +447,11 @@ void uniffi_supermessage_ffi_fn_method_core_logout(void*_Nonnull ptr, RustCallSt
 void uniffi_supermessage_ffi_fn_method_core_mark_room_read(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MARK_ROOM_READ_FROM_LIST
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MARK_ROOM_READ_FROM_LIST
+int8_t uniffi_supermessage_ffi_fn_method_core_mark_room_read_from_list(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MEDIA_AUDIO
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_MEDIA_AUDIO
 RustBuffer uniffi_supermessage_ffi_fn_method_core_media_audio(void*_Nonnull ptr, RustBuffer event_id, int8_t opus_in_caf, RustCallStatus *_Nonnull out_status
@@ -1856,6 +1861,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_logout(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MARK_ROOM_READ
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MARK_ROOM_READ
 uint16_t uniffi_supermessage_ffi_checksum_method_core_mark_room_read(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MARK_ROOM_READ_FROM_LIST
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_MARK_ROOM_READ_FROM_LIST
+uint16_t uniffi_supermessage_ffi_checksum_method_core_mark_room_read_from_list(void
     
 );
 #endif

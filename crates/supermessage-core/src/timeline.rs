@@ -2049,7 +2049,7 @@ fn timeline_drift<'a>(
 }
 
 /// Builds the SDK timeline for `room` with this app's settings.
-async fn build_sdk_timeline(room: &Room) -> CoreResult<Timeline> {
+pub(crate) async fn build_sdk_timeline(room: &Room) -> CoreResult<Timeline> {
     room.timeline_builder()
         .event_filter(timeline_event_filter)
         // `TimelineItemDto::read_by` (see its doc comment) has nothing

@@ -1,14 +1,18 @@
 import Foundation
+import SupermessageFFI
 
 /// How the signed-in account is named in the app's own chrome.
 public enum AccountLabel {
-    /// The localpart — `rakesh` for `@rakesh:id.agentpod.dev` — or the id
-    /// as given when it is not a Matrix id.
+    /// The person behind the Matrix id — `Rakesh` for `@rakesh:id.agentpod.dev`.
+    ///
+    /// The core's `people_label`, which is `display_name::user_label` for one
+    /// id, so the account is named the way Android and desktop name it (and
+    /// the way a bridge's `@_agentpod_ganesha:…` reads `Ganesha`) rather than
+    /// by a localpart this file cut out of the id itself. "Signed in" before
+    /// the account is known.
     public static func name(of userId: String?) -> String {
-        guard let id = userId, id.hasPrefix("@"), let colon = id.firstIndex(of: ":") else {
-            return userId ?? "Signed in"
-        }
-        return String(id[id.index(after: id.startIndex)..<colon])
+        guard let userId else { return "Signed in" }
+        return peopleLabel(userIds: [userId])
     }
 
     /// The first letter of `name`, capitalised; "?" before the account is known.

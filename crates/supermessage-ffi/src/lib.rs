@@ -256,6 +256,15 @@ impl Core {
         Ok(())
     }
 
+    /// Mark `room_id` read up to its latest event, whether or not it is the
+    /// open room: the roster's swipe. Returns whether a receipt was sent
+    /// (`false` when there was nothing newer to acknowledge).
+    ///
+    /// `mark_room_read` above is for the open room and refuses any other.
+    pub fn mark_room_read_from_list(&self, room_id: String) -> Result<bool, FfiError> {
+        Ok(self.block(self.session.mark_room_read(&room_id))?)
+    }
+
     /// Send a plain-text message to the focused room.
     ///
     /// `room_id` is checked against whichever room is actually focused before

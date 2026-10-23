@@ -281,6 +281,10 @@ public actor CoreClient {
         try await run { try $0.setRoomPinned(roomId: roomId, pinned: pinned) }
     }
 
+    public func markRoomReadFromList(roomId: String) async throws -> Bool {
+        try await run { try $0.markRoomReadFromList(roomId: roomId) }
+    }
+
     public func editMessage(roomId: String, eventId: String, body: String) async throws {
         try await run { try $0.editMessage(roomId: roomId, eventId: eventId, body: body) }
     }

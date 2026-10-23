@@ -64,10 +64,12 @@ public final class Session {
     ) {
         self.client = client
         self.storeGuard = storeGuard
-        // Marking read from the roster — a swipe — goes through the same core
-        // call opening a room makes, so the two cannot mean different things.
+        // Marking read from the roster — a swipe — is the core's call for a
+        // room that is not open. `mark_room_read` (what opening a room makes)
+        // refuses every room but the focused one, so the swipe cannot use it.
         rooms = RoomsStore(
-            client: client, markRead: { [client] roomId in try await client.markRoomRead(roomId: roomId) })
+            client: client,
+            markRead: { [client] roomId in _ = try await client.markRoomReadFromList(roomId: roomId) })
         spaces = SpacesStore(client: client)
         avatars = AvatarCache(client: client)
         faces = AvatarCache.forMembers(client: client)
@@ -78,6 +80,14 @@ public final class Session {
         staged = StagedAttachment(client: client)
         safety = SafetyStore(defaults: defaults)
         safety.hiddenEventsDidChange = { [weak self] _ in self?.pushHiddenEvents() }
+    }
+
+    /// The hidden set is per account: load the one of whoever just reached
+    /// signed-in, and hand it to the core. When the account cannot be read
+    /// nothing is hidden and nothing is saved.
+    private func bindSafety(adoptLegacy: Bool) async {
+        safety.bind(owner: await account()?.userId, adoptLegacy: adoptLegacy)
+        pushHiddenEvents()
     }
 
     /// The last push of the hidden set; the next waits for it, so two quick
@@ -151,8 +161,11 @@ public final class Session {
             case .withStreams:
                 let restored = try await client.restoreSession(sink: pump)
                 phase = restored ? .signedIn : .signedOut
+                // Nothing restored means no account is signed in; whatever this
+                // device remembered about one must not reach the next.
+                if !restored { safety.clearAll() }
                 if restored {
-                    pushHiddenEvents()
+                    await bindSafety(adoptLegacy: true)
                     beginDraining()
                     await load()
                 }
@@ -163,7 +176,8 @@ public final class Session {
                 }
                 streamsDeferred = restored
                 phase = restored ? .signedIn : .signedOut
-                if restored { pushHiddenEvents() }
+                if !restored { safety.clearAll() }
+                if restored { await bindSafety(adoptLegacy: true) }
                 // The reader opened the app while the restore ran: the
                 // foreground's `scenePhaseChanged` found no session to start
                 // then, so start it now.
@@ -221,7 +235,7 @@ public final class Session {
             try await client.login(
                 homeserver: homeserver, username: username, password: password, sink: pump)
             phase = .signedIn
-            pushHiddenEvents()
+            await bindSafety(adoptLegacy: false)
             beginDraining()
             await load()
             setUpRecoveryIfNeeded()
@@ -380,6 +394,7 @@ public final class Session {
     /// Blocking afterwards is a second, separate request; if it fails the
     /// report still stands, and the refusal says which half did not happen.
     public func report(_ subject: ReportSubject, reason: String, alsoBlock: Bool) async -> String? {
+        let generation = safety.generation
         let refused: String? = await safetyRefusal {
             switch subject {
             case let .message(roomId, eventId, _, _, _):
@@ -392,7 +407,7 @@ public final class Session {
         }
         if let refused { return refused }
         if case let .message(_, eventId, _, _, _) = subject {
-            safety.hide(eventId: eventId)
+            safety.hide(eventId: eventId, generation: generation)
         }
         if alsoBlock, let target = subject.blockable, !safety.isBlocked(target.userId) {
             if let blockRefused = await block(target.userId) {
