@@ -64,10 +64,12 @@ public final class Session {
     ) {
         self.client = client
         self.storeGuard = storeGuard
-        // Marking read from the roster — a swipe — goes through the same core
-        // call opening a room makes, so the two cannot mean different things.
+        // Marking read from the roster — a swipe — is the core's call for a
+        // room that is not open. `mark_room_read` (what opening a room makes)
+        // refuses every room but the focused one, so the swipe cannot use it.
         rooms = RoomsStore(
-            client: client, markRead: { [client] roomId in try await client.markRoomRead(roomId: roomId) })
+            client: client,
+            markRead: { [client] roomId in _ = try await client.markRoomReadFromList(roomId: roomId) })
         spaces = SpacesStore(client: client)
         avatars = AvatarCache(client: client)
         faces = AvatarCache.forMembers(client: client)

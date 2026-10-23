@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, onIgnoredUsers } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, onIgnoredUsers } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -312,6 +312,7 @@ describe("session commands", () => {
     ["reportUser invokes report_user with userId and reason", () => reportUser("@a:x", "spam"), "report_user", { userId: "@a:x", reason: "spam" }],
     ["reportReasonRemaining invokes report_reason_remaining with reason", () => reportReasonRemaining("hi"), "report_reason_remaining", { reason: "hi" }],
     ["setRoomNotificationMode passes roomId and mode", () => setRoomNotificationMode("!r:x", "muted"), "set_room_notification_mode", { roomId: "!r:x", mode: "muted" }],
+    ["markRoomReadFromList passes roomId", () => markRoomReadFromList("!r:x"), "mark_room_read_from_list", { roomId: "!r:x" }],
     ["setRoomPinned passes roomId and pinned", () => setRoomPinned("!r:x", true), "set_room_pinned", { roomId: "!r:x", pinned: true }],
     ["knownPeople passes an explicit null query", () => knownPeople(), "known_people", { query: null }],
     ["knownPeople passes the query", () => knownPeople("ate"), "known_people", { query: "ate" }],

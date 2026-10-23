@@ -924,6 +924,34 @@ pub async fn spawn_room_list(
     })
 }
 
+/// Marks `room_id` read by sending a public (`m.read`) receipt on the latest
+/// event the SDK holds for it, without the room being open. Returns whether a
+/// receipt was sent: `false` when the room has no event to point at or its
+/// read state already covers the latest one.
+///
+/// The roster's swipe uses this; opening a room goes through
+/// `FocusedTimeline::mark_read`, which is also what [`crate::session::Session::mark_room_read`]
+/// delegates to when `room_id` is the open room.
+///
+/// The SDK timeline built here is the same one `mark_read` asks, so "latest
+/// event" means the same thing on both paths; it is dropped on return and
+/// never becomes the focused timeline.
+pub(crate) async fn mark_room_read(client: &matrix_sdk::Client, room_id: &str) -> CoreResult<bool> {
+    let parsed =
+        matrix_sdk::ruma::RoomId::parse(room_id).map_err(|e| CoreError::Protocol(e.to_string()))?;
+    let room = client
+        .get_room(&parsed)
+        .ok_or_else(|| CoreError::Protocol("unknown room".into()))?;
+    let timeline = room
+        .timeline()
+        .await
+        .map_err(|e| CoreError::Protocol(e.to_string()))?;
+    timeline
+        .mark_as_read(matrix_sdk::ruma::api::client::receipt::create_receipt::v3::ReceiptType::Read)
+        .await
+        .map_err(|e| CoreError::Protocol(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -1569,5 +1597,109 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1]
         );
+    }
+
+    /// A client over a mock homeserver that has synced `room` with one
+    /// message, `$latest`, and has never had a room open.
+    async fn client_with_a_message_in(
+        server: &matrix_sdk::test_utils::mocks::MatrixMockServer,
+        room: &matrix_sdk::ruma::RoomId,
+    ) -> matrix_sdk::Client {
+        use matrix_sdk::ruma::{event_id, user_id};
+        use matrix_sdk_test::{event_factory::EventFactory, JoinedRoomBuilder};
+
+        let client = server.client_builder().build().await;
+        client.event_cache().subscribe().unwrap();
+        let f = EventFactory::new().room(room);
+        server
+            .mock_sync()
+            .ok_and_run(&client, |builder| {
+                builder.add_joined_room(
+                    JoinedRoomBuilder::new(room).add_timeline_event(
+                        f.text_msg("hello")
+                            .sender(user_id!("@bob:example.org"))
+                            .event_id(event_id!("$latest")),
+                    ),
+                );
+            })
+            .await;
+        client
+    }
+
+    /// A room that is not open is marked read with a receipt on its latest
+    /// event, which is what the roster's swipe needs.
+    ///
+    /// Mutation seen failing: replacing the `mark_as_read` call in
+    /// `mark_room_read` with `Ok(false)` fails this test on the receipt
+    /// mock's `expect(1)` (no request arrives) and on the `true` assertion.
+    #[tokio::test]
+    async fn marking_a_room_that_is_not_open_sends_a_receipt_on_its_latest_event() {
+        use matrix_sdk::ruma::{api::client::receipt::create_receipt::v3::ReceiptType, room_id};
+        use matrix_sdk::test_utils::mocks::MatrixMockServer;
+
+        let server = MatrixMockServer::new().await;
+        let room = room_id!("!unopened:example.org");
+        let client = client_with_a_message_in(&server, room).await;
+        server
+            .mock_send_receipt(ReceiptType::Read)
+            .ok()
+            .expect(1)
+            .named("a public receipt, once")
+            .mount()
+            .await;
+        server
+            .mock_set_room_account_data(matrix_sdk::ruma::events::RoomAccountDataEventType::from(
+                "m.marked_unread",
+            ))
+            .ok()
+            .mount()
+            .await;
+
+        let sent = mark_room_read(&client, room.as_str()).await.unwrap();
+
+        assert!(sent, "a receipt was sent for a room with an unread event");
+        let requests = server.server().received_requests().await.unwrap();
+        let receipt = requests
+            .iter()
+            .find(|r| r.url.path().contains("/receipt/"))
+            .expect("a receipt request");
+        assert!(
+            receipt.url.path().ends_with("/m.read/%24latest")
+                || receipt.url.path().ends_with("/m.read/$latest"),
+            "the receipt names the room's latest event: {}",
+            receipt.url.path()
+        );
+        assert!(
+            receipt.url.path().contains("unopened"),
+            "the receipt is for the room that was asked about: {}",
+            receipt.url.path()
+        );
+    }
+
+    /// A room the account does not know fails and sends nothing: a typo or a
+    /// room it left must not turn into a receipt anywhere else.
+    ///
+    /// Mutation seen failing: swapping the `get_room` lookup for the first
+    /// joined room fails this test (it answers `Ok` and the receipt mock,
+    /// `expect(0)`, sees a request).
+    #[tokio::test]
+    async fn marking_an_unknown_room_fails_and_sends_no_receipt() {
+        use matrix_sdk::ruma::{api::client::receipt::create_receipt::v3::ReceiptType, room_id};
+        use matrix_sdk::test_utils::mocks::MatrixMockServer;
+
+        let server = MatrixMockServer::new().await;
+        let client = client_with_a_message_in(&server, room_id!("!known:example.org")).await;
+        server
+            .mock_send_receipt(ReceiptType::Read)
+            .ok()
+            .expect(0)
+            .mount()
+            .await;
+
+        let err = mark_room_read(&client, "!nowhere:example.org")
+            .await
+            .expect_err("an unknown room cannot be marked read");
+
+        assert!(matches!(err, CoreError::Protocol(_)), "{err:?}");
     }
 }

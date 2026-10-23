@@ -1542,6 +1542,19 @@ impl Session {
         }
     }
 
+    /// Marks `room_id` read without it being open: the roster's swipe.
+    ///
+    /// When `room_id` is the focused room this is `FocusedTimeline::mark_read`;
+    /// otherwise a receipt goes to that room's latest event (see
+    /// `rooms::mark_room_read`). Returns whether a receipt was sent.
+    pub async fn mark_room_read(&self, room_id: &str) -> CoreResult<bool> {
+        let client = self.require_client().await?;
+        if self.focused.focused_room_id().as_deref() == Some(room_id) {
+            return self.focused.mark_read(room_id).await;
+        }
+        rooms::mark_room_read(&client, room_id).await
+    }
+
     pub async fn set_room_pinned(&self, room_id: &str, pinned: bool) -> CoreResult<()> {
         let client = self.require_client().await?;
         let parsed_room_id =
@@ -2523,6 +2536,24 @@ mod tests {
         assert!(session.leave_room("!r:x").await.is_err());
         assert!(!session.has_sent("!r:x"));
         assert!(session.has_sent("!keep:x"));
+    }
+
+    /// Marking a room read needs an account; signed out it refuses and says
+    /// why, rather than looking like a room that was already read.
+    ///
+    /// Mutation seen failing: making `mark_room_read` return `Ok(false)`
+    /// before `require_client` fails this test (it answers `Ok`).
+    #[tokio::test]
+    async fn marking_a_room_read_without_a_session_is_not_ready() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-mark-read-signed-out"),
+            Box::new(MemoryStore::default()),
+        );
+        let err = session
+            .mark_room_read("!r:x")
+            .await
+            .expect_err("no account, no receipt");
+        assert!(matches!(err, CoreError::NotReady), "{err:?}");
     }
 
     #[tokio::test]
