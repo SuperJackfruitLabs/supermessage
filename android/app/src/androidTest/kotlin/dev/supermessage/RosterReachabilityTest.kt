@@ -757,6 +757,9 @@ class RosterReachabilityTest {
             }
         }
         compose.waitForIdle()
+        // The core answers on Dispatchers.IO here, which waitForIdle does not wait for: on CI's
+        // slow AVD the roster had not arrived when the scroll looked for "Alpha".
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Alpha").fetchSemanticsNodes().isNotEmpty() }
 
         compose.onNodeWithText("Alpha").performScrollTo().performClick()
         compose.waitForIdle()
