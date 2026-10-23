@@ -71,6 +71,9 @@ class AvatarCache private constructor(
      */
     private val withoutAvatar = mutableSetOf<String>()
 
+    /** Bumped by [clear]: a fetch begun under an earlier value is a previous account's and is dropped. */
+    private var epoch = 0
+
     /** Fetches in flight, so the many rows that appear at once ask once. */
     private val fetching = mutableSetOf<String>()
 
@@ -165,8 +168,10 @@ class AvatarCache private constructor(
     suspend fun load(roomId: String) {
         if (!shouldFetch(roomId)) return
         beginFetch(roomId)
+        val mine = epoch
         try {
             val fetched = fetch(roomId)
+            if (mine != epoch) return
             if (fetched == null) {
                 rememberAbsent(roomId)
             } else {
@@ -182,6 +187,7 @@ class AvatarCache private constructor(
     }
 
     fun clear() {
+        epoch += 1
         _cache.value = emptyMap()
         order.clear()
         withoutAvatar.clear()

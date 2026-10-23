@@ -76,3 +76,17 @@ internal fun InvitationsRowOpen() {
         )
     }
 }
+
+/** The Chats toolbar: the account's initial at the leading edge, compose at the trailing, the title between. */
+@Preview(name = "Chats toolbar", showBackground = true, widthDp = 411, heightDp = 72)
+@Composable
+internal fun ChatsToolbarPreview() {
+    PreviewGround {
+        dev.supermessage.ChatsToolbar(
+            accountInitial = "R",
+            onAccount = {},
+            onCompose = {},
+            title = { androidx.compose.material3.Text("Chats", style = androidx.compose.material3.MaterialTheme.typography.titleLarge) },
+        )
+    }
+}

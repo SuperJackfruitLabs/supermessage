@@ -1,6 +1,9 @@
 package dev.supermessage
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -199,6 +202,39 @@ class SearchTest {
 
         assertEquals("!target:example.org", opened)
         assertEquals(true, closed)
+    }
+
+    /** As a destination there is nothing to cancel, and opening a result leaves the search where it is. */
+    @Test
+    fun withoutAnOnCloseThereIsNoCancelAndAResultOnlyOpens() {
+        var opened: String? = null
+        val results = listOf(hit("1", roomId = "!target:example.org", body = "found it", timestampMs = 1_000uL))
+        compose.setContent {
+            SearchPanel(scope = null, onOpen = { opened = it }, onClose = null, search = { _, _ -> results })
+        }
+        compose.onNodeWithTag("search-cancel").assertDoesNotExist()
+        compose.onNodeWithTag("search-field").performTextInput("pager")
+        compose.onNodeWithTag("search-field").performImeAction()
+        compose.waitForIdle()
+        compose.onNodeWithTag("search-result-1").performClick()
+        assertEquals("!target:example.org", opened)
+        compose.onNodeWithTag("search-results").assertIsDisplayed()
+    }
+
+    /** A term the caller keeps is the one the field shows, and typing goes back to the caller. */
+    @Test
+    fun aHoistedTermIsTheCallersTerm() {
+        var term by androidx.compose.runtime.mutableStateOf("kept")
+        compose.setContent {
+            SearchPanel(
+                scope = null, onOpen = {}, onClose = null, search = { _, _ -> emptyList() },
+                hoistedTerm = term, onTermChange = { term = it },
+            )
+        }
+        compose.onNodeWithTag("search-field").assertTextContains("kept")
+        compose.onNodeWithTag("search-field").performTextInput("er")
+        compose.waitForIdle()
+        assertTrue("typing reached the caller: $term", term.length == 6 && term.contains("er") && term.contains("kept"))
     }
 
     /**

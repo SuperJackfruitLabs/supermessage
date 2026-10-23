@@ -141,7 +141,7 @@ class RosterReachabilityTest {
         compose.waitForIdle()
 
         // Before this task: no button existed for this at all.
-        compose.onNodeWithTag("roster-open-new-room").performClick()
+        compose.onNodeWithTag("toolbar-new-conversation").performClick()
         compose.waitForIdle()
 
         // The real `NewRoomPanel`, not a stand-in — reached through the
@@ -873,28 +873,7 @@ class RosterReachabilityTest {
         assertEquals(listOf<String?>("!ops:x"), fake.spaceSelected)
     }
 
-    /** Opened with a room selected, search offers that room, narrowed (`SplitShell.swift:121-127`). */
-    @Test
-    fun searchOpenedFromARoomOffersThatRoom() {
-        val fake = FakeCore(
-            roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(joinedRow("!a:example.org", "Atlas"))) },
-            roomInfoResult = { infoOf(it, 4uL) },
-        )
-        val session = sessionOf(fake)
-        compose.setContent {
-            // Two panes: the roster stays on screen beside the open room.
-            Box(Modifier.requiredWidth(800.dp).fillMaxHeight().testTag("test-shell")) {
-                AppRoot(session = session, prefs = preferences())
-            }
-        }
-        compose.waitForIdle()
-        compose.onNodeWithText("Atlas").performScrollTo().performClick()
-        compose.waitForIdle()
-        compose.onNodeWithTag("roster-open-search").performClick()
-        compose.waitForIdle()
-
-        compose.onNodeWithTag("search-scope-room").assertTextEquals("Atlas").assertIsSelected()
-    }
+    // (Search with a room open offers that room: NavigationTest.searchOnATabletOffersTheOpenRoom.)
 
     /** With nothing open, search offers no scope at all. */
     @Test
@@ -906,7 +885,7 @@ class RosterReachabilityTest {
             }
         }
         compose.waitForIdle()
-        compose.onNodeWithTag("roster-open-search").performClick()
+        compose.onNodeWithTag("destination-search").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("search-field").assertIsDisplayed()
         compose.onAllNodesWithTag("search-scope-room").assertCountEquals(0)
@@ -1008,7 +987,7 @@ class RosterReachabilityTest {
         // Machine would have headed the room with its host.
         compose.onAllNodesWithTag("section-header").assertCountEquals(0)
 
-        compose.onNodeWithTag("roster-open-account").performClick()
+        compose.onNodeWithTag("toolbar-account").performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("account-order-waiting").performScrollTo().assertIsSelected()
     }
@@ -1034,7 +1013,7 @@ class RosterReachabilityTest {
             }
         }
         compose.waitForIdle()
-        compose.onNodeWithTag("roster-open-account").performClick()
+        compose.onNodeWithTag("toolbar-account").performClick()
         compose.waitForIdle()
 
         compose.onNodeWithTag("accent-pink").performScrollTo().performClick()
@@ -1049,7 +1028,7 @@ class RosterReachabilityTest {
      * On a phone: list -> room -> back must leave the list as it was. The
      * invitations row stays open ("not stored" means across a restart, not
      * across opening a room), a swipe's Mute/Unmute label is not forgotten, and
-     * the open room is cleared, because Search offers `selectedRow` as its scope.
+     * the open room is cleared.
      */
     @Test
     fun theListSurvivesOpeningARoomAndGoingBackOnAPhone() {

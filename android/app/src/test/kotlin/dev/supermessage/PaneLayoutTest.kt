@@ -1,5 +1,6 @@
 package dev.supermessage
 
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -46,5 +47,24 @@ class PaneLayoutTest {
     fun theBoundaryBelowTwoPanesIsExclusive() {
         assertEquals(1, paneCountFor(599.dp))
         assertEquals(2, paneCountFor(600.dp))
+    }
+
+    // The destinations' bar or rail, by measured width (parity M5 Task 2): the same width rule as the panes.
+
+    @Test
+    fun aPhoneGetsABottomBar() {
+        assertEquals(NavigationSuiteType.NavigationBar, navLayoutFor(411.dp, detailIsCurrentOnOnePane = false))
+        assertEquals(NavigationSuiteType.NavigationBar, navLayoutFor(599.dp, detailIsCurrentOnOnePane = false))
+    }
+
+    @Test
+    fun aTabletGetsARail() {
+        assertEquals(NavigationSuiteType.NavigationRail, navLayoutFor(600.dp, detailIsCurrentOnOnePane = false))
+        assertEquals(NavigationSuiteType.NavigationRail, navLayoutFor(1280.dp, detailIsCurrentOnOnePane = false))
+    }
+
+    @Test
+    fun aRoomOnOnePaneHidesTheBar() {
+        assertEquals(NavigationSuiteType.None, navLayoutFor(411.dp, detailIsCurrentOnOnePane = true))
     }
 }

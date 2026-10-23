@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -52,11 +54,14 @@ internal var SemanticsPropertyReceiver.bounces by BouncesKey
  * **Finishable.** [inbox] is `RosterArrangement.needsYouInbox`'s answer; a row
  * leaves when the core stops saying it needs you, so an empty inbox is a fact
  * rather than a filter. A section with no rows is left out.
+ *
+ * A `null` [inbox] is a roster not yet read: the pane draws nothing, in particular not
+ * "You're all caught up" (iOS has no such state; the store starts empty and iOS reads it first).
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun NeedsYouPane(
-    inbox: NeedsYouInbox,
+    inbox: NeedsYouInbox?,
     now: Instant,
     showsState: Boolean,
     avatarUri: (String) -> String?,
@@ -64,6 +69,8 @@ fun NeedsYouPane(
     onOpenRoom: (String) -> Unit,
     onOpenInfo: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** Hoisted by the shell, so the scroll position outlives a visit to another destination. */
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val reduce = reducesMotion()
 
@@ -87,8 +94,13 @@ fun NeedsYouPane(
         LaunchedEffect(roomId) { onLoadAvatar(roomId) }
     }
 
+    // Not read yet is not the same as nothing to do: say neither until the roster has landed.
+    if (inbox == null) {
+        Box(modifier.fillMaxSize().testTag("needs-you-unread"))
+        return
+    }
     Box(modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize().testTag("needs-you-list")) {
+        LazyColumn(Modifier.fillMaxSize().testTag("needs-you-list"), state = listState) {
             if (inbox.decisions.isNotEmpty()) {
                 stickyHeader(key = "header-decisions") {
                     InboxHeader("Waiting on you", inbox.decisions.size, "decisions")

@@ -43,6 +43,7 @@ class AgentsTest {
         inProgress: Boolean = false,
         fontScale: Float? = null,
         opened: MutableList<String> = mutableListOf(),
+        unread: Boolean = false,
     ) {
         compose.setContent {
             val density = LocalDensity.current
@@ -53,7 +54,7 @@ class AgentsTest {
                 SupermessageTheme {
                     Box(Modifier.requiredWidth(411.dp).testTag("shell")) {
                         AgentsPane(
-                            agents = directory(rows),
+                            agents = if (unread) null else directory(rows),
                             now = NavRows.NOW,
                             openRoomId = openRoomId,
                             openRoomInProgress = inProgress,
@@ -70,6 +71,14 @@ class AgentsTest {
 
     private fun inRow(tag: String, id: String = "!a:x") =
         compose.onNode(hasTestTag(tag) and hasAnyAncestor(hasTestTag("agent-row-$id")), useUnmergedTree = true)
+
+    /** A directory not yet read is not an empty one: "No agents yet" waits for the roster. */
+    @Test
+    fun anUnreadDirectoryIsNotNoAgentsYet() {
+        show(emptyList(), unread = true)
+        compose.onNodeWithTag("no-agents").assertDoesNotExist()
+        compose.onNodeWithText("No agents yet").assertDoesNotExist()
+    }
 
     @Test
     fun anAgentRowSaysWhoWhatAndWhen() {

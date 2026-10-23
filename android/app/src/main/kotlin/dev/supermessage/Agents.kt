@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -36,7 +38,7 @@ import uniffi.supermessage_ffi.roomStatus
  */
 @Composable
 fun AgentsPane(
-    agents: List<RosterRow>,
+    agents: List<RosterRow>?,
     now: Instant,
     openRoomId: String?,
     openRoomInProgress: Boolean,
@@ -44,9 +46,16 @@ fun AgentsPane(
     onLoadAvatar: (String) -> Unit,
     onOpenRoom: (String) -> Unit,
     modifier: Modifier = Modifier,
+    /** Hoisted by the shell, so the scroll position outlives a visit to another destination. */
+    listState: LazyListState = rememberLazyListState(),
 ) {
+    // A `null` directory is a roster not yet read: draw nothing, in particular not "No agents yet".
+    if (agents == null) {
+        Box(modifier.fillMaxSize().testTag("agents-unread"))
+        return
+    }
     Box(modifier.fillMaxSize()) {
-        LazyColumn(Modifier.fillMaxSize().testTag("agents-list")) {
+        LazyColumn(Modifier.fillMaxSize().testTag("agents-list"), state = listState) {
             items(agents, key = { it.row.room.id }) { entry ->
                 val roomId = entry.row.room.id
                 AgentRow(

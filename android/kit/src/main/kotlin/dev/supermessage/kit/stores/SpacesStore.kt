@@ -31,7 +31,14 @@ import uniffi.supermessage_ffi.FfiException
  * structured concurrency for whatever cancelled this scope. `GapSync`
  * documents the same hazard for the same reason.
  */
-class SpacesStore(private val client: CoreClient) {
+class SpacesStore(
+    private val client: CoreClient,
+    /** Called as a selection begins, before the core is asked: the roster in flight is about to be the old space's. */
+    private val onSelecting: () -> Unit = {},
+) {
+    /** Bumped by [clear]: a read begun under an earlier value is a previous account's and is dropped. */
+    private var epoch = 0
+
     private val _spaces = MutableStateFlow<List<SpaceSummary>>(emptyList())
     val spaces: StateFlow<List<SpaceSummary>> = _spaces.asStateFlow()
 
@@ -43,8 +50,10 @@ class SpacesStore(private val client: CoreClient) {
     val failure: StateFlow<String?> = _failure.asStateFlow()
 
     suspend fun refresh() {
+        val mine = epoch
         try {
-            _spaces.value = client.spacesList()
+            val read = client.spacesList()
+            if (mine == epoch) _spaces.value = read
         } catch (e: CancellationException) {
             throw e
         } catch (e: FfiException) {
@@ -58,9 +67,11 @@ class SpacesStore(private val client: CoreClient) {
 
     /** Filter the roster to [spaceId], or clear the filter with `null`. */
     suspend fun select(spaceId: String?) {
+        val mine = epoch
+        onSelecting()
         try {
             client.spaceSelect(spaceId)
-            _selectedId.value = spaceId
+            if (mine == epoch) _selectedId.value = spaceId
         } catch (e: CancellationException) {
             throw e
         } catch (e: FfiException) {
@@ -83,6 +94,7 @@ class SpacesStore(private val client: CoreClient) {
         }
 
     fun clear() {
+        epoch += 1
         _spaces.value = emptyList()
         _selectedId.value = null
         _failure.value = null

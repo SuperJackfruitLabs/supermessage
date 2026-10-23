@@ -38,7 +38,7 @@ class NeedsYouTest {
         RosterArrangement.needsYouInbox(rows, NavRows.NOW)
 
     private fun show(
-        inbox: () -> NeedsYouInbox,
+        inbox: () -> NeedsYouInbox?,
         reduce: Boolean = true,
         fontScale: Float? = null,
         opened: MutableList<String> = mutableListOf(),
@@ -85,6 +85,15 @@ class NeedsYouTest {
         assertTrue("the invitation $estate is under its header $invitations", estate > invitations)
         // Not in Needs you: a room that owes nothing.
         compose.onNodeWithText("Design Review").assertDoesNotExist()
+    }
+
+    /** An inbox not yet read is not an empty one: nothing is said until the roster has landed. */
+    @Test
+    fun anUnreadInboxIsNotCaughtUp() {
+        show({ null })
+        compose.onNodeWithTag("caught-up").assertDoesNotExist()
+        compose.onNodeWithText("You're all caught up").assertDoesNotExist()
+        compose.onNodeWithTag("needs-you-list").assertDoesNotExist()
     }
 
     @Test

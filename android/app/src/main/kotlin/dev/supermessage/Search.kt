@@ -110,13 +110,24 @@ data class SearchPanelScope(val roomId: String, val name: String)
 fun SearchPanel(
     scope: SearchPanelScope?,
     onOpen: (roomId: String) -> Unit,
-    onClose: () -> Unit,
+    /** Abandons the search. `null` when Search is a destination, which has nothing to close (iOS `SearchPanel(session:scope:onOpen:)`). */
+    onClose: (() -> Unit)?,
     search: suspend (term: String, roomId: String?) -> List<SearchResultDto>,
     roomName: (roomId: String) -> String? = { null },
     now: Instant = Instant.now(),
     modifier: Modifier = Modifier,
+    /**
+     * The term, when the caller keeps it (so a visit to a result and back, or to another
+     * destination and back, finds it still there); `null` keeps it here.
+     */
+    hoistedTerm: String? = null,
+    onTermChange: ((String) -> Unit)? = null,
 ) {
-    var term by remember { mutableStateOf("") }
+    var localTerm by remember { mutableStateOf("") }
+    val term = hoistedTerm ?: localTerm
+    fun setTerm(next: String) {
+        if (onTermChange != null) onTermChange(next) else localTerm = next
+    }
     var state by remember { mutableStateOf<SearchState>(SearchState.Idle) }
     // Whether the search is narrowed to `scope`. Starts narrowed: a reader
     // who opened search from inside a room is asking about that room —
@@ -163,13 +174,15 @@ fun SearchPanel(
             Text("Search", style = MaterialTheme.typography.titleMedium)
             // Cancel, not Done: nothing here is being composed, and the
             // only thing this button does is abandon the search.
-            TextButton(onClick = onClose, modifier = Modifier.testTag("search-cancel")) { Text("Cancel") }
+            if (onClose != null) {
+                TextButton(onClick = onClose, modifier = Modifier.testTag("search-cancel")) { Text("Cancel") }
+            }
         }
 
         OutlinedTextField(
             value = term,
             onValueChange = { next ->
-                term = next
+                setTerm(next)
                 state = state.typed(next)
             },
             modifier = Modifier
@@ -264,7 +277,7 @@ fun SearchPanel(
                                 now = now,
                                 onClick = {
                                     onOpen(result.roomId)
-                                    onClose()
+                                    onClose?.invoke()
                                 },
                             )
                         }

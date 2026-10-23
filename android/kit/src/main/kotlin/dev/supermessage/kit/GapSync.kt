@@ -252,6 +252,15 @@ class GapSync<T>(
         stopped = false
     }
 
+    /**
+     * Whatever resync is in flight answers a question that is no longer being
+     * asked (the roster's space changed under it): its result is dropped when
+     * it lands. Unlike [resume] this touches nothing else.
+     */
+    fun supersede() {
+        generation += 1
+    }
+
     private suspend fun performResync(generation: Int) {
         // Belt and braces over `handle`'s own check, so this is safe to call
         // from anywhere without relying on it.

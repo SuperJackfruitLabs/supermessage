@@ -29,7 +29,20 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import uniffi.supermessage_ffi.displayInitial
+import uniffi.supermessage_ffi.peopleLabel
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -204,8 +217,32 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
     LaunchedEffect(phase) {
         if (phase == Session.Phase.SIGNED_IN) {
             accountUserId = session.account()?.userId
+        } else {
+            // Not the previous account's, for the toolbar's initial or the info panel.
+            accountUserId = null
         }
     }
+
+    // Which of the four places the list pane shows. Per session, saved across a
+    // rotation, and back to Chats on sign-out so the next account never opens on
+    // the last one's Needs you.
+    var destination by rememberSaveable(session) { mutableStateOf(Destination.CHATS) }
+    // The search term lives here, not in the panel: the list pane is recomposed on
+    // the way back from a result, and the term has to be there when it is.
+    var searchTerm by rememberSaveable(session) { mutableStateOf("") }
+    // Bumped on sign-out: the scroll positions below belong to the account that left.
+    var accountEpoch by remember { mutableIntStateOf(0) }
+    LaunchedEffect(phase) {
+        if (phase == Session.Phase.SIGNED_OUT) {
+            destination = Destination.CHATS
+            searchTerm = ""
+            accountEpoch += 1
+        }
+    }
+    // Hoisted above the destination switch, so Needs you and Agents come back where they were left.
+    val needsYouListState = remember(accountEpoch) { LazyListState() }
+    val agentsListState = remember(accountEpoch) { LazyListState() }
+    val haptic = LocalHapticFeedback.current
 
     // The key generated at sign-in, shown where the reader already is.
     //
@@ -236,24 +273,127 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
         }
     }
 
+    // Whether the roster has been read at all. An empty list before that is not an
+    // empty account, and must not be shown as one ("You're all caught up").
+    val loaded by session.rooms.loaded.collectAsStateWithLifecycle()
+    val selectedRoomId by session.rooms.selectedId.collectAsStateWithLifecycle()
+    val roomInProgress by session.live.inProgress.collectAsStateWithLifecycle()
+    val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
+
+    // The core decides who is in the inbox, and what the badge counts (decisions only).
+    // Keyed on what it reads, so an answered decision leaves in the same update.
+    val inbox = remember(rooms, now) { RosterArrangement.needsYouInbox(rooms, now) }
+    val badgeCount = if (loaded) inbox.badgeCount.toInt() else 0
+    val agents = remember(rooms, now, destination == Destination.AGENTS) {
+        if (destination == Destination.AGENTS) RosterArrangement.agentDirectory(rooms, now) else emptyList()
+    }
+
+    val navigation = ShellNavigation(
+        selected = destination,
+        onSelect = { next ->
+            if (next != destination) {
+                haptic.play(Haptic.Selection)
+                destination = next
+            }
+        },
+        badgeCount = badgeCount,
+    )
+
+    val accountInitial = displayInitial(accountUserId?.let { peopleLabel(listOf(it)) } ?: "Signed in")
+
     RootScaffold(
         phase = phase,
+        navigation = navigation,
         listPaneContent = { _, openDetail, openInfo ->
-            // Search and the account panel share the Extra pane with room
+            // The account panel and a new room share the Extra pane with room
             // info: set which panel `extraPaneContent` below should show, then
             // ask RootScaffold to open it.
-            RosterPane(
-                session = session,
-                prefs = prefs,
-                rooms = rooms,
-                avatarCache = avatarCache,
-                now = now,
-                openDetail = openDetail,
-                openPanel = { panel ->
-                    extraPanel = panel
-                    openInfo()
-                },
-            )
+            val openPanel: (ExtraPanel) -> Unit = { panel ->
+                extraPanel = panel
+                openInfo()
+            }
+            val openRoom: (String) -> Unit = { roomId ->
+                session.rooms.select(roomId)
+                scope.launch { session.open(roomId) }
+                openDetail()
+            }
+            val railed = LocalNavigationRail.current
+            Column(Modifier.fillMaxSize()) {
+                // On a tablet the toolbar stays on the sidebar whatever the destination;
+                // on a phone it is Chats' alone, and the others show their title.
+                if (destination != Destination.CHATS) {
+                    if (railed) {
+                        ChatsToolbar(
+                            accountInitial = accountInitial,
+                            onAccount = { openPanel(ExtraPanel.Account) },
+                            onCompose = { openPanel(ExtraPanel.NewRoom) },
+                            title = { if (destination != Destination.SEARCH) DestinationTitle(destination) },
+                        )
+                    } else if (destination != Destination.SEARCH) {
+                        DestinationTitle(destination, Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
+                    }
+                }
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    // Always composed, shown only on Chats: leaving would drop its scroll
+                    // position and avatars, and coming back would fetch them all again.
+                    Box(Modifier.fillMaxSize().shownOnlyIf(destination == Destination.CHATS)) {
+                        RosterPane(
+                            session = session,
+                            prefs = prefs,
+                            rooms = rooms,
+                            avatarCache = avatarCache,
+                            now = now,
+                            openDetail = openDetail,
+                            openPanel = openPanel,
+                            accountInitial = accountInitial,
+                        )
+                    }
+                    when (destination) {
+                        Destination.CHATS -> {}
+                        Destination.NEEDS_YOU ->
+                            NeedsYouPane(
+                                inbox = if (loaded) inbox else null,
+                                now = now,
+                                showsState = showsState,
+                                avatarUri = { roomId -> avatarCache[roomId] },
+                                onLoadAvatar = { roomId -> scope.launch { session.avatars.load(roomId) } },
+                                onOpenRoom = openRoom,
+                                onOpenInfo = { roomId -> openPanel(ExtraPanel.RoomInfo(roomId)) },
+                                listState = needsYouListState,
+                            )
+
+                        Destination.AGENTS ->
+                            AgentsPane(
+                                agents = if (loaded) agents else null,
+                                now = now,
+                                openRoomId = selectedRoomId,
+                                openRoomInProgress = roomInProgress,
+                                avatarUri = { roomId -> avatarCache[roomId] },
+                                onLoadAvatar = { roomId -> scope.launch { session.avatars.load(roomId) } },
+                                onOpenRoom = openRoom,
+                                listState = agentsListState,
+                            )
+
+                        Destination.SEARCH ->
+                            SearchPanel(
+                                // The open room where one is selected (a tablet); none on a phone,
+                                // where a room being open means the list is not on screen.
+                                scope = if (railed) {
+                                    rooms.firstOrNull { it.room.id == selectedRoomId }
+                                        ?.let { SearchPanelScope(it.room.id, it.identity.name) }
+                                } else {
+                                    null
+                                },
+                                onOpen = openRoom,
+                                onClose = null,
+                                search = session::search,
+                                roomName = { roomId -> rooms.firstOrNull { it.room.id == roomId }?.room?.name },
+                                hoistedTerm = searchTerm,
+                                onTermChange = { searchTerm = it },
+                            )
+                    }
+                }
+            }
         },
         detailPaneContent = { _, openInfo ->
             RoomPane(
@@ -315,21 +455,6 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                             onReport = session::report,
                         )
                     }
-
-                    is ExtraPanel.Search ->
-                        SearchPanel(
-                            scope = panel.scope,
-                            onOpen = { roomId ->
-                                session.rooms.select(roomId)
-                                scope.launch { session.open(roomId) }
-                            },
-                            onClose = {
-                                extraPanel = null
-                                closeInfo()
-                            },
-                            search = session::search,
-                            roomName = { roomId -> rooms.firstOrNull { it.room.id == roomId }?.room?.name },
-                        )
 
                     ExtraPanel.Account -> {
                         val blockedNow by session.safety.blocked.collectAsStateWithLifecycle()
@@ -414,7 +539,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
 }
 
 /**
- * Which of a new room, room info, search or the account panel
+ * Which of a new room, room info or the account panel
  * `RootScaffold`'s single Extra pane is currently showing — `null` when none
  * of the four was asked for. An app-level type, not a core sealed class: the
  * `when` over it above may use `else` freely, though it does not.
@@ -427,7 +552,33 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
 internal sealed class ExtraPanel {
     object NewRoom : ExtraPanel()
     data class RoomInfo(val roomId: String) : ExtraPanel()
-    /** [scope] is the room it was opened from, if any: search offers it, narrowed. */
-    data class Search(val scope: SearchPanelScope?) : ExtraPanel()
     object Account : ExtraPanel()
 }
+
+/** A destination's own title, for the ones that do not draw one themselves (`NeedsYouView.swift:50`, `AgentsView.swift:49`). */
+@Composable
+internal fun DestinationTitle(destination: Destination, modifier: Modifier = Modifier) {
+    Text(
+        destination.title,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+        modifier = modifier.testTag("destination-title").semantics { heading() },
+    )
+}
+
+/**
+ * Composed always, drawn and heard only when [shown]: nothing of it is placed, touched or
+ * offered to TalkBack otherwise, but its state (a list's scroll position, the avatars it
+ * loaded) stays where it was.
+ */
+internal fun Modifier.shownOnlyIf(shown: Boolean): Modifier =
+    if (shown) {
+        this
+    } else {
+        this
+            .clearAndSetSemantics {}
+            .layout { measurable, constraints ->
+                measurable.measure(constraints)
+                layout(0, 0) {}
+            }
+    }
