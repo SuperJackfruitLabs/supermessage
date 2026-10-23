@@ -223,6 +223,8 @@
   let arranged = $state<RosterSection[]>([]);
   let shown = $state<FilteredRoster>({ sections: [], chips: [], empty: null });
   let titles = $state<Map<string, string>>(new Map());
+  /** The first roster read has landed. Until then "no rooms" means "not read yet", so nothing says it. */
+  let rosterLoaded = $state(false);
   let roster = 0;
   $effect(() => {
     const rows = rooms;
@@ -233,7 +235,8 @@
     const mine = ++roster;
     void (async () => {
       const next = await core.rosterSections(rows, chosenView, SHOWS_INVITATIONS, Date.now());
-      const hidden = await core.rosterHiddenInvitations(rows, SHOWS_INVITATIONS);
+      // Nothing is withheld when invitations are always listed, so there is nothing to ask the core.
+      const hidden = SHOWS_INVITATIONS ? 0 : await core.rosterHiddenInvitations(rows, SHOWS_INVITATIONS);
       const filtered = await filter.apply(next, hidden);
       if (filtered === null || mine !== roster) return;
       const readable = await filter.sectionTitles(filtered.sections, core.spaceDisplayName);
@@ -241,6 +244,7 @@
       arranged = next;
       shown = filtered;
       titles = readable;
+      rosterLoaded = true;
     })().catch((err: unknown) => console.error("roster failed", err));
   });
 
@@ -295,7 +299,9 @@
     above is not something the action tries to animate.
   -->
   <div use:animateList class="flex flex-col">
-  {#if !hasRooms}
+  {#if !rosterLoaded}
+    <!-- Not read yet: draw nothing rather than an empty state that is announced and then replaced. -->
+  {:else if !hasRooms}
     <ContentUnavailable
       role="status"
       testid="no-rooms"

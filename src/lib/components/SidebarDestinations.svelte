@@ -32,9 +32,16 @@
   };
 </script>
 
-<!-- Four across when the sidebar is wide enough for every title; otherwise two by two. -->
+<!--
+  Four across when the container is wide enough for every title; otherwise two by two. The two-pane
+  sidebar is 288px with a border, so its content is 287px: that must be four across (iOS shows one
+  row). Four titles at 10.5px need about 240px, so the switch is at 16rem (256px), which leaves
+  the labels room to spare. Text size is webview zoom, which scales the sidebar and the labels
+  together, so the switch separates the two-pane sidebar from a genuinely narrow container, not
+  100% text from 150%.
+-->
 <div class="@container">
-<nav aria-label="Destinations" class="grid grid-cols-2 gap-1 px-[10px] py-1.5 @[18rem]:grid-cols-4">
+<nav aria-label="Destinations" class="grid grid-cols-2 gap-1 px-[10px] py-1.5 @[16rem]:grid-cols-4">
   {#each DESTINATIONS as d (d.id)}
     {@const on = d.id === selected}
     <button

@@ -63,7 +63,8 @@
   const latest = createLatestOnly();
 
   const views = $derived(projectSearchResults(results, rooms));
-  const now = Date.now();
+  /** The instant the shown results are measured against: taken when they arrive, not when the panel mounted. */
+  let now = $state(Date.now());
 
   function focusOnMount(node: HTMLInputElement) {
     node.focus();
@@ -84,6 +85,7 @@
       const found = await onSearch(term, scopedRoomId(scope, narrowed));
       if (!latest.isCurrent(ticket)) return;
       results = found;
+      now = Date.now();
       searched = true;
     } catch (err) {
       if (!latest.isCurrent(ticket)) return;
