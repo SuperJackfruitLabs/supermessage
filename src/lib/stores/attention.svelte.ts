@@ -14,7 +14,12 @@ export function createAttention(deps: AttentionDeps = { setAttention: defaultSet
 
   function show(count: number): void {
     shown = count;
-    void deps.setAttention(count).catch((e) => console.error("set attention failed", e));
+    void deps.setAttention(count).catch((e) => {
+      console.error("set attention failed", e);
+      // The title is stale: forget what was shown so the next follow retries it
+      // (unless a newer count has been sent since).
+      if (shown === count) shown = -1;
+    });
   }
 
   return {

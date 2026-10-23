@@ -13,11 +13,11 @@ describe("openRoomFromNotification", () => {
   });
 
   it("selects a room outside the selected space and moves nothing else (O2)", async () => {
-    // The only things it may touch are in its dependencies: a rail reset would need one here.
+    // That it touches nothing else is guarded by the type check: OpenRoomDeps has only these
+    // two members, so a rail reset would need a new dependency, which is a type change.
     const d = deps();
     await openRoomFromNotification("!elsewhere:x", d);
     expect(d.selectRoom).toHaveBeenCalledWith("!elsewhere:x");
-    expect(Object.keys(d).sort()).toEqual(["selectRoom", "selectedRoomId"]);
   });
 
   it("the room already open is not selected again", async () => {

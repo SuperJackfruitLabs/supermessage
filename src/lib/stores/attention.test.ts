@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { NeedsYouInbox } from "$lib/ipc";
 import { createAttention } from "./attention.svelte";
 
@@ -49,5 +49,24 @@ describe("attention", () => {
     attention.reset();
     attention.follow(inbox(2, 0));
     expect(sent).toEqual([2, 0, 2]);
+  });
+
+  it("a rejected title write is retried on the next follow", async () => {
+    const sent: number[] = [];
+    let fail = true;
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const attention = createAttention({
+      setAttention: async (n) => {
+        sent.push(n);
+        if (fail) throw new Error("window gone");
+      },
+    });
+    attention.follow(inbox(2, 0));
+    await Promise.resolve();
+    await Promise.resolve();
+    fail = false;
+    attention.follow(inbox(2, 0));
+    expect(sent).toEqual([2, 2]);
+    err.mockRestore();
   });
 });
