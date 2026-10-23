@@ -164,7 +164,6 @@ dependencies {
     // no icons at all: the jump-to-newest control was `Text("↓")`, a body-font
     // arrow that scaled with `fontScale` and outgrew its own button.
     implementation(libs.compose.material.icons)
-    implementation(libs.compose.material.icons.extended)
     implementation(libs.material3.adaptive.navigation.suite)
     implementation(libs.adaptive)
     implementation(libs.adaptive.layout)

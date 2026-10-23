@@ -52,9 +52,8 @@ compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 # actually reaches for; extended carries every Material icon ever drawn and is
 # famous for the size it adds to a release build.
 compose-material-icons = { group = "androidx.compose.material", name = "material-icons-core" }
-# `-extended` for the four destinations' icons (Forum, Inbox, AutoAwesome, in outlined and filled),
-# which core lacks (M5 plan, Decision 4).
-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+# Not `-extended`: the few glyphs core lacks (the destinations', the filter, the seal) are drawn
+# from their own paths in app/.../Glyphs.kt, since the release build has no R8 to strip the rest.
 # The destinations' bar and rail (N1, owner gate G1). BOM-managed. It is the Material 3 library,
 # not material3-adaptive, so it does not take adaptive 1.3 (minCompileSdk 37) with it: checked
 # with `:app:dependencies` and `:app:checkDebugAarMetadata`.

@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Alignment
@@ -159,7 +157,7 @@ fun Roster(
                     ContentUnavailable(
                         title = "No rooms yet",
                         description = "Rooms appear here as they sync.",
-                        icon = Icons.Filled.Inbox,
+                        icon = Glyphs.InboxFilled,
                         modifier = Modifier.testTag("roster-empty-none"),
                     )
                 }
@@ -172,7 +170,7 @@ fun Roster(
                     ContentUnavailable(
                         title = words.title,
                         description = words.description,
-                        icon = Icons.Filled.FilterList,
+                        icon = Glyphs.FilterList,
                         modifier = Modifier.testTag("roster-empty-filter"),
                         action = {
                             TextButton(
