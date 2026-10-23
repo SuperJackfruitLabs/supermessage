@@ -137,15 +137,11 @@ internal fun RoomPane(
         }
     } else {
         val items by session.timeline.items.collectAsStateWithLifecycle()
-        val hidden by session.safety.hidden.collectAsStateWithLifecycle()
         // `Timeline` keys its grouping and its mark-read effect off
         // this rather than off `items` itself — see `Timeline.kt`'s
         // own note on why a revision bump, not a structural diff of
         // the whole list, is what "the history changed" means.
         val revision by session.timeline.revision.collectAsStateWithLifecycle()
-        // Reported messages leave the list at once, without waiting for a new
-        // revision; `Timeline` takes `hidden` as part of its cache key.
-        val visibleItems = remember(revision, hidden) { session.safety.visible(items) }
         val isPaginating by session.timeline.isPaginating.collectAsStateWithLifecycle()
         val canPaginate by session.timeline.canPaginate.collectAsStateWithLifecycle()
         // Collected so a fetch that lands recomposes the rows that
@@ -224,9 +220,8 @@ internal fun RoomPane(
             key(currentRoomId) {
                 CompositionLocalProvider(LocalVoicePlayback provides voice) {
                     Timeline(
-                        rows = visibleItems,
+                        rows = items,
                         revision = revision,
-                        hiddenEvents = hidden,
                         typingLine = typingLine,
                         isPaginating = isPaginating,
                         canPaginate = canPaginate,
@@ -234,6 +229,7 @@ internal fun RoomPane(
                         imageUri = { id -> mediaCache[id] ?: session.media.image(id) },
                         faceUri = { mxc -> faceCache[mxc] },
                         loadFace = session.faces::load,
+                        roomId = currentRoomId,
                         onMarkRead = { scope.launch { session.timeline.markRead() } },
                         liveAnswer = liveAnswer,
                         liveThought = liveThought,

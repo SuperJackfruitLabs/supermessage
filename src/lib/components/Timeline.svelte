@@ -310,6 +310,7 @@
   } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import RichText from "./RichText.svelte";
+  import MembershipStretch from "./timeline/MembershipStretch.svelte";
   import DispatchCard from "./timeline/DispatchCard.svelte";
   import TurnErrorCard from "./timeline/TurnErrorCard.svelte";
   import VoiceTranscript from "./timeline/VoiceTranscript.svelte";
@@ -327,7 +328,7 @@
   import ReplyQuote from "./timeline/ReplyQuote.svelte";
   import ReaderFaces from "./timeline/ReaderFaces.svelte";
   import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
-  import { endsRun, ownMeta, readerFaces, readersFor, revealsTime, type ItemRow } from "./timeline/rowMeta";
+  import { ownMeta, readerFaces, readersFor, revealsTime, type ItemRow } from "./timeline/rowMeta";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
@@ -467,6 +468,20 @@
   const arrivedDone = new SvelteSet<string>();
 
   /**
+   * The membership stretches the reader has opened, by stretch id. The core
+   * folds three or more runs into one summary line; which of those lines are
+   * open is the reader's, so it lives here and not in the core. Reset when the
+   * room changes: another room's stretch ids are not this room's.
+   */
+  let expanded: ReadonlySet<string> = $state(new Set());
+  $effect(() => {
+    void roomId;
+    return () => {
+      expanded = new Set();
+    };
+  });
+
+  /**
    * The rows `VList` renders, **and** the `shift` value that describes how
    * they changed — derived together, in one pass, on purpose.
    *
@@ -482,15 +497,14 @@
    * `items` array; see this file's top-of-script doc comment for why that's
    * automatic and why it never disturbs the raw array itself.
    *
-   * Rows reported on this device are dropped before grouping (iOS
-   * `TimelineCollectionView.swift:417`), so a hidden message also leaves its
-   * run, its date divider and its reply quote's target honestly. `visible`
-   * reads the safety store's `hidden` set inside this derivation, so reporting
-   * a message re-runs it at once: the raw `items` array has not changed, and
-   * a derivation keyed on it alone would keep showing the row.
+   * Rows reported on this device are the core's to hide: the safety store
+   * pushes its set (`safetyStore.pushHidden`), the core groups as if those
+   * rows were absent and sends them back marked `hidden`, and the walk skips
+   * them. Reporting a message therefore arrives as `Set` ops on `items`, which
+   * re-runs this derivation; nothing here filters after grouping.
    */
   let view = $derived.by(() => {
-    const rows = groupTimelineItems(safetyStore.visible(timelineStore.items));
+    const rows = groupTimelineItems(timelineStore.items, expanded);
     const keys = rows.map((row) => row.key);
     const dividers = new Set(
       rows.filter((row) => row.type === "item" && row.item.kind === "dateDivider").map((row) => row.key),
@@ -572,7 +586,7 @@
   /** Keys of the rows that end a run: their time (and their readers) show. */
   let runEnds = $derived(
     new Set(
-      displayRows.flatMap((row, i) => (row.type === "item" && endsRun(displayRows, i) ? [row.key] : [])),
+      displayRows.flatMap((row) => (row.type === "item" && row.endsRun ? [row.key] : [])),
     ),
   );
 
@@ -1513,6 +1527,13 @@
               snippet rather than a copy of its markup.
             -->
             <LogLine text={row.text} />
+          {:else if row.type === "membershipStretch"}
+            <!--
+              Three or more membership runs the core folded into one summary
+              line. Opening adds its id to `expanded`, and the walk then draws
+              each run's own sentence in its place.
+            -->
+            <MembershipStretch text={row.text} onOpen={() => (expanded = new Set(expanded).add(row.key))} />
           {:else if row.type === "undecryptableGroup"}
             <UndecryptableGroup count={row.count} {onOpenRecovery} />
           {:else}

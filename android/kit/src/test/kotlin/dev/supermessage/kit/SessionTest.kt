@@ -5,6 +5,7 @@ import dev.supermessage.kit.stores.ConnectionStore
 import dev.supermessage.kit.stores.InMemoryHiddenEvents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -778,6 +779,106 @@ class SessionTest {
         assertTrue(session.safety.blocked.value.isEmpty())
     }
 
+    // MARK: - Hidden events reach the core
+
+    /** The account's stored set is pushed once it is signed in, and only its own. */
+    @Test
+    fun theStoredSetIsPushedWhenARestoreSignsIn() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$mine")); save("@other:x", setOf("\$theirs")) }
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        assertTrue(session.start())
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("\$mine")), fake.hiddenPushes)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun theSetIsPushedAfterAFreshSignInToo() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$mine")) }
+        val fake = FakeCore()
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        session.signIn(homeserver = "https://x.example", username = "me", password = "p")
+        advanceUntilIdle()
+        assertEquals(listOf(listOf("\$mine")), fake.hiddenPushes)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    /** A report pushes the whole set, the new id included. */
+    @Test
+    fun aReportPushesTheSetWithTheNewId() = runTest {
+        val storage = InMemoryHiddenEvents().apply { save("@me:x", setOf("\$old")) }
+        val fake = FakeCore(restoreSessionResult = { true })
+        val session = Session(CoreClient(fake, Dispatchers.Unconfined), this, storage)
+        session.start()
+        advanceUntilIdle()
+        assertNull(session.report(message("\$e"), "spam", alsoBlock = false))
+        advanceUntilIdle()
+        assertEquals(setOf("\$old", "\$e"), fake.hiddenPushes.last().toSet())
+        assertEquals(2, fake.hiddenPushes.size)
+        session.drainJob?.cancel()
+        advanceUntilIdle()
+    }
+
+    /** A report the homeserver refused hides nothing, so pushes nothing. */
+    @Test
+    fun aRefusedReportPushesNothing() = runTest {
+        val fake = FakeCore()
+        fake.reportEventBody = { _, _, _ -> throw FfiException.NotReady() }
+        val session = sessionOf(fake, this)
+        session.report(message(), "spam", alsoBlock = false)
+        advanceUntilIdle()
+        assertTrue(fake.hiddenPushes.isEmpty())
+    }
+
+    /** A push still waiting its turn when the account signs out is dropped, not handed to the next. */
+    @Test
+    fun aPushQueuedBeforeSignOutIsDropped() = runBlocking {
+        val fake = FakeCore()
+        val gate = java.util.concurrent.CountDownLatch(1)
+        var first = true
+        fake.hiddenPushBody = {
+            val slow = synchronized(this) { first.also { first = false } }
+            if (slow) gate.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val session = Session(CoreClient(fake, Dispatchers.IO), scope)
+        session.report(message("\$a"), "", alsoBlock = false)
+        session.report(message("\$b"), "", alsoBlock = false)
+        session.signOut()
+        gate.countDown()
+        withTimeout(5_000) { while (fake.hiddenPushes.isEmpty()) delay(10) }
+        delay(300)
+        assertEquals(listOf(setOf("\$a")), fake.hiddenPushes.map { it.toSet() })
+        scope.cancel()
+    }
+
+    /**
+     * The first push is slow; the second must not overtake it. Real threads:
+     * a single-threaded test dispatcher could not interleave them.
+     */
+    @Test
+    fun aSlowFirstPushIsNotOvertakenByTheSecond() = runBlocking {
+        val fake = FakeCore()
+        val gate = java.util.concurrent.CountDownLatch(1)
+        var first = true
+        fake.hiddenPushBody = {
+            val slow = synchronized(this) { first.also { first = false } }
+            if (slow) gate.await(5, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val session = Session(CoreClient(fake, Dispatchers.IO), scope)
+        session.report(message("\$a"), "", alsoBlock = false)
+        session.report(message("\$b"), "", alsoBlock = false)
+        Thread.sleep(300)
+        gate.countDown()
+        withTimeout(5_000) { while (fake.hiddenPushes.size < 2) delay(10) }
+        assertEquals(listOf(setOf("\$a"), setOf("\$a", "\$b")), fake.hiddenPushes.map { it.toSet() })
+        scope.cancel()
+    }
+
     @Test
     fun reportSubjectForNeedsAnEventAndASender() = runTest {
         val fake = FakeCore()
@@ -843,6 +944,15 @@ class SessionTest {
         override fun reportEvent(roomId: String, eventId: String, reason: String) {
             safetyCalls += "reportEvent($roomId,$eventId,$reason)"
             reportEventBody(roomId, eventId, reason)
+        }
+
+        /** Every set the core was handed, in the order the pushes finished. */
+        val hiddenPushes: MutableList<List<String>> = java.util.Collections.synchronizedList(mutableListOf())
+        var hiddenPushBody: (List<String>) -> Unit = {}
+
+        override fun setHiddenEvents(eventIds: List<String>) {
+            hiddenPushBody(eventIds)
+            hiddenPushes += eventIds
         }
 
         override fun reportRoom(roomId: String, reason: String) {

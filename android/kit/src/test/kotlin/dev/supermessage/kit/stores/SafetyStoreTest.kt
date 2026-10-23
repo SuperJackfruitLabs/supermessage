@@ -6,41 +6,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import uniffi.supermessage_core.ItemView
-import uniffi.supermessage_core.TimelineItemDto
-import uniffi.supermessage_core.TimelineRow
 
 /** Ported from `SupermessageKitTests/SafetyStoreTests.swift`. */
 class SafetyStoreTest {
-
-    private fun row(id: String, eventId: String? = id): TimelineRow = TimelineRow(
-        item = TimelineItemDto(
-            id = id, eventId = eventId, kind = "message", msgtype = "m.text", detail = null,
-            sender = "@a:x", senderDisplayName = null, senderAvatar = null, body = "hi",
-            formattedBody = null, media = null, customPayload = null, timestampMs = 0uL,
-            isOwn = false, sendState = null, replyTo = null, edited = false,
-            reactions = emptyList(), readBy = emptyList(), editable = false, membershipSubject = null,
-        ),
-        view = ItemView.Bubble(muted = false, blocks = emptyList(), voice = null),
-        senderName = "A", senderShort = "A", senderInitial = "A", membershipVerb = null,
-        replyQuote = null, canReplyOrReact = true, replyPreview = null,
-    )
-
-    @Test
-    fun hidesWhatWasReported() {
-        val store = SafetyStore()
-        val a = row("\$a"); val b = row("\$b"); val c = row("\$c")
-        store.hide("\$b")
-        assertEquals(listOf(a, c), store.visible(listOf(a, b, c)))
-    }
-
-    @Test
-    fun aLocalEchoPasses() {
-        val store = SafetyStore()
-        store.hide("local-1")
-        val echo = row(id = "local-1", eventId = null)
-        assertEquals(listOf(echo), store.visible(listOf(echo)))
-    }
 
     @Test
     fun theCoresListWins() {

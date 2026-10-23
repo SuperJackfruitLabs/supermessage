@@ -168,6 +168,15 @@ class CoreClient(
         run { it.markRoomRead(roomId) }
     }
 
+    /**
+     * The events the reader hid on this device. The core groups the timeline as
+     * if they were absent and marks their rows `hidden`; push the full set at
+     * sign-in and whenever it changes.
+     */
+    suspend fun setHiddenEvents(eventIds: List<String>) {
+        run { it.setHiddenEvents(eventIds) }
+    }
+
     // MARK: - Spaces
 
     suspend fun spacesList(): List<SpaceSummary> = run { it.spacesList() }

@@ -177,6 +177,9 @@ class NewRoomTest {
         private val roomsSnapshotResult: () -> RoomsSnapshot = { RoomsSnapshot(seq = 0uL, rooms = emptyList()) },
         private val spacesListResult: () -> List<SpaceSummary> = { emptyList() },
     ) : StubCore() {
+        /** The session pushes the hidden set at sign-in; these tests hide nothing. */
+        override fun setHiddenEvents(eventIds: List<String>) {}
+
         val directRoomWithCalls = mutableListOf<String>()
         val createRoomCalls = mutableListOf<Triple<String, List<String>, Boolean>>()
 

@@ -13,29 +13,66 @@ function fakeStorage(initial: Record<string, string> = {}) {
   };
 }
 
-const a = { id: "a", eventId: "$a" };
-const b = { id: "b", eventId: "$b" };
-const c = { id: "c", eventId: "$c" };
-
 describe("safety store", () => {
-  it("hidesTimelineRowsByTheirItemsEventId", () => {
-    const store = createSafetyStore(null);
-    const rows = [{ item: { eventId: "$a" } }, { item: { eventId: "$b" } }, { item: { eventId: null } }];
-    store.hide("$b");
-    expect(store.visible(rows)).toEqual([rows[0], rows[2]]);
-  });
-
   it("hidesWhatWasReported", () => {
     const store = createSafetyStore(null);
     store.hide("$b");
-    expect(store.visible([a, b, c])).toEqual([a, c]);
+    expect([...store.hidden]).toEqual(["$b"]);
   });
 
-  it("aLocalEchoPasses", () => {
-    const store = createSafetyStore(null);
+  it("pushes the whole set to the core after every hide", async () => {
+    const pushed: string[][] = [];
+    const store = createSafetyStore(null, async (ids) => void pushed.push(ids));
     store.hide("$a");
-    const echo = { id: "echo", eventId: null };
-    expect(store.visible([echo, a])).toEqual([echo]);
+    store.hide("$b");
+    await store.pushHidden();
+    expect(pushed.slice(0, 2)).toEqual([["$a"], ["$a", "$b"]]);
+  });
+
+  it("pushHidden hands the core the stored set, for session start", async () => {
+    const pushed: string[][] = [];
+    const store = createSafetyStore(fakeStorage({ [HIDDEN_EVENTS_KEY]: '["$a","$b"]' }), async (ids) => void pushed.push(ids));
+    await store.pushHidden();
+    expect(pushed).toEqual([["$a", "$b"]]);
+  });
+
+  it("pushes land in the order they were made, even when an earlier one is slow", async () => {
+    const landed: string[][] = [];
+    let releaseFirst!: () => void;
+    let calls = 0;
+    const store = createSafetyStore(null, (ids) => {
+      calls += 1;
+      if (calls === 1) {
+        return new Promise<void>((resolve) => (releaseFirst = () => (landed.push(ids), resolve())));
+      }
+      landed.push(ids);
+      return Promise.resolve();
+    });
+    store.hide("$a");
+    store.hide("$b");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The second push must wait for the first: a stale set landing last would unhide "$b".
+    expect(calls).toBe(1);
+    expect(landed).toEqual([]);
+    releaseFirst();
+    await store.pushHidden();
+    expect(landed.slice(0, 2)).toEqual([["$a"], ["$a", "$b"]]);
+  });
+
+  it("a failed push is swallowed and the next one still goes", async () => {
+    const pushed: string[][] = [];
+    let first = true;
+    const store = createSafetyStore(null, async (ids) => {
+      if (first) {
+        first = false;
+        throw { kind: "notReady", message: "" };
+      }
+      pushed.push(ids);
+    });
+    store.hide("$a");
+    store.hide("$b");
+    await expect(store.pushHidden()).resolves.toBeUndefined();
+    expect(pushed[0]).toEqual(["$a", "$b"]);
   });
 
   it("theCoresListWins", () => {
@@ -68,10 +105,10 @@ describe("safety store", () => {
     createSafetyStore(storage).hide("$b");
     expect(storage.data.get(HIDDEN_EVENTS_KEY)).toBe('["$b"]');
     const second = createSafetyStore(storage);
-    expect(second.visible([a, b])).toEqual([a]);
+    expect([...second.hidden]).toEqual(["$b"]);
     second.clear();
     expect(storage.data.has(HIDDEN_EVENTS_KEY)).toBe(false);
-    expect(createSafetyStore(storage).visible([a, b])).toEqual([a, b]);
+    expect(createSafetyStore(storage).hidden.size).toBe(0);
   });
 
   it("clear forgets the blocked list too", () => {
@@ -118,14 +155,14 @@ describe("safety store", () => {
     const boom = () => { throw new Error("denied"); };
     const store = createSafetyStore({ getItem: boom, setItem: boom, removeItem: boom });
     store.hide("$b");
-    expect(store.visible([a, b])).toEqual([a]);
+    expect([...store.hidden]).toEqual(["$b"]);
     expect(() => store.clear()).not.toThrow();
   });
 
   it("corruptStorageReadsAsEmpty", () => {
     for (const bad of ["{", '{"a":1}', "[1,2]", "null"]) {
       const store = createSafetyStore(fakeStorage({ [HIDDEN_EVENTS_KEY]: bad }));
-      expect(store.visible([a, b])).toEqual([a, b]);
+      expect(store.hidden.size).toBe(0);
     }
   });
 });

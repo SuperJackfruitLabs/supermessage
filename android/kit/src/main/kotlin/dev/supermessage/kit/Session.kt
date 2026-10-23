@@ -279,6 +279,40 @@ class Session(
      */
     private suspend fun bindSafety(adoptLegacy: Boolean) {
         safety.bind(account()?.userId, adoptLegacy)
+        pushHiddenEvents()
+    }
+
+    /** The last push of the hidden set; the next waits for it (see [pushHiddenEvents]). */
+    private var hiddenPush: Job? = null
+
+    /**
+     * Hand the core the events this device has hidden: the bound account's
+     * whole set, at sign-in and after every hide. The core groups as if those
+     * rows were absent and marks them `hidden`; the timeline skips them.
+     *
+     * Pushes run one after another, each waiting for the one before, so a
+     * slow first push cannot land after a later one and leave the core with
+     * the older set. A push begun for an account that has since signed out
+     * (the store's generation moved on) is dropped; the core forgets its set
+     * itself at sign-out. Not awaited by callers: a failed push leaves the
+     * core with the previous set, and the next hide pushes again.
+     */
+    @Synchronized
+    private fun pushHiddenEvents() {
+        val ids = safety.hidden.value.toList()
+        val generation = safety.generation
+        val previous = hiddenPush
+        hiddenPush = scope.launch {
+            previous?.join()
+            if (generation != safety.generation) return@launch
+            try {
+                client.setHiddenEvents(ids)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Keep what the core had.
+            }
+        }
     }
 
     suspend fun signIn(homeserver: String, username: String, password: String) {
@@ -621,7 +655,10 @@ class Session(
             }
         }
         if (refused != null) return refused
-        if (subject is ReportSubject.Message) safety.hide(subject.eventId, generation)
+        if (subject is ReportSubject.Message) {
+            safety.hide(subject.eventId, generation)
+            pushHiddenEvents()
+        }
         val target = subject.blockable
         if (alsoBlock && target != null && !safety.isBlocked(target.userId)) {
             val blockRefused = safetyRefusal {

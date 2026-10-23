@@ -7,6 +7,7 @@ import androidx.compose.ui.unit.dp
 import dev.supermessage.Timeline
 import dev.supermessage.TimelineRow
 import java.time.Instant
+import uniffi.supermessage_ffi.groupTimelineRows
 
 /** Fixed, for the reason [NOW] in `RosterPreviews.kt` gives. */
 private val NOW: Instant = Instant.ofEpochMilli(1_757_700_120_000L)
@@ -185,7 +186,7 @@ internal fun UnbreakableBody() {
 internal fun TimelineLive() {
     PreviewGround {
         Timeline(
-            rows = PreviewFixtures.history,
+            rows = groupTimelineRows(PreviewFixtures.history),
             revision = 1uL,
             typingLine = "Atlas is typing…",
             isPaginating = false,
@@ -213,11 +214,33 @@ internal fun TimelineLive() {
 internal fun TimelinePaginating() {
     PreviewGround {
         Timeline(
-            rows = PreviewFixtures.history,
+            rows = groupTimelineRows(PreviewFixtures.history),
             revision = 1uL,
             typingLine = null,
             isPaginating = true,
             canPaginate = true,
+            onPaginate = {},
+            onMarkRead = {},
+        )
+    }
+}
+
+/**
+ * Five membership changes folded into one line the reader can open.
+ *
+ * The collapsed form is what a room opens with; tapping it shows each run's
+ * own sentence.
+ */
+@Preview(name = "Membership stretch, collapsed", showBackground = true, heightDp = 200)
+@Composable
+internal fun MembershipStretchCollapsed() {
+    PreviewGround {
+        Timeline(
+            rows = PreviewFixtures.membershipStretch,
+            revision = 1uL,
+            typingLine = null,
+            isPaginating = false,
+            canPaginate = false,
             onPaginate = {},
             onMarkRead = {},
         )

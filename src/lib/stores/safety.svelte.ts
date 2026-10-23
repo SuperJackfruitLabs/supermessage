@@ -8,11 +8,13 @@
 //   call landing and the homeserver's echo arriving.
 // - `hidden` belongs to this device. There is no Matrix protocol for hiding one event for one
 //   account, so a reported message is hidden locally, by event id, and the set is kept across
-//   launches until sign-out.
+//   launches until sign-out. The core does the hiding: the set is pushed to it (`pushHidden`, at
+//   session start and after every `hide`), the core groups the timeline as if those rows were
+//   absent, and their rows come back marked `hidden`, which the timeline skips.
 //
 // Both sets are replaced, never mutated, so a `$derived` reader sees every change.
 
-import { blockedUsers } from "$lib/ipc";
+import { blockedUsers, setHiddenEvents } from "$lib/ipc";
 
 /** The key the hidden set is stored under (iOS: `safety.hiddenEvents`). */
 export const HIDDEN_EVENTS_KEY = "safety.hiddenEvents";
@@ -34,11 +36,31 @@ function readHidden(storage: SafetyStorage | null): Set<string> {
   return new Set();
 }
 
-export function createSafetyStore(storage: SafetyStorage | null) {
+/** Hands the core the whole hidden set (`ipc.setHiddenEvents`). */
+type PushHidden = (eventIds: string[]) => Promise<void>;
+
+export function createSafetyStore(storage: SafetyStorage | null, push: PushHidden | null = null) {
   let blocked = $state<ReadonlySet<string>>(new Set());
   let hidden = $state<ReadonlySet<string>>(readHidden(storage));
   /** Bumped by every `apply`, so a slow `seed` can tell it was overtaken. */
   let generation = 0;
+  /**
+   * The last push of the hidden set; the next waits for it, so two quick
+   * reports reach the core in the order they were made (each push is the
+   * whole set, and a stale one landing last would unhide a row). iOS
+   * `Session.hiddenPush`.
+   */
+  let pushing: Promise<void> = Promise.resolve();
+
+  function pushHidden(): Promise<void> {
+    if (push === null) return pushing;
+    const ids = [...hidden];
+    const send = push;
+    pushing = pushing.then(() => send(ids)).catch((err: unknown) => {
+      console.error("could not hand the hidden events to the core", err);
+    });
+    return pushing;
+  }
 
   return {
     get blocked(): ReadonlySet<string> {
@@ -67,7 +89,7 @@ export function createSafetyStore(storage: SafetyStorage | null) {
       blocked = next;
     },
 
-    /** Hides a reported event on this device, and remembers it. */
+    /** Hides a reported event on this device, remembers it, and tells the core. */
     hide(eventId: string): void {
       hidden = new Set(hidden).add(eventId);
       try {
@@ -75,17 +97,15 @@ export function createSafetyStore(storage: SafetyStorage | null) {
       } catch {
         // Still hidden for this run.
       }
+      void pushHidden();
     },
-    /** Drops rows whose event was hidden. A local echo (no event id) always passes. */
-    visible<T extends { eventId: string | null } | { item: { eventId: string | null } }>(
-      items: readonly T[],
-    ): T[] {
-      // Reads `hidden` here, inside the caller's derivation, so hiding re-runs it.
-      return items.filter((entry) => {
-        const eventId = "item" in entry ? entry.item.eventId : entry.eventId;
-        return eventId === null || !hidden.has(eventId);
-      });
-    },
+    /**
+     * Hands the core the whole hidden set. At every session start (the core
+     * forgets the set when an account starts) and, from `hide`, whenever it
+     * grows. Resolves once this push (and every earlier one) has landed; a
+     * failed push is logged, not thrown.
+     */
+    pushHidden,
 
     /**
      * Fills the blocked list from the core, unless an `apply` happened while
@@ -131,4 +151,4 @@ function appStorage(): SafetyStorage | null {
   }
 }
 
-export const safetyStore = createSafetyStore(appStorage());
+export const safetyStore = createSafetyStore(appStorage(), setHiddenEvents);

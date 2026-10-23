@@ -209,7 +209,7 @@ struct TimelineRowView: View {
 /// reactions any message has. The card itself is `TurnErrorCardView`.
 ///
 /// Always headed: a failure is never the continuation of the answer above
-/// it, which is why `TimelineGrouping` only runs bubbles together.
+/// it, which is why the core only runs bubbles together.
 private struct TurnErrorRow: View {
     let row: TimelineRow
     let named: String
@@ -224,7 +224,7 @@ private struct TurnErrorRow: View {
                     mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces,
                     size: 22)
                 Text(named).nameFace().peerTint(row.item.sender).lineLimit(1)
-                if TimelineGrouping.isAgent(row) {
+                if row.isAgent {
                     AgentLabel()
                 }
                 if let timestamp = row.item.timestampMs {
@@ -297,7 +297,7 @@ private struct MessageBlock: View {
 
     private var isOwn: Bool { row.item.isOwn }
     private var sendState: SendState { SendState(row.item.sendState) }
-    private var isLong: Bool { TimelineGrouping.isLongRead(row) }
+    private var isLong: Bool { row.isLongRead }
 
     var body: some View {
         VStack(alignment: isOwn ? .trailing : .leading, spacing: 4) {
@@ -392,7 +392,7 @@ private struct MessageBlock: View {
             SenderFace(
                 mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces, size: 22)
             Text(named).nameFace().peerTint(row.item.sender).lineLimit(1)
-            if TimelineGrouping.isAgent(row) {
+            if row.isAgent {
                 AgentLabel()
             }
             if let timestamp = row.item.timestampMs {
@@ -798,7 +798,7 @@ private struct AudioRow: View {
                         mxcUri: row.item.senderAvatar, initial: row.senderInitial, faces: faces,
                         size: 22)
                     Text(named).nameFace().peerTint(row.item.sender).lineLimit(1)
-                    if TimelineGrouping.isAgent(row) {
+                    if row.isAgent {
                         AgentLabel()
                     }
                     if let timestamp = row.item.timestampMs {

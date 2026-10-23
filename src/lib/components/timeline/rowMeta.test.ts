@@ -8,7 +8,6 @@ import {
 } from "$lib/fixtures";
 import { groupTimelineItems } from "../timelineGrouping";
 import {
-  endsRun,
   HIGHLIGHT_MS,
   parentIndex,
   ownMeta,
@@ -38,15 +37,6 @@ function ownRun(): ItemRow[] {
     message({ id: "o2", isOwn: true, sender: "@me:x", eventId: "$2", timestampMs: 1_700_000_030_000 }),
   ]);
 }
-
-describe("endsRun", () => {
-  it("endsRun is false when the next row continues", () => {
-    const rows = groupTimelineItems(senderRun);
-    expect(rows[1]).toMatchObject({ continuesRun: true });
-    expect(endsRun(rows, 0)).toBe(false);
-    expect(endsRun(rows, 1)).toBe(true);
-  });
-});
 
 describe("ownMeta", () => {
   it("ownMeta shows the time only at the end of a run", () => {

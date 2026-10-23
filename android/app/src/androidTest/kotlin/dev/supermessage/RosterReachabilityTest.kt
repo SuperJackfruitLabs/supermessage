@@ -533,7 +533,7 @@ class RosterReachabilityTest {
     /**
      * The whole route a reader takes: long-press someone else's message,
      * Report…, Send, confirm. The core sees the report, and the message is
-     * gone from the list the moment it landed, without a new revision.
+     * gone from the list once the core is handed the hidden set and marks it.
      */
     @Test
     fun reportingAMessageHidesIt() {
@@ -1088,6 +1088,31 @@ class RosterReachabilityTest {
         private val deleteResult: () -> Unit = {},
         private val sendResult: () -> Unit = {},
     ) : StubCore() {
+        private var timelineSink: EventSink? = null
+
+        /**
+         * Does what the core does with the pushed set: sends a `Set` for each
+         * row whose event is in it, marked `hidden`.
+         */
+        override fun setHiddenEvents(eventIds: List<String>) {
+            val sink = timelineSink ?: return
+            val ops = timelineRows.mapIndexedNotNull { i, row ->
+                if (row.item.eventId in eventIds) {
+                    uniffi.supermessage_ffi.TimelineDiffOp.Set(i.toUInt(), row.copy(hidden = true))
+                } else {
+                    null
+                }
+            }
+            if (ops.isEmpty()) return
+            sink.onEvent(
+                uniffi.supermessage_ffi.FfiEvent.TimelineDiff(
+                    uniffi.supermessage_ffi.TimelineDiffEnvelope(
+                        channel = "timeline", subject = subscribedRoomId.orEmpty(), seq = 2uL, ops = ops,
+                    ),
+                ),
+            )
+        }
+
         val sent = mutableListOf<String>()
 
         override fun sendMessage(roomId: String, body: String, mentions: List<String>) {
@@ -1147,6 +1172,7 @@ class RosterReachabilityTest {
         // invitation row opens it.
         override fun timelineSubscribe(roomId: String, sink: EventSink) {
             subscribedRoomId = roomId
+            timelineSink = sink
             if (timelineRows.isNotEmpty()) {
                 sink.onEvent(
                     uniffi.supermessage_ffi.FfiEvent.TimelineDiff(

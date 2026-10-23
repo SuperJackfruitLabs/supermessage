@@ -72,6 +72,14 @@ class CoreClientTest {
         assertEquals(listOf(Triple("!r:x", "\$e", "spam")), core.reports)
     }
 
+    /** the hidden set reaches the core whole, as given */
+    @Test
+    fun theHiddenSetReachesTheCore() = runTest {
+        val core = FakeCore()
+        CoreClient(core = core).setHiddenEvents(listOf("\$a", "\$b"))
+        assertEquals(listOf(listOf("\$a", "\$b")), core.hiddenPushes)
+    }
+
     /** many blocking calls at once do not starve anything */
     @Test
     fun manyBlockingCallsAtOnceDoNotStarveAnything() = runBlocking {
@@ -157,6 +165,12 @@ class CoreClientTest {
 
         override fun reportEvent(roomId: String, eventId: String, reason: String) {
             reports += Triple(roomId, eventId, reason)
+        }
+
+        val hiddenPushes = mutableListOf<List<String>>()
+
+        override fun setHiddenEvents(eventIds: List<String>) {
+            hiddenPushes += eventIds
         }
 
         override fun connectionState(): ConnectionState {

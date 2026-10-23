@@ -658,6 +658,11 @@
     // The core emits the blocked list once when the session starts, which can be
     // before the listener above exists; ask for it, and let a later event win.
     void safetyStore.seed(async () => (await blockedUsers()).map((m) => m.userId));
+    // The core forgets the reader's hidden events whenever an account starts
+    // (login and restore both land here); hand it this device's set, so the
+    // rows reported here come back marked `hidden`. Later reports push from
+    // `safetyStore.hide`.
+    void safetyStore.pushHidden();
     void accountStore.load();
     // Recovery is set up after a fresh sign-in only, never after a restore —
     // `consumeFreshSignIn` is set by /login alone. Not awaited, and a failure

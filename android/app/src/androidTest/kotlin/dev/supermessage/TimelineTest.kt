@@ -24,6 +24,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -40,6 +41,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import uniffi.supermessage_core.ItemView
+import uniffi.supermessage_core.MembershipPlacement
 import uniffi.supermessage_core.ReactionDto
 import uniffi.supermessage_core.ReplyQuoteView
 import uniffi.supermessage_core.ReplyToDto
@@ -48,6 +50,7 @@ import uniffi.supermessage_core.RichInline
 import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
+import uniffi.supermessage_ffi.groupTimelineRows
 
 /**
  * The scroll container — see `Timeline.kt`'s own KDoc and
@@ -105,8 +108,18 @@ class TimelineTest {
     private fun ascendingRows(count: Int): List<TimelineRowDto> =
         (1..count).map { row(id = "$it", body = "row $it", timestampMs = it.toULong() * 1_000uL) }
 
-    /** A membership row: kind and `detail` are what `collapseMembershipRuns` groups on. */
-    private fun membershipRow(id: String, sender: String, verb: String, timestampMs: ULong): TimelineRowDto {
+    /**
+     * A membership row. Its [membership] placement is the core's to decide:
+     * pass the rows through `groupTimelineRows` rather than setting it by hand,
+     * unless a test is about one specific placement.
+     */
+    private fun membershipRow(
+        id: String,
+        sender: String,
+        verb: String,
+        timestampMs: ULong,
+        membership: MembershipPlacement? = null,
+    ): TimelineRowDto {
         val item = TimelineItemDto(
             id = id, eventId = id, kind = "membership", msgtype = null, detail = verb,
             sender = "@$sender:x", senderDisplayName = sender, senderAvatar = null, body = null,
@@ -127,6 +140,7 @@ class TimelineTest {
             replyQuote = null,
             canReplyOrReact = false,
             replyPreview = null,
+            membership = membership,
         )
     }
 
@@ -179,7 +193,7 @@ class TimelineTest {
     /**
      * Rule 3: `Timeline` keys its grouping and its mark-read effect off
      * `revision`, not off diffing `rows` — see `Timeline.kt`'s own note by
-     * `continuesRun`/`singleSpeaker`/`displayRows` and the mark-read
+     * `displayRows` and the mark-read
      * `LaunchedEffect` for why.
      *
      * The version of this test that predates this task passed against the
@@ -256,23 +270,24 @@ class TimelineTest {
     }
 
     /**
-     * Reporting a message drops its row from `rows` without a new revision
-     * (`SafetyStore.visible` is the caller's), so the grouping cache has to
-     * be keyed on the hidden set too, or the row stays on screen.
+     * A reported message arrives from the core as a row marked `hidden`, with
+     * its neighbours regrouped as if it were absent: here the reported head
+     * of a run is gone and the next row, which the core now gives a header
+     * (`continuesRun = false`), draws its sender. The host neither draws the
+     * hidden row nor regroups.
      */
     @Test
-    fun aReportedMessageLeavesWithoutANewRevision() {
-        val a = row(id = "\$a", body = "alpha text", timestampMs = 1_000uL)
-        val b = row(id = "\$b", body = "bravo text", timestampMs = 2_000uL)
-        val c = row(id = "\$c", body = "charlie text", timestampMs = 3_000uL)
-        var rows by mutableStateOf(listOf(a, b, c))
-        var hidden by mutableStateOf(emptySet<String>())
+    fun aReportedRowIsSkippedAndItsNeighbourGetsTheCoresHeader() {
+        val a = row(id = "\$a", body = "alpha text", timestampMs = 1_000uL).copy(hidden = true)
+        val b = row(id = "\$b", body = "bravo text", timestampMs = 2_000uL).copy(continuesRun = false, endsRun = false)
+        val c = row(id = "\$c", body = "charlie text", timestampMs = 3_000uL).copy(continuesRun = true, endsRun = true)
+        var rows by mutableStateOf(listOf(a.copy(hidden = false), b.copy(continuesRun = true), c))
+        var revision by mutableStateOf(1uL)
 
         compose.setContent {
             Timeline(
                 rows = rows,
-                revision = 1uL,
-                hiddenEvents = hidden,
+                revision = revision,
                 typingLine = null,
                 isPaginating = false,
                 canPaginate = false,
@@ -280,15 +295,17 @@ class TimelineTest {
                 onMarkRead = {},
             )
         }
-        compose.onNodeWithText("bravo text").assertIsDisplayed()
-
-        rows = listOf(a, c)
-        hidden = setOf(b.item.eventId!!)
-        compose.waitForIdle()
-
-        compose.onNodeWithText("bravo text").assertDoesNotExist()
         compose.onNodeWithText("alpha text").assertIsDisplayed()
+        compose.onAllNodesWithText("Sender").assertCountEquals(1)
+
+        // The core's Sets replace the rows and bump the revision.
+        rows = listOf(a, b, c)
+        revision++
+        compose.waitForIdle()
+        compose.onNodeWithText("alpha text").assertDoesNotExist()
+        compose.onNodeWithText("bravo text").assertIsDisplayed()
         compose.onNodeWithText("charlie text").assertIsDisplayed()
+        compose.onAllNodesWithText("Sender").assertCountEquals(1)
     }
 
     /** Reads `Timeline`'s own Rule 2 decision off its test-only marker node. */
@@ -477,14 +494,16 @@ class TimelineTest {
     @Test
     fun aRunOfMembershipChangesCollapses() {
         val senders = listOf("Ganesha", "Krishna", "Annapurna", "Surya", "A5", "A6", "A7", "A8")
-        val fixed = senders.mapIndexed { index, sender ->
-            membershipRow(
-                id = "${index + 1}",
-                sender = sender,
-                verb = "updated their membership",
-                timestampMs = (index + 1).toULong() * 1_000uL,
-            )
-        }
+        val fixed = groupTimelineRows(
+            senders.mapIndexed { index, sender ->
+                membershipRow(
+                    id = "${index + 1}",
+                    sender = sender,
+                    verb = "updated their membership",
+                    timestampMs = (index + 1).toULong() * 1_000uL,
+                )
+            },
+        )
 
         compose.setContent {
             Timeline(
@@ -507,14 +526,59 @@ class TimelineTest {
     }
 
     /**
+     * Five changes make three sentences, which is a screenful: the core folds
+     * them into one line, and tapping it shows each sentence.
+     *
+     * Full-text matchers only: a substring matcher would also match the
+     * stretch line from the run lines.
+     */
+    @Test
+    fun aCollapsedStretchOpensOnTap() {
+        val stretch = "5 membership changes · Strategy Sam, Rakesh and 1 other"
+        val fixed = groupTimelineRows(
+            listOf(
+                membershipRow(id = "1", sender = "Strategy Sam", verb = "was invited", timestampMs = 1_000uL),
+                membershipRow(id = "2", sender = "Strategy Sam", verb = "joined the room", timestampMs = 2_000uL),
+                membershipRow(id = "3", sender = "Rakesh", verb = "updated their membership", timestampMs = 3_000uL),
+                membershipRow(id = "4", sender = "Annapurna", verb = "left the room", timestampMs = 4_000uL),
+                membershipRow(id = "5", sender = "Annapurna", verb = "left the room", timestampMs = 5_000uL),
+            ),
+        )
+
+        compose.setContent {
+            Timeline(
+                rows = fixed,
+                revision = 0uL,
+                typingLine = null,
+                isPaginating = false,
+                canPaginate = false,
+                onPaginate = {},
+                onMarkRead = {},
+            )
+        }
+
+        compose.onNodeWithText(stretch).assertIsDisplayed()
+        compose.onNodeWithText("Strategy Sam was invited, then joined the room").assertDoesNotExist()
+
+        compose.onNodeWithText(stretch).performClick()
+
+        compose.onNodeWithText("Strategy Sam was invited, then joined the room").assertIsDisplayed()
+        compose.onNodeWithText("Rakesh updated their membership").assertIsDisplayed()
+        compose.onNodeWithText("Annapurna left the room").assertIsDisplayed()
+        compose.onNodeWithText(stretch).assertDoesNotExist()
+    }
+
+    /**
      * Runs break on a different verb — "three joined" and "one left" stay two
      * sentences rather than becoming one that is true of neither.
      */
     @Test
     fun aDifferentVerbStartsANewRun() {
-        val fixed = listOf(
-            membershipRow(id = "1", sender = "Ganesha", verb = "joined the room", timestampMs = 1_000uL),
-            membershipRow(id = "2", sender = "Krishna", verb = "left the room", timestampMs = 2_000uL),
+        val fixed = groupTimelineRows(
+            listOf(
+                membershipRow(id = "1", sender = "Ganesha", verb = "joined the room", timestampMs = 1_000uL),
+                membershipRow(id = "2", sender = "Krishna", verb = "left the room", timestampMs = 2_000uL),
+            ),
         )
 
         compose.setContent {

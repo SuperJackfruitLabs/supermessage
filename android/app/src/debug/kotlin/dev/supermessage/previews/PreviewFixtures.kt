@@ -39,6 +39,7 @@ import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.ToolPhase
 import uniffi.supermessage_core.VoiceNoteTranscript
 import uniffi.supermessage_core.VoiceReplyPlayer
+import uniffi.supermessage_ffi.groupTimelineRows
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 
 /**
@@ -234,6 +235,29 @@ object PreviewFixtures {
             ),
             membershipVerb = "joined the room",
         )
+
+    /**
+     * Five membership changes, grouped by the core: three sentences, so one
+     * stretch that collapses to a single line.
+     */
+    val membershipStretch: List<TimelineRowDto>
+        get() {
+            fun change(id: String, who: String, verb: String) = row(
+                item("\$$id", sender = "@$who:example.org", body = null, kind = "membership", msgtype = null),
+                ItemView.System(SystemKind.MembershipChanged(who, verb), "$who $verb"),
+                senderName = who, senderShort = who, membershipVerb = verb,
+                canReplyOrReact = false,
+            )
+            return groupTimelineRows(
+                listOf(
+                    change("m1", "Strategy Sam", "was invited"),
+                    change("m2", "Strategy Sam", "joined the room"),
+                    change("m3", "Rakesh", "updated their membership"),
+                    change("m4", "Annapurna", "left the room"),
+                    change("m5", "Annapurna", "left the room"),
+                ),
+            )
+        }
 
     /** A type this build cannot render at all: a log line, not a bubble. */
     val encrypted: TimelineRowDto

@@ -3,7 +3,6 @@ package dev.supermessage.kit.stores
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import uniffi.supermessage_core.TimelineRow
 
 /**
  * Where the ids of reported messages survive a restart, one set per account:
@@ -125,16 +124,6 @@ class SafetyStore(private val storage: HiddenEventStorage = InMemoryHiddenEvents
         val next = _hidden.value + eventId
         _hidden.value = next
         owner?.let { storage.save(it, next) }
-    }
-
-    /** Rows whose event was reported drop out; a row with no event id always passes. */
-    fun visible(rows: List<TimelineRow>): List<TimelineRow> {
-        val hiding = _hidden.value
-        if (hiding.isEmpty()) return rows
-        return rows.filter { row ->
-            val eventId = row.item.eventId
-            eventId == null || eventId !in hiding
-        }
     }
 
     /** Sign-out: forget everything, including the signed-in account's stored set. */

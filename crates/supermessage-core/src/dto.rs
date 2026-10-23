@@ -799,6 +799,11 @@ impl SeqCounter {
         self.0 += 1;
         self.0
     }
+
+    /// Return the number the last [`Self::next_seq`] gave, unused.
+    pub fn give_back(&mut self) {
+        self.0 -= 1;
+    }
 }
 
 /// A room together with every decision the core made about it.
@@ -927,6 +932,50 @@ pub struct TimelineRow {
     #[uniffi(default = None)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice_transcript: Option<crate::voice_transcript::TranscriptNotice>,
+    /// Whether an agent sent this row (`crate::item_view::is_agent_row`):
+    /// computed once here so no host re-derives it from the sender id.
+    /// Defaulted and left off the desktop's JSON when false, like
+    /// [`Self::voice_reply`].
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_agent: bool,
+    /// Whether this message is long enough to be offered as a long read
+    /// (`crate::item_view::is_long_read`, past `LONG_READ_GRAPHEMES`).
+    /// Defaulted and left off the wire when false.
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub is_long_read: bool,
+    /// Whether this row continues the sender run above it, so a host drops
+    /// its header (`crate::timeline_grouping`). Set by the settle pass over the
+    /// whole list, never by the row itself; defaulted and left off the wire
+    /// when false, like [`Self::voice_reply`].
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub continues_run: bool,
+    /// Whether the next drawn row does not continue this one, so a host draws
+    /// the bubble's tail. Mirrors the next row's [`Self::continues_run`].
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub ends_run: bool,
+    /// Whether this reply's quote only repeats the drawn row above it.
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hides_quote: bool,
+    /// Whether this row shows the bridge's `(harness on host)` suffix: the
+    /// room has two or more peer senders and this row has a suffix.
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub shows_runtime: bool,
+    /// For a drawn membership row: the run and stretch it belongs to.
+    #[uniffi(default = None)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub membership: Option<crate::timeline_grouping::MembershipPlacement>,
+    /// Whether the reader hid this event on this device
+    /// (`crate::hidden_events`). The row stays in the list, and the grouping
+    /// above settles as if it were absent; a host leaves it undrawn.
+    #[uniffi(default = false)]
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub hidden: bool,
 }
 
 impl TimelineRow {
@@ -989,6 +1038,8 @@ impl TimelineRow {
         let reply_quote = crate::item_view::reply_quote_view(item.reply_to.as_ref());
         let can_reply_or_react = crate::item_view::can_reply_or_react(&item);
         let reply_preview = crate::item_view::reply_preview_excerpt(item.body.as_deref());
+        let is_agent = crate::item_view::is_agent_row(&item);
+        let is_long_read = crate::item_view::is_long_read(&item);
         Self {
             item,
             view,
@@ -1001,6 +1052,14 @@ impl TimelineRow {
             reply_preview,
             voice_reply: None,
             voice_transcript: None,
+            is_agent,
+            is_long_read,
+            continues_run: false,
+            ends_run: false,
+            hides_quote: false,
+            shows_runtime: false,
+            membership: None,
+            hidden: false,
         }
     }
 }
@@ -1704,6 +1763,24 @@ mod wire_format_golden {
             "an m.text item must classify as a bubble, got {:?}",
             row.view
         );
+    }
+
+    /// Mutation seen failing: removing the `skip_serializing_if` on
+    /// `is_agent` / `is_long_read` puts the false keys on the wire.
+    #[test]
+    fn a_row_leaves_false_facts_off_the_wire() {
+        let plain = serde_json::to_value(TimelineRow::new(a_text_item())).unwrap();
+        assert!(plain.get("isAgent").is_none(), "{plain}");
+        assert!(plain.get("isLongRead").is_none(), "{plain}");
+
+        let mut item = a_text_item();
+        item.sender = Some("@agent_atlas:x".into());
+        item.body = Some("a".repeat(601));
+        let row = TimelineRow::new(item);
+        assert!(row.is_agent && row.is_long_read);
+        let json = serde_json::to_value(&row).unwrap();
+        assert_eq!(json["isAgent"], true);
+        assert_eq!(json["isLongRead"], true);
     }
 
     #[test]

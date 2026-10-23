@@ -43,7 +43,7 @@ describe("resetSessionState", () => {
       accountStore,
     });
     expect(safetyStore.isBlocked("@a:x")).toBe(false);
-    expect(safetyStore.visible([{ eventId: "$e1" }])).toHaveLength(1);
+    expect(safetyStore.hidden.has("$e1")).toBe(false);
     expect(storage.size).toBe(0);
     expect(accountStore.account).toBeNull();
   });
