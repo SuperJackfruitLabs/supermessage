@@ -2,6 +2,8 @@ package dev.supermessage
 
 import android.content.Context
 import androidx.annotation.VisibleForTesting
+import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,9 +44,14 @@ object AppCore {
 
     /**
      * For work that outlives any Activity (a receiver's answer, a push). It
-     * never cancels: the process ending is its end.
+     * never cancels: the process ending is its end. A failure in one piece of
+     * work is logged, not thrown: a background push or answer must never take
+     * the process down.
      */
-    val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val scope: CoroutineScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default +
+            CoroutineExceptionHandler { _, e -> Log.e("supermessage", "background work failed", e) },
+    )
 
     /**
      * The live notification coordinator, while a [SessionViewModel] holds

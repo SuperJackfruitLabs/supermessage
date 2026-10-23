@@ -1,5 +1,7 @@
 package dev.supermessage.notify
 
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
@@ -70,7 +72,7 @@ internal object HttpGatewayProbe : GatewayProbe {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) {
                 null
             } else {
-                connection.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
+                connection.inputStream.use(::readCapped)
             }
         } catch (e: Exception) {
             null
@@ -78,4 +80,23 @@ internal object HttpGatewayProbe : GatewayProbe {
             connection.disconnect()
         }
     }
+}
+
+/**
+ * A discovery answer is a few dozen bytes (`{"unifiedpush":{"gateway":"matrix"}}`).
+ * Anything past [MAX_PROBE_BYTES] is not one, and is not read into memory.
+ */
+internal const val MAX_PROBE_BYTES = 4 * 1024
+
+/** The body as text, or `null` when it runs past [max] bytes. */
+internal fun readCapped(input: InputStream, max: Int = MAX_PROBE_BYTES): String? {
+    val out = ByteArrayOutputStream()
+    val buffer = ByteArray(1024)
+    while (true) {
+        val n = input.read(buffer)
+        if (n < 0) break
+        if (out.size() + n > max) return null
+        out.write(buffer, 0, n)
+    }
+    return out.toString(Charsets.UTF_8.name())
 }

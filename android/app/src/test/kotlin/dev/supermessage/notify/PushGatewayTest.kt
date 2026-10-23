@@ -51,4 +51,13 @@ class PushGatewayTest {
         assertFalse(PushGateway.isMatrixGateway("<html>404</html>"))
         assertFalse(PushGateway.isMatrixGateway(""))
     }
+
+    /** Review Minor 11: the probe never reads an unbounded body. */
+    @Test
+    fun aProbeBodyPastFourKilobytesIsNoAnswer() {
+        val answer = """{"unifiedpush":{"gateway":"matrix"}}"""
+        assertEquals(answer, readCapped(answer.byteInputStream()))
+        assertEquals(null, readCapped(("x".repeat(MAX_PROBE_BYTES + 1)).byteInputStream()))
+        assertEquals("exactly the cap is read", MAX_PROBE_BYTES, readCapped("y".repeat(MAX_PROBE_BYTES).byteInputStream())?.length)
+    }
 }

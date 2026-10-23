@@ -84,12 +84,13 @@ class NotificationTapTest {
         val first = launch()
         val model = modelOf(first)
         pending.send()
-        Thread.sleep(2_000)
-        instrumentation.waitForIdleSync()
-        instrumentation.runOnMainSync {
-            assertEquals("the tap reached the running Activity", AndroidPoster.openRoomUri("!fake:x"), first.intent.data)
-            assertFalse(first.isFinishing)
+        waitUntil("the tap reached the running Activity") {
+            var data: android.net.Uri? = null
+            instrumentation.runOnMainSync { data = first.intent.data }
+            data == AndroidPoster.openRoomUri("!fake:x")
         }
+        instrumentation.waitForIdleSync()
+        instrumentation.runOnMainSync { assertFalse(first.isFinishing) }
         assertEquals("one MainActivity", listOf(first), liveMainActivities())
         assertSame(model, modelOf(first))
     }
