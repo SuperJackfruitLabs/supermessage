@@ -1781,6 +1781,13 @@ pub fn widget_signed_out(
     supermessage_core::widget::signed_out(stored.as_deref(), now_ms)
 }
 
+/// The stored snapshot as a widget draws it at `now_ms`, typed. Android's
+/// widgets read this; iOS keeps its own `Codable` mirror.
+#[uniffi::export]
+pub fn widget_view(stored: Option<String>, now_ms: u64) -> supermessage_core::widget::WidgetView {
+    supermessage_core::widget::view(stored.as_deref(), now_ms)
+}
+
 /// The `UNNotificationCategory` identifier for `category` — the value the
 /// push gateway also sends as `aps.category`.
 #[uniffi::export]

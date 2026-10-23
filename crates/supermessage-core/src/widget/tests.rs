@@ -1281,3 +1281,243 @@ fn each_user_has_their_own_avatar_file() {
     // Nothing a person wrote reaches the file system as a path.
     assert!(!avatar_file_name("@../../etc:hs").contains('/'));
 }
+
+// --- the view (CP3): what Android's widgets read as typed data
+
+fn frame(from_ms: u64, states: Vec<WidgetAgentState>) -> WidgetFrame {
+    WidgetFrame {
+        from_ms,
+        needs_you: 0,
+        needs_you_count: "0".into(),
+        needs_you_line: needs_you_line(0, false),
+        working: 0,
+        pulse: pulse(0, 0, false),
+        states,
+        busy: None,
+    }
+}
+
+fn state(word: &str, tone: WidgetTone) -> WidgetAgentState {
+    WidgetAgentState {
+        word: word.into(),
+        tone,
+    }
+}
+
+fn agent(room: &str, name: &str) -> WidgetAgent {
+    WidgetAgent {
+        room_id: room.into(),
+        name: name.into(),
+        last_activity_ms: None,
+        line: None,
+        step: None,
+        roster_needs_you: false,
+        outcome: None,
+        outcome_line: None,
+        outcome_at_ms: None,
+        unread: 0,
+        counted_event_id: None,
+    }
+}
+
+/// A signed-in snapshot with the given frames, stored as JSON.
+fn with_frames(frames: Vec<WidgetFrame>) -> String {
+    let mut s = WidgetSnapshot::empty(true);
+    s.frames = frames;
+    serde_json::to_string(&s).unwrap()
+}
+
+fn is_empty_view(v: &WidgetView) -> bool {
+    v.frame.is_none()
+        && v.decisions.is_empty()
+        && v.agents.is_empty()
+        && v.recap.is_empty()
+        && !v.overflow
+        && v.opened_at_ms.is_none()
+        && v.next_change_ms.is_none()
+}
+
+/// Mutation seen failing: returning `Snapshot` for an undecodable store.
+#[test]
+fn nothing_stored_or_another_schema_is_waiting() {
+    let mut other = WidgetSnapshot::empty(true);
+    other.schema = WIDGET_SCHEMA + 1;
+    let other = serde_json::to_string(&other).unwrap();
+    for stored in [None, Some("{"), Some(other.as_str())] {
+        let v = view(stored, NOW);
+        assert_eq!(v.content, WidgetContent::Waiting, "{stored:?}");
+        assert!(is_empty_view(&v), "{stored:?}");
+    }
+}
+
+/// Mutation seen failing: ignoring `signed_in` (a signed-out store with a
+/// decision in it still showed `Snapshot`).
+#[test]
+fn signed_out_shows_nothing() {
+    let v = view(Some(&signed_out(None, NOW).json), NOW);
+    assert_eq!(v.content, WidgetContent::SignedOut);
+    assert!(is_empty_view(&v));
+    // Even a store that kept things: signed out says nothing else.
+    let mut s = WidgetSnapshot::empty(false);
+    s.decisions = snapshot(&pushed(&[permission("!r:hs", "$p", NOW)])).decisions;
+    s.frames = vec![frame(0, vec![])];
+    let v = view(Some(&serde_json::to_string(&s).unwrap()), NOW);
+    assert_eq!(v.content, WidgetContent::SignedOut);
+    assert!(is_empty_view(&v));
+}
+
+/// Mutation seen failing: always taking `frames.first()`.
+#[test]
+fn the_frame_is_the_last_begun_else_the_first() {
+    let json = with_frames(vec![frame(10, vec![]), frame(20, vec![])]);
+    let from = |now| view(Some(&json), now).frame.unwrap().from_ms;
+    assert_eq!(from(15), 10);
+    assert_eq!(from(25), 20);
+    // A clock behind the writer's: the first.
+    assert_eq!(from(5), 10);
+    assert_eq!(from(20), 20);
+}
+
+/// Mutation seen failing: (a) listing in stored order; (b) giving the
+/// answered decision buttons.
+#[test]
+fn owed_decisions_list_before_sent_ones_and_only_owed_ones_have_buttons() {
+    let first = pushed(&[
+        permission("!a:hs", "$old", NOW - 2 * MIN),
+        permission("!b:hs", "$new", NOW - MIN),
+        gate("!c:hs", "$gate", "gate-1", NOW - 3 * MIN),
+    ]);
+    // The newer permission is answered; stored newest first, it leads.
+    let json = mark_answered(Some(&first.json), "!b:hs", "$new", "Allow once", NOW).json;
+    let stored = snapshot(&WidgetWrite {
+        json: json.clone(),
+        ..first
+    });
+    assert_eq!(stored.decisions[0].event_id, "$new");
+    let v = view(Some(&json), NOW);
+    assert_eq!(v.content, WidgetContent::Snapshot);
+    let ids: Vec<&str> = v
+        .decisions
+        .iter()
+        .map(|d| d.decision.event_id.as_str())
+        .collect();
+    assert_eq!(ids, ["$old", "$gate", "$new"]);
+    let labels = |i: usize| -> Vec<&str> {
+        v.decisions[i]
+            .buttons
+            .iter()
+            .map(|b| b.label.as_str())
+            .collect()
+    };
+    assert_eq!(labels(0), ["Allow once", "Reject"]);
+    // A gate: request_changes needs typed feedback, so it is not a button.
+    let gate_ids: Vec<&str> = v.decisions[1]
+        .buttons
+        .iter()
+        .map(|b| b.id.as_str())
+        .collect();
+    assert_eq!(gate_ids, ["approve", "reject"]);
+    assert!(v.decisions[2].decision.answered.is_some());
+    assert!(v.decisions[2].buttons.is_empty());
+}
+
+/// Mutation seen failing: keeping `0` as `Some(0)`.
+#[test]
+fn opened_at_zero_is_none() {
+    let json = with_frames(vec![frame(0, vec![])]);
+    assert_eq!(view(Some(&json), NOW).opened_at_ms, None);
+    let opened = apply_opened(Some(&json), NOW).json;
+    assert_eq!(view(Some(&opened), NOW).opened_at_ms, Some(NOW));
+}
+
+/// Mutation seen failing: `>=` for `>` (the frame already shown was named
+/// as the next change).
+#[test]
+fn the_next_change_is_the_first_frame_still_to_come() {
+    let json = with_frames(vec![
+        frame(10, vec![]),
+        frame(20, vec![]),
+        frame(30, vec![]),
+    ]);
+    let next = |now| view(Some(&json), now).next_change_ms;
+    assert_eq!(next(15), Some(20));
+    assert_eq!(next(20), Some(30));
+    assert_eq!(next(30), None);
+    assert_eq!(next(5), Some(10));
+}
+
+/// Mutation seen failing: pairing states by the wrong index.
+#[test]
+fn each_agent_carries_its_state_from_the_frame() {
+    let mut s = WidgetSnapshot::empty(true);
+    s.agents = vec![agent("!a:hs", "Atlas"), agent("!b:hs", "Lyra")];
+    s.frames = vec![frame(
+        0,
+        vec![
+            state("needs you", WidgetTone::NeedsYou),
+            state("idle", WidgetTone::Idle),
+        ],
+    )];
+    let json = serde_json::to_string(&s).unwrap();
+    let v = view(Some(&json), NOW);
+    let got: Vec<(&str, Option<&str>)> = v
+        .agents
+        .iter()
+        .map(|a| {
+            (
+                a.agent.name.as_str(),
+                a.state.as_ref().map(|s| s.word.as_str()),
+            )
+        })
+        .collect();
+    assert_eq!(got, [("Atlas", Some("needs you")), ("Lyra", Some("idle"))]);
+    assert_eq!(
+        v.agents[0].state.as_ref().unwrap().tone,
+        WidgetTone::NeedsYou
+    );
+
+    // A frame with one state: the second agent has none, not a panic.
+    s.frames[0].states.truncate(1);
+    let json = serde_json::to_string(&s).unwrap();
+    let v = view(Some(&json), NOW);
+    assert!(v.agents[0].state.is_some());
+    assert_eq!(v.agents[1].state, None);
+
+    // No frame at all.
+    s.frames.clear();
+    let v = view(Some(&serde_json::to_string(&s).unwrap()), NOW);
+    assert_eq!(v.frame, None);
+    assert!(v.agents.iter().all(|a| a.state.is_none()));
+}
+
+/// Mutation seen failing: `overflow` and `recap` left at their defaults.
+#[test]
+fn recap_and_overflow_are_copied() {
+    let mut s = WidgetSnapshot::empty(true);
+    s.overflow = true;
+    s.recap = vec![WidgetRecap {
+        room_id: "!a:hs".into(),
+        name: "Atlas".into(),
+        outcome: WidgetOutcome::Said,
+        line: "Done".into(),
+        unread: 2,
+        at_ms: NOW,
+    }];
+    let v = view(Some(&serde_json::to_string(&s).unwrap()), NOW);
+    assert!(v.overflow);
+    assert_eq!(v.recap, s.recap);
+}
+
+/// The desktop tray words its menu with these (CP5). Mutation seen failing:
+/// "need" for "needs" in the singular.
+#[test]
+fn the_tray_words_are_the_widgets() {
+    assert_eq!(needs_you_line(0, false), "Nothing needs you");
+    assert_eq!(needs_you_line(1, false), "1 needs you");
+    assert_eq!(needs_you_line(3, false), "3 need you");
+    assert_eq!(needs_you_line(5, true), "5+ need you");
+    assert_eq!(pulse(0, 0, false), "All quiet");
+    assert_eq!(pulse(2, 0, false), "2 working");
+    assert_eq!(pulse(0, 1, false), "1 needs you");
+    assert_eq!(pulse(2, 1, false), "2 working · 1 needs you");
+}
