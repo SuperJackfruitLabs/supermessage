@@ -1531,6 +1531,121 @@ pub fn notification_gate_answers(
     supermessage_core::notification::gate_answers(&decision, &gate_id)
 }
 
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn planned_from_decided(
+    note: supermessage_core::notification::NotificationDto,
+) -> supermessage_core::notification_policy::PlannedNotification {
+    supermessage_core::notification_policy::planned_from_decided(&note)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notifications_for_roster(
+    previous: Vec<supermessage_core::dto::RoomRow>,
+    next: Vec<supermessage_core::dto::RoomRow>,
+    context: supermessage_core::notification_policy::NotificationContext,
+) -> Vec<supermessage_core::notification_policy::PlannedNotification> {
+    supermessage_core::notification_policy::for_roster(&previous, &next, &context)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notifications_for_timeline(
+    room_id: String,
+    room_name: String,
+    rows: Vec<supermessage_core::dto::TimelineRow>,
+    since_ms: u64,
+    already_notified: Vec<String>,
+    context: supermessage_core::notification_policy::NotificationContext,
+) -> Vec<supermessage_core::notification_policy::PlannedNotification> {
+    supermessage_core::notification_policy::for_timeline(
+        &room_id,
+        &room_name,
+        &rows,
+        since_ms,
+        &already_notified,
+        &context,
+    )
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_delivers(
+    note: supermessage_core::notification_policy::PlannedNotification,
+    mode: Option<supermessage_core::room_info::NotificationMode>,
+) -> bool {
+    supermessage_core::notification_policy::delivers(&note, mode)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_presents_remote(
+    room_id: Option<String>,
+    event_id: Option<String>,
+    context: supermessage_core::notification_policy::NotificationContext,
+    already_notified: Vec<String>,
+) -> bool {
+    supermessage_core::notification_policy::presents_remote(
+        room_id.as_deref(),
+        event_id.as_deref(),
+        &context,
+        &already_notified,
+    )
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_actions(
+    category: supermessage_core::notification::NotificationCategory,
+) -> Vec<supermessage_core::notification_policy::NotificationActionSpec> {
+    supermessage_core::notification_policy::actions(category)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_user_info(
+    note: supermessage_core::notification_policy::PlannedNotification,
+) -> std::collections::HashMap<String, String> {
+    supermessage_core::notification_policy::user_info(&note)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_response(
+    action_id: String,
+    user_info: std::collections::HashMap<String, String>,
+    user_text: Option<String>,
+) -> supermessage_core::notification_policy::NotificationResponse {
+    supermessage_core::notification_policy::response(&action_id, &user_info, user_text.as_deref())
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn notification_answer_for_widget(
+    answer: supermessage_core::widget::WidgetAnswer,
+) -> supermessage_core::notification_policy::NotificationAnswer {
+    supermessage_core::notification_policy::answer_for_widget(&answer)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn answer_failed_notification(
+    room_id: String,
+) -> supermessage_core::notification_policy::PlannedNotification {
+    supermessage_core::notification_policy::answer_failed(&room_id)
+}
+
+/// A free function for the same reason as `notification_for_row`: it touches no session state.
+#[uniffi::export]
+pub fn generic_notification(
+    room_id: String,
+    event_id: String,
+    title: String,
+) -> supermessage_core::notification_policy::PlannedNotification {
+    supermessage_core::notification_policy::generic(&room_id, &event_id, &title)
+}
+
 // ---------------------------------------------------------------------------
 // The widgets' snapshot (`core::widget`). Each takes the stored JSON — `None`
 // when there is none — and returns the next, with whether it changed and

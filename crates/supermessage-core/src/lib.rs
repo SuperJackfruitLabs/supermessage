@@ -51,6 +51,7 @@ pub mod matrix_links;
 pub mod media;
 pub mod mentions;
 pub mod notification;
+pub mod notification_policy;
 pub mod opus_container;
 pub mod peer_color;
 pub mod people;
