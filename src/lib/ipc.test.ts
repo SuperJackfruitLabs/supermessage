@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -325,6 +325,7 @@ describe("session commands", () => {
     ["sendPermissionAnswer passes roomId and optionId", () => sendPermissionAnswer("!r:x", "Allow once"), "send_permission_answer", { roomId: "!r:x", optionId: "Allow once" }],
     ["notificationPermission passes prompt", () => notificationPermission(true), "notification_permission", { prompt: true }],
     ["notificationPermission without a prompt", () => notificationPermission(false), "notification_permission", { prompt: false }],
+    ["setAttention passes the count camelCased", () => setAttention(3), "set_attention", { needsYou: 3 }],
     ["notificationClearAll takes no arguments", () => notificationClearAll(), "notification_clear_all", undefined],
     ["sendGateDecisionTo passes camelCase args", () => sendGateDecisionTo("!r:x", "g1", "approve", null, "$e", "Ship it?"), "send_gate_decision_to", { roomId: "!r:x", gateId: "g1", optionId: "approve", comment: null, inReplyTo: "$e", prompt: "Ship it?" }],
     ["notificationsForRoster passes both rosters and the context", () => notificationsForRoster([], [], CTX), "notifications_for_roster", { previous: [], next: [], context: CTX }],

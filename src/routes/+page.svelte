@@ -21,6 +21,7 @@
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { spacesStore } from "$lib/stores/spaces.svelte";
   import { setUpAfterSignIn } from "$lib/stores/signInSetup";
+  import { attention } from "$lib/stores/attention.svelte";
   import { notifier } from "$lib/notifier/notifier.svelte";
   import { openRoomFromNotification } from "$lib/notifier/openRoom";
   import { createWindowFocus } from "$lib/stores/windowFocus.svelte";
@@ -113,6 +114,11 @@
       roomsStore.selectedId,
       liveStore.roomId === roomsStore.selectedId && liveStore.inProgress,
     );
+  });
+  // The window title carries the Needs you count: the inbox's own badge count, set only when it changes.
+  $effect(() => {
+    if (!restored) return;
+    attention.follow(destinations.inbox);
   });
   let signingOut = $state(false);
 

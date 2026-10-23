@@ -19,6 +19,7 @@ function blankTurnStores() {
     destinations: blankDestinations(),
     notificationClearAll: async () => {},
     notifier: { reset() {} },
+    attention: { reset() {} },
   };
 }
 function blankDestinations() {
@@ -106,6 +107,7 @@ describe("resetSessionState", () => {
       destinations: blankDestinations(),
       notificationClearAll: async () => {},
       notifier: { reset() {} },
+      attention: { reset() {} },
     });
     expect(liveStore.isLive).toBe(false);
     expect(liveStore.summary).toBeNull();
@@ -175,6 +177,21 @@ describe("resetSessionState and notifications", () => {
         },
       }),
     ).not.toThrow();
+  });
+});
+
+describe("resetSessionState and the window title", () => {
+  it("one reset puts the window title back", () => {
+    let cleared = 0;
+    resetSessionState({
+      editTargetStore: createEditTargetStore(),
+      replyTargetStore: createReplyTargetStore(),
+      safetyStore: createSafetyStore(null),
+      accountStore: createAccountStore(),
+      ...blankTurnStores(),
+      attention: { reset: () => void cleared++ },
+    });
+    expect(cleared).toBe(1);
   });
 });
 

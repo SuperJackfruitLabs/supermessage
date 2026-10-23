@@ -17,6 +17,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 
+mod attention;
 mod commands;
 mod commands_notify;
 mod commands_session;
@@ -259,6 +260,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            attention::set_attention,
             core_status,
             ignore_user,
             unignore_user,
