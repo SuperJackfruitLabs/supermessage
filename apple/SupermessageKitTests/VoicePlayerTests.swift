@@ -270,4 +270,12 @@ struct VoiceRecordingFormatTests {
         #expect(back.fileFormat.channelCount == 1)
         #expect(abs(Double(back.length) - 48_000) < 1_000, "about a second: \(back.length)")
     }
+
+    @Test("the recorder's numbers are the core's")
+    func theNumbersAreTheCores() {
+        #expect(VoiceRecordingFormat.fileName == "Voice message.caf")
+        #expect(voiceRecordingSpec().waveformBins == 60)
+        #expect(!voiceLongEnough(durationMs: 599))
+        #expect(voiceWaveform(decibels: [-50, 0], bins: 60) == [0, 1])
+    }
 }

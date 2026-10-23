@@ -21,10 +21,12 @@
 use crate::custom_events::{CustomEventDecision, CustomEventView, GATE_OPTION_IDS};
 use crate::dto::TimelineRow;
 use crate::item_view::ItemView;
+use serde::{Deserialize, Serialize};
 
 /// Which set of actions a notification offers. The host registers one
 /// category per case under [`NotificationCategory::identifier`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "camelCase")]
 pub enum NotificationCategory {
     /// An ordinary message. Tapping it opens the room.
     Message,
@@ -51,7 +53,8 @@ impl NotificationCategory {
 }
 
 /// The two option ids a PERMISSION notification's actions send.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionAnswers {
     pub allow_option_id: String,
     pub reject_option_id: String,
@@ -59,7 +62,8 @@ pub struct PermissionAnswers {
 
 /// What a GATE notification's actions need to answer with no room open: the
 /// same three things the card sends.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
 pub struct GateAnswers {
     /// superpipeline's `gate_id` — `CustomEventDecision::subject`.
     pub gate_id: String,

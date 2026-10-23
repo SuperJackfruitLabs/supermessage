@@ -1,3 +1,4 @@
+import SupermessageFFI
 import SupermessageKit
 import UserNotifications
 
@@ -13,53 +14,30 @@ import UserNotifications
 enum LocalNotifier {
     /// The four categories. Registered at launch, before any notification
     /// can be delivered, so a tap on one posted by a previous launch still
-    /// has its actions.
-    ///
-    /// Every answer is `.authenticationRequired` and none is `.foreground`:
-    /// the device must be unlocked to answer, and answering does not open
-    /// the app. The app delegate sends it in the background
-    /// (`NotificationAnswerer`), whether or not the app was running.
+    /// has its actions. Their identifiers, actions, copy and flags are the
+    /// core's (`core::notification_policy::actions`).
     static func registerCategories() {
-        let allow = UNNotificationAction(
-            identifier: NotificationKeys.allowAction, title: "Allow once",
-            options: [.authenticationRequired])
-        let reject = UNNotificationAction(
-            identifier: NotificationKeys.rejectAction, title: "Reject",
-            options: [.destructive, .authenticationRequired])
-        // Gates are answered from the notification too — the operator's
-        // decision of 2026-09-27, reversing the earlier rule that a gate
-        // only opened (its details sit behind the card's disclosure). The
-        // notification carries the gate's question, and an action the gate
-        // does not offer opens it instead (`NotificationKeys.response`).
-        let approve = UNNotificationAction(
-            identifier: NotificationKeys.approveGateAction, title: "Approve",
-            options: [.authenticationRequired])
-        let requestChanges = UNTextInputNotificationAction(
-            identifier: NotificationKeys.requestChangesAction, title: "Request changes",
-            options: [.authenticationRequired], textInputButtonTitle: "Send",
-            textInputPlaceholder: "What should change?")
-        let rejectGate = UNNotificationAction(
-            identifier: NotificationKeys.rejectGateAction, title: "Reject",
-            options: [.destructive, .authenticationRequired])
-        let open = UNNotificationAction(
-            identifier: NotificationKeys.openAction, title: "Open", options: [.foreground])
-
-        let categories: Set<UNNotificationCategory> = [
-            UNNotificationCategory(
-                identifier: LocalNotification.Category.message.rawValue, actions: [],
-                intentIdentifiers: []),
-            UNNotificationCategory(
-                identifier: LocalNotification.Category.permission.rawValue,
-                actions: [allow, reject], intentIdentifiers: []),
-            UNNotificationCategory(
-                identifier: LocalNotification.Category.gate.rawValue,
-                actions: [approve, requestChanges, rejectGate, open], intentIdentifiers: []),
-            // Read it in the app first: only "Open".
-            UNNotificationCategory(
-                identifier: LocalNotification.Category.decision.rawValue, actions: [open],
-                intentIdentifiers: []),
-        ]
+        let categories = Set(
+            ([.message, .permission, .gate, .decision] as [NotificationCategory]).map { category in
+                UNNotificationCategory(
+                    identifier: notificationCategoryIdentifier(category: category),
+                    actions: notificationActions(category: category).map(action(_:)),
+                    intentIdentifiers: [])
+            })
         UNUserNotificationCenter.current().setNotificationCategories(categories)
+    }
+
+    private static func action(_ spec: NotificationActionSpec) -> UNNotificationAction {
+        var options: UNNotificationActionOptions = []
+        if spec.destructive { options.insert(.destructive) }
+        if spec.requiresUnlock { options.insert(.authenticationRequired) }
+        if spec.opensApp { options.insert(.foreground) }
+        if let input = spec.textInput {
+            return UNTextInputNotificationAction(
+                identifier: spec.id, title: spec.title, options: options,
+                textInputButtonTitle: input.buttonTitle, textInputPlaceholder: input.placeholder)
+        }
+        return UNNotificationAction(identifier: spec.id, title: spec.title, options: options)
     }
 
     private static func request(for note: LocalNotification) -> UNNotificationRequest {
@@ -91,10 +69,7 @@ enum LocalNotifier {
     /// the background only to answer, about to be suspended the moment it
     /// reports back.
     static func postFailure(roomId: String) async {
-        let note = LocalNotification(
-            id: "\(roomId)#answer-failed", roomId: roomId, eventId: nil,
-            title: "Your answer wasn't sent", subtitle: nil,
-            body: "Open the conversation to answer it there.", category: .decision)
+        let note = LocalNotification(planned: answerFailedNotification(roomId: roomId))
         try? await UNUserNotificationCenter.current().add(request(for: note))
     }
 

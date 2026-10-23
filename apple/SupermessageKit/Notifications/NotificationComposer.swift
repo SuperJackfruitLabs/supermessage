@@ -1,6 +1,14 @@
 import Foundation
 import SupermessageFFI
 
+// Shared with the Notification Service Extension as source, which does not
+// compile Sendability.swift — so these conformances live here (as in
+// CoreLocation.swift).
+extension NotificationActionSpec: @retroactive @unchecked Sendable {}
+extension NotificationContext: @retroactive @unchecked Sendable {}
+extension NotificationTextInput: @retroactive @unchecked Sendable {}
+extension PlannedNotification: @retroactive @unchecked Sendable {}
+
 /// One local notification this app has decided to post.
 ///
 /// A value, not a `UNNotificationRequest`: Kit imports no UI framework, and
@@ -95,12 +103,30 @@ public struct LocalNotification: Equatable, Sendable {
     /// id — the push gateway's `apns-collapse-id` too, so a local and a remote
     /// notification for one event replace each other rather than stacking.
     public init(decided note: NotificationDto) {
+        self.init(planned: plannedFromDecided(note: note))
+    }
+
+    /// A notification the core planned (`core::notification_policy`).
+    public init(planned note: PlannedNotification) {
         self.init(
-            id: note.eventId, roomId: note.roomId, eventId: note.eventId, title: note.title,
+            id: note.id, roomId: note.roomId, eventId: note.eventId, title: note.title,
             subtitle: note.subtitle, body: note.body, category: Category(note.category),
             allowOptionId: note.permission?.allowOptionId,
             rejectOptionId: note.permission?.rejectOptionId,
             gate: note.gate.map { Gate($0) })
+    }
+
+    /// The core's value for this notification, which its policy functions
+    /// (`notificationDelivers`, `notificationUserInfo`) take. The permission
+    /// answers are carried only when both ids are set.
+    public var planned: PlannedNotification {
+        PlannedNotification(
+            id: id, roomId: roomId, eventId: eventId, title: title, subtitle: subtitle,
+            body: body, category: category.core,
+            permission: allowOptionId.flatMap { allow in
+                rejectOptionId.map { PermissionAnswers(allowOptionId: allow, rejectOptionId: $0) }
+            },
+            gate: gate.map { GateAnswers(gateId: $0.gateId, prompt: $0.prompt, optionIds: $0.optionIds) })
     }
 }
 
@@ -113,6 +139,15 @@ extension LocalNotification.Category {
         case .decision: self = .decision
         }
     }
+
+    var core: NotificationCategory {
+        switch self {
+        case .message: .message
+        case .permission: .permission
+        case .gate: .gate
+        case .decision: .decision
+        }
+    }
 }
 
 extension LocalNotification.Gate {
@@ -121,137 +156,31 @@ extension LocalNotification.Gate {
     }
 }
 
-/// What the notifier needs to know about the app when it decides.
-public struct NotificationContext: Equatable, Sendable {
-    /// The room on screen, or `nil` on the roster.
-    public var openRoomId: String?
-    /// Whether the app is in the foreground and active.
-    public var appActive: Bool
-    /// The room the timeline store is subscribed to. That room's events are
-    /// seen row by row, so the roster path leaves it alone rather than
-    /// posting a second, vaguer notification for the same message.
-    public var timelineRoomId: String?
-
-    /// Whether this device receives remote pushes for the account — a
-    /// pusher is registered. Then the Notification Service Extension shows
-    /// what arrives while the app is away, and the app only adds what it
-    /// sees first, in the foreground.
-    public var remotePush: Bool
-
-    public init(
-        openRoomId: String?, appActive: Bool, timelineRoomId: String?, remotePush: Bool = false
-    ) {
-        self.openRoomId = openRoomId
-        self.appActive = appActive
-        self.timelineRoomId = timelineRoomId
-        self.remotePush = remotePush
-    }
-}
-
-/// Which changes deserve a notification, and what it says.
-///
-/// **Nothing here reads message content the core did not already compose.**
-/// A message's body is `TimelineRow.replyPreview` or the roster's
-/// `RoomPreview.text`; a decision's is `CustomEventDecision.prompt`; titles
-/// are `RoomIdentity.name` and `TimelineRow.senderName`. The only choice
-/// made here is *whether* — the host's job, since notifications are a
-/// platform surface. *What* a row's notification says, including its
-/// category and the answers its actions send, is the core's
-/// (`core::notification`), shared with the Notification Service Extension.
+/// Which changes deserve a notification, and what it says: the core's
+/// `core::notification_policy`, with `LocalNotification` as the Swift value.
 public enum NotificationComposer {
-    /// A room the reader is looking at, in an app they are looking at, does
-    /// not notify: the message is already on screen.
-    public static func isSuppressed(roomId: String, context: NotificationContext) -> Bool {
-        context.appActive && context.openRoomId == roomId
-    }
-
-    // MARK: - The roster: rooms that are not subscribed
-
     /// Notifications for rooms whose roster row changed between two
-    /// snapshots.
-    ///
-    /// Only a room present in both is compared. That is what makes the first
-    /// roster after launch or sign-in (an empty `previous`) a baseline rather
-    /// than a notification for every unread room in the account, and a room
-    /// that has just appeared — joined, or brought in by a space switch — is
-    /// not news either.
+    /// snapshots (`core::notification_policy::notifications_for_roster`).
     public static func forRoster(
         previous: [RoomRow], next: [RoomRow], context: NotificationContext
     ) -> [LocalNotification] {
-        // With remote push, every room's news arrives as a push, decided in
-        // the extension. The roster knows no event ids, so a note from here
-        // could never be matched to that push and would be its duplicate.
-        guard !context.remotePush else { return [] }
-        let before = Dictionary(
-            previous.map { ($0.room.id, $0) }, uniquingKeysWith: { _, last in last })
-        var out: [LocalNotification] = []
-        for row in next {
-            let id = row.room.id
-            guard let old = before[id] else { continue }
-            guard row.room.membership == .joined else { continue }
-            guard id != context.timelineRoomId else { continue }
-            guard !isSuppressed(roomId: id, context: context) else { continue }
-            guard row.room.unread > old.room.unread else { continue }
-            guard !row.room.lastMessageIsOwn else { continue }
-
-            if let preview = row.preview, preview.pending {
-                out.append(
-                    LocalNotification(
-                        id: "\(id)#pending#\(row.room.lastActivityMs ?? row.room.unread)",
-                        roomId: id, eventId: nil, title: row.identity.name, subtitle: nil,
-                        body: preview.text, category: .decision))
-            } else if let text = row.preview?.text ?? row.room.lastMessage {
-                out.append(
-                    LocalNotification(
-                        id: "\(id)#\(row.room.lastActivityMs ?? row.room.unread)",
-                        roomId: id, eventId: nil, title: row.identity.name, subtitle: nil,
-                        body: text, category: .message))
-            }
-        }
-        return out
+        notificationsForRoster(previous: previous, next: next, context: context)
+            .map(LocalNotification.init(planned:))
     }
 
-    // MARK: - The subscribed room, row by row
-
-    /// Notifications for new rows in the subscribed room.
+    /// Notifications for new rows in the subscribed room
+    /// (`core::notification_policy::notifications_for_timeline`).
     ///
-    /// - Parameters:
-    ///   - since: milliseconds since the epoch. Rows older than this are
-    ///     history — what the subscription loaded, or back-pagination
-    ///     fetched — and never notify.
-    ///   - alreadyNotified: event ids posted before. A row is re-emitted
-    ///     whenever anything about it changes (a reaction, a receipt), and
-    ///     each of those must not be a new notification.
+    /// `since` is milliseconds since the epoch; `alreadyNotified` is the
+    /// event ids posted before.
     public static func forTimeline(
         roomId: String, roomName: String, rows: [TimelineRow], since: UInt64,
         alreadyNotified: Set<String>, context: NotificationContext
     ) -> [LocalNotification] {
-        guard !isSuppressed(roomId: roomId, context: context) else { return [] }
-        // In the background with push, the push is the notification.
-        guard context.appActive || !context.remotePush else { return [] }
-        var out: [LocalNotification] = []
-        for row in rows {
-            guard !row.item.isOwn else { continue }
-            // A local echo has no event id; a remote event always does.
-            guard let eventId = row.item.eventId else { continue }
-            guard !alreadyNotified.contains(eventId) else { continue }
-            guard let at = row.item.timestampMs, at >= since else { continue }
-            if let note = notification(for: row, eventId: eventId, roomId: roomId, roomName: roomName) {
-                out.append(note)
-            }
-        }
-        return out
-    }
-
-    /// The notification for one row, decided by the core
-    /// (`core::notification::notification_for_row`) — the same function the
-    /// Notification Service Extension's push goes through, so a local and a
-    /// remote notification for one event cannot differ.
-    static func notification(
-        for row: TimelineRow, eventId: String, roomId: String, roomName: String
-    ) -> LocalNotification? {
-        notificationForRow(row: row, roomId: roomId, eventId: eventId, roomName: roomName)
-            .map(LocalNotification.init(decided:))
+        notificationsForTimeline(
+            roomId: roomId, roomName: roomName, rows: rows, sinceMs: since,
+            alreadyNotified: Array(alreadyNotified), context: context
+        ).map(LocalNotification.init(planned:))
     }
 
     /// The two options a PERMISSION notification's actions send, or `nil`
@@ -275,37 +204,21 @@ public enum NotificationComposer {
         notificationGateAnswers(decision: decision, gateId: gateId).map { LocalNotification.Gate($0) }
     }
 
-    /// Whether a remote notification arriving in the foreground is shown.
-    ///
-    /// Not for the room on screen — the message is already there — and not
-    /// for an event this app already posted locally from the open timeline.
-    /// That local note used the event id as its identifier, which is also the
-    /// push's collapse id, so it would only replace itself; showing the
-    /// banner again would be the same news twice.
+    /// Whether a remote notification arriving in the foreground is shown
+    /// (`core::notification_policy::presents_remote`).
     public static func presentsRemote(
         roomId: String?, eventId: String?, context: NotificationContext,
         alreadyNotified: Set<String>
     ) -> Bool {
-        if let roomId, isSuppressed(roomId: roomId, context: context) { return false }
-        if let eventId, alreadyNotified.contains(eventId) { return false }
-        return true
+        notificationPresentsRemote(
+            roomId: roomId, eventId: eventId, context: context,
+            alreadyNotified: Array(alreadyNotified))
     }
 
-    // MARK: - The room's own notification setting
-
-    /// Whether a room's notification setting lets this through.
-    ///
-    /// A decision is always delivered: it is somebody waiting on the reader,
-    /// and a muted chatty agent room is exactly where one gets lost. A plain
-    /// message is held back in a muted room and in a mentions-only one —
-    /// the second because telling a mention from a message is the core's
-    /// decision and the roster does not carry it.
+    /// Whether a room's notification setting lets this through
+    /// (`core::notification_policy::delivers`).
     public static func delivers(_ note: LocalNotification, mode: NotificationMode?) -> Bool {
-        if note.isDecision { return true }
-        switch mode {
-        case .muted?, .mentionsOnly?: return false
-        case .default?, .allMessages?, nil: return true
-        }
+        notificationDelivers(note: note.planned, mode: mode)
     }
 }
 
