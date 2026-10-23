@@ -17,6 +17,20 @@ export interface LiveCardServices {
   statusWord(endedBy: TurnEnding | null): Promise<string>;
   /** `core::rich` over the revealed answer text. */
   parse(markdown: string): Promise<RichBlock[]>;
+  /**
+   * The clock the running timer reads, in epoch milliseconds. Absent means the
+   * wall clock; a story supplies a fixed one so a frame cannot depend on how
+   * fast it rendered.
+   */
+  now?(): number;
+}
+
+/** The wall clock: what the app reads. */
+export const systemClock = (): number => Date.now();
+
+/** The clock a card should read: the services' own when they carry one, else the wall clock. */
+export function clockOf(services: LiveCardServices): () => number {
+  return services.now ? () => services.now!() : systemClock;
 }
 
 export const ipcServices: LiveCardServices = {

@@ -669,7 +669,7 @@
     await settled(() => (rowEls(root).length >= jumpRows.length ? root : null), 4000, "the history");
     await new Promise((r) => setTimeout(r, 400));
     const sampler = sampleFrames(root);
-    await streamAnswer(probeHarness, Date.now());
+    await streamAnswer(probeHarness);
     await new Promise((r) => setTimeout(r, 500));
     sampler.stop();
     const frames = sampler.frames.filter((f) => f.liveTop !== null);
@@ -803,7 +803,7 @@
     // The card is not on screen, so its row is not what is measured: the first visible row is.
     await new Promise((r) => setTimeout(r, 100));
     const before = sampler.frames.at(-1)!.firstVisibleTop;
-    await streamAnswer(awayHarness, Date.now());
+    await streamAnswer(awayHarness);
     await new Promise((r) => setTimeout(r, 400));
     sampler.stop();
     if (before === null) throw new Error("no visible row");
