@@ -1,6 +1,8 @@
 package dev.supermessage
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -12,6 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
@@ -63,6 +67,56 @@ class InvitationTest {
 
         compose.onNodeWithTag("invitation-inviter").assertIsDisplayed()
         assertEquals(listOf("!room:example.org"), fake.roomInviterCalls)
+    }
+
+    /** A quiet "Report room…" under Accept and Decline, for the caller to open the sheet. */
+    @Test
+    fun reportRoomIsOfferedOnAnInvitation() {
+        var reported = 0
+        val session = sessionOf(FakeCore(roomInviterResult = { null }))
+        compose.setContent {
+            InvitationView(
+                roomId = "!room:example.org",
+                roomName = "Ops Room",
+                inviter = session::inviter,
+                joinRoom = session::joinRoom,
+                leaveRoom = session::leaveRoom,
+                onReport = { reported++ },
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Report room…").assertIsDisplayed()
+        compose.onNodeWithTag("invitation-report").performClick()
+        assertEquals(1, reported)
+    }
+
+    /** Focus comes back to the button once the sheet it opened has closed. */
+    @Test
+    fun focusReturnsToReportRoomWhenTheSheetCloses() {
+        var reporting by androidx.compose.runtime.mutableStateOf(false)
+        val session = sessionOf(FakeCore(roomInviterResult = { null }))
+        compose.setContent {
+            // A button takes focus only in keyboard input mode (touch mode makes
+            // clickables unfocusable), and focus coming back is for keyboard and
+            // switch users. The device starts in touch mode, so say so here.
+            val inputMode = androidx.compose.ui.platform.LocalInputModeManager.current
+            androidx.compose.runtime.SideEffect { inputMode.requestInputMode(androidx.compose.ui.input.InputMode.Keyboard) }
+            InvitationView(
+                roomId = "!room:example.org",
+                roomName = "Ops Room",
+                inviter = session::inviter,
+                joinRoom = session::joinRoom,
+                leaveRoom = session::leaveRoom,
+                onReport = { reporting = true },
+                reporting = reporting,
+            )
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("invitation-report").performClick()
+        compose.waitForIdle()
+        reporting = false
+        compose.waitForIdle()
+        compose.onNodeWithTag("invitation-report").assertIsFocused()
     }
 
     /** Accepting joins the invited room — `Session.joinRoom`, not a re-derived membership write. */
@@ -152,6 +206,9 @@ class InvitationTest {
         private val roomsSnapshotResult: () -> RoomsSnapshot = { RoomsSnapshot(seq = 0uL, rooms = emptyList()) },
         private val spacesListResult: () -> List<SpaceSummary> = { emptyList() },
     ) : StubCore() {
+        /** The session pushes the hidden set at sign-in; these tests hide nothing. */
+        override fun setHiddenEvents(eventIds: List<String>) {}
+
         val roomInviterCalls = mutableListOf<String>()
         val joinRoomCalls = mutableListOf<String>()
         val leaveRoomCalls = mutableListOf<String>()

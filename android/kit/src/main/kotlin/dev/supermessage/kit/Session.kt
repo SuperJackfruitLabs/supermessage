@@ -4,16 +4,20 @@ import dev.supermessage.kit.stores.AvatarCache
 import dev.supermessage.kit.stores.ConnectionStore
 import dev.supermessage.kit.stores.DraftStore
 import dev.supermessage.kit.stores.EditTarget
+import dev.supermessage.kit.stores.HiddenEventStorage
+import dev.supermessage.kit.stores.InMemoryHiddenEvents
 import dev.supermessage.kit.stores.LiveStore
 import dev.supermessage.kit.stores.MediaCache
 import dev.supermessage.kit.stores.ReplyTarget
 import dev.supermessage.kit.stores.RoomsStore
+import dev.supermessage.kit.stores.SafetyStore
 import dev.supermessage.kit.stores.SpacesStore
 import dev.supermessage.kit.stores.StagedAttachment
 import dev.supermessage.kit.stores.TimelineStore
 import dev.supermessage.kit.stores.TypingStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,7 +30,9 @@ import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlayableAudio
 import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.RoomInfoDto
+import uniffi.supermessage_core.RoomMemberDto
 import uniffi.supermessage_core.SearchResultDto
+import uniffi.supermessage_core.TimelineRow
 import uniffi.supermessage_ffi.FfiEvent
 import uniffi.supermessage_ffi.FfiException
 import uniffi.supermessage_ffi.collectMentions
@@ -161,13 +167,14 @@ import uniffi.supermessage_ffi.collectMentions
  *   `RoomsStore.resume`; that half is `RoomsStoreTest`'s and `GapSyncTest`'s
  *   to prove, and they do.
  *
- * Twelve stores are constructed below, not eleven — [avatars] and [faces]
+ * Thirteen stores are constructed below, not twelve — [avatars] and [faces]
  * are two separate [AvatarCache] instances, one keyed by room id and one
  * (via [AvatarCache.forMembers]) by a message sender's `mxc:` URI.
  */
 class Session(
     private val client: CoreClient,
     private val scope: CoroutineScope,
+    hiddenEvents: HiddenEventStorage = InMemoryHiddenEvents(),
 ) {
     enum class Phase {
         /** Before [start] has answered. */
@@ -201,6 +208,9 @@ class Session(
     val replies = ReplyTarget()
     val edits = EditTarget()
     val staged: StagedAttachment = StagedAttachment(client = client)
+
+    /** Blocked people (the core's list) and messages hidden on this device. */
+    val safety = SafetyStore(hiddenEvents)
 
     /** See this class's KDoc for why [drainJob] is `internal`, not `private`. */
     internal var drainJob: Job? = null
@@ -239,7 +249,11 @@ class Session(
             rooms.resume()
             val restored = client.restoreSession(sink = pump)
             _phase.value = if (restored) Phase.SIGNED_IN else Phase.SIGNED_OUT
+            // Nothing restored means no account is signed in; whatever this
+            // device remembered about one must not reach the next.
+            if (!restored) safety.clearAll()
             if (restored) {
+                bindSafety(adoptLegacy = true)
                 beginDraining()
                 load()
             }
@@ -249,9 +263,55 @@ class Session(
         } catch (e: Exception) {
             // A failure to *restore* is not a failure to sign in: there may
             // simply be nothing stored. Either way the answer is the login
-            // screen, and saying more than that would be guessing.
+            // screen, and saying more than that would be guessing. What was
+            // hidden stays stored under its account: an error says nothing
+            // about that account, and only a sign-out or a definite "nothing
+            // stored" forgets it. Whoever signs in next gets their own set.
             _phase.value = Phase.SIGNED_OUT
             false
+        }
+    }
+
+    /**
+     * The hidden set is per account: load the one of whoever just reached
+     * signed-in. When the account cannot be read, nothing is hidden and
+     * nothing is saved, rather than guessing whose set this is.
+     */
+    private suspend fun bindSafety(adoptLegacy: Boolean) {
+        safety.bind(account()?.userId, adoptLegacy)
+        pushHiddenEvents()
+    }
+
+    /** The last push of the hidden set; the next waits for it (see [pushHiddenEvents]). */
+    private var hiddenPush: Job? = null
+
+    /**
+     * Hand the core the events this device has hidden: the bound account's
+     * whole set, at sign-in and after every hide. The core groups as if those
+     * rows were absent and marks them `hidden`; the timeline skips them.
+     *
+     * Pushes run one after another, each waiting for the one before, so a
+     * slow first push cannot land after a later one and leave the core with
+     * the older set. A push begun for an account that has since signed out
+     * (the store's generation moved on) is dropped; the core forgets its set
+     * itself at sign-out. Not awaited by callers: a failed push leaves the
+     * core with the previous set, and the next hide pushes again.
+     */
+    @Synchronized
+    private fun pushHiddenEvents() {
+        val ids = safety.hidden.value.toList()
+        val generation = safety.generation
+        val previous = hiddenPush
+        hiddenPush = scope.launch {
+            previous?.join()
+            if (generation != safety.generation) return@launch
+            try {
+                client.setHiddenEvents(ids)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Keep what the core had.
+            }
         }
     }
 
@@ -270,6 +330,7 @@ class Session(
             rooms.resume()
             client.login(homeserver = homeserver, username = username, password = password, sink = pump)
             _phase.value = Phase.SIGNED_IN
+            bindSafety(adoptLegacy = false)
             beginDraining()
             load()
             setUpRecoveryIfNeeded()
@@ -539,6 +600,113 @@ class Session(
         null
     }
 
+    // MARK: - Block and report (`Session.swift:332-392`)
+
+    /** Block [userId]. Returns the refusal, or `null` when it landed. */
+    suspend fun block(userId: String): String? {
+        val generation = safety.generation
+        return safetyRefusal {
+            client.ignoreUser(userId)
+            safety.noteBlocked(userId, generation)
+        }
+    }
+
+    suspend fun unblock(userId: String): String? {
+        val generation = safety.generation
+        return safetyRefusal {
+            client.unignoreUser(userId)
+            safety.noteUnblocked(userId, generation)
+        }
+    }
+
+    /** Who this account has blocked; empty when the list cannot be read. */
+    suspend fun blockedUsers(): List<RoomMemberDto> = loadBlockedUsers() ?: emptyList()
+
+    /** Like [blockedUsers], but `null` when the list cannot be read, so a caller can keep what it had. */
+    suspend fun loadBlockedUsers(): List<RoomMemberDto>? = try {
+        client.ignoredUsers()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * Report [subject] to the homeserver's administrators.
+     *
+     * The report alone decides success: it goes first, and a failure hides
+     * nothing and blocks no one. Only then is a message hidden, and, when
+     * asked and not already blocked, its sender blocked. A block that fails
+     * after a landed report says which half failed.
+     */
+    suspend fun report(subject: ReportSubject, reason: String, alsoBlock: Boolean): String? =
+        // In the session's scope, not the caller's: leaving the room closes the
+        // sheet and cancels its coroutine, but a report that landed must still
+        // hide the message and carry out its block.
+        scope.async { doReport(subject, reason, alsoBlock) }.await()
+
+    private suspend fun doReport(subject: ReportSubject, reason: String, alsoBlock: Boolean): String? {
+        val generation = safety.generation
+        val refused = safetyRefusal {
+            when (subject) {
+                is ReportSubject.Message -> client.reportEvent(subject.roomId, subject.eventId, reason)
+                is ReportSubject.Room -> client.reportRoom(subject.roomId, reason)
+                is ReportSubject.User -> client.reportUser(subject.userId, reason)
+            }
+        }
+        if (refused != null) return refused
+        if (subject is ReportSubject.Message) {
+            safety.hide(subject.eventId, generation)
+            pushHiddenEvents()
+        }
+        val target = subject.blockable
+        if (alsoBlock && target != null && !safety.isBlocked(target.userId)) {
+            val blockRefused = safetyRefusal {
+                client.ignoreUser(target.userId)
+                safety.noteBlocked(target.userId, generation)
+            }
+            if (blockRefused != null) return "$REPORTED_BUT_PREFIX $blockRefused"
+        }
+        return null
+    }
+
+    /**
+     * What a report of [row] is about, or `null` when it has no event id
+     * (not acknowledged yet) or no sender. Whether the sender is an agent is
+     * the member's flag from the room, the core's own rule; a room that
+     * cannot be asked reads as a person.
+     */
+    suspend fun reportSubjectFor(row: TimelineRow, roomId: String): ReportSubject? {
+        val eventId = row.item.eventId ?: return null
+        val sender = row.item.sender ?: return null
+        val isAgent = try {
+            client.roomInfo(roomId).members.firstOrNull { it.userId == sender }?.isAgent ?: false
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+        return ReportSubject.Message(
+            roomId = roomId,
+            eventId = eventId,
+            senderId = sender,
+            senderName = row.senderShort,
+            isAgent = isAgent,
+        )
+    }
+
+    /** Unlike [refusal], this does not reload the roster: nothing here changes it. */
+    private suspend fun safetyRefusal(body: suspend () -> Unit): String? = try {
+        body()
+        null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: FfiException) {
+        ErrorPresenter.message(e)
+    } catch (e: Exception) {
+        "That didn't work."
+    }
+
     /** Who this app is signed in as, and where. */
     suspend fun account(): AccountDto? = try {
         client.account()
@@ -800,7 +968,18 @@ class Session(
         avatars.clear()
         faces.clear()
         edits.clearAll()
+        safety.clear()
         _phase.value = Phase.SIGNED_OUT
+    }
+
+    companion object {
+        /**
+         * What [report] says first when the report went and the block did not.
+         * A screen tells that apart from a refused report by this prefix: the
+         * first must never be offered again, the second can be retried.
+         */
+        const val REPORTED_BUT_LEAD = "Reported, but "
+        const val REPORTED_BUT_PREFIX = REPORTED_BUT_LEAD + "blocking didn't work:"
     }
 
     /** The single collector. See this class's KDoc on ordering. */
@@ -866,10 +1045,9 @@ class Session(
             // rather than swept into an `else` so a new variant on the
             // boundary still breaks this build.
         }
-        is FfiEvent.IgnoredUsers -> {
-            // Block and report (issue #60) is iOS-only for now; Android parity
-            // is a follow-up. Listed rather than swept into an `else` for the
-            // same reason as above.
-        }
+        // The core sends the whole sorted list once at session start and
+        // after every change from any device (`core/event.rs:62-65`), so it
+        // replaces ours rather than adding to it.
+        is FfiEvent.IgnoredUsers -> safety.apply(event.userIds)
     }
 }

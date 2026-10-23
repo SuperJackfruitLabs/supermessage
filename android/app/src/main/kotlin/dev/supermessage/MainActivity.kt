@@ -290,7 +290,9 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                             joinByAlias = session::joinByAlias,
                         )
 
-                    is ExtraPanel.RoomInfo ->
+                    is ExtraPanel.RoomInfo -> {
+                        // Read here so the panel recomposes on the homeserver's echo.
+                        val blocked by session.safety.blocked.collectAsStateWithLifecycle()
                         RoomInfoPanel(
                             roomId = panel.roomId,
                             accountUserId = accountUserId,
@@ -307,7 +309,12 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                                 session.setPinned(pinned, panel.roomId)
                             },
                             onLeaveRoom = { session.leaveRoom(panel.roomId) },
+                            isBlocked = { it in blocked },
+                            onBlock = session::block,
+                            onUnblock = session::unblock,
+                            onReport = session::report,
                         )
+                    }
 
                     is ExtraPanel.Search ->
                         SearchPanel(
@@ -325,6 +332,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                         )
 
                     ExtraPanel.Account -> {
+                        val blockedNow by session.safety.blocked.collectAsStateWithLifecycle()
                         val storedView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
                         val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
                         AccountPanel(
@@ -353,6 +361,9 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                             onEnableRecovery = session::enableRecovery,
                             onRecoverWithKey = session::recoverWithKey,
                             onResetRecovery = session::resetRecovery,
+                            blockedNow = blockedNow,
+                            loadBlocked = session::loadBlockedUsers,
+                            onUnblock = session::unblock,
                         )
                     }
 

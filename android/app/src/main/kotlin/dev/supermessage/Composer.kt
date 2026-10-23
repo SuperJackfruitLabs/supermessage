@@ -451,17 +451,7 @@ internal fun MentionPicker(people: List<PersonDto>, onPick: (PersonDto) -> Unit,
                         )
                     }
                 }
-                if (agent != null) {
-                    Text(
-                        "Agent",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = colors.accent,
-                        modifier = Modifier
-                            .background(colors.accentSoft, CircleShape)
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                    )
-                }
+                if (agent != null) AgentTag()
             }
         }
     }

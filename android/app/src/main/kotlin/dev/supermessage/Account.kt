@@ -42,6 +42,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_core.RoomMemberDto
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import uniffi.supermessage_ffi.displayInitial
 import uniffi.supermessage_ffi.peopleLabel
 
@@ -99,15 +105,49 @@ fun AccountPanel(
     onEnableRecovery: suspend () -> String = { "" },
     onRecoverWithKey: suspend (String) -> Unit = {},
     onResetRecovery: suspend (String) -> String = { throw NotImplementedError() },
+    /**
+     * Who this account has blocked, read when the panel opens and again only
+     * when [blockedNow] holds someone the loaded list lacks. `null` means the
+     * read failed: the list already shown stays.
+     */
+    loadBlocked: suspend () -> List<RoomMemberDto>? = { emptyList() },
+    /** Unblocks one user: `null` when it landed, otherwise the refusal in words. */
+    onUnblock: suspend (String) -> String? = { null },
+    /**
+     * The session's blocked ids. The list drawn is the loaded one filtered by
+     * these, so a landed unblock stays gone while the core's own list is stale
+     * (it changes only on the sync echo). `null` draws the loaded list as is.
+     */
+    blockedNow: Set<String>? = null,
+    /** Only for a preview of the refused state. */
+    initialUnblockFailure: String? = null,
 ) {
     var account by remember { mutableStateOf<AccountDto?>(null) }
     var confirmingSignOut by remember { mutableStateOf(false) }
     var showingRecovery by remember { mutableStateOf(false) }
     var recovery by remember { mutableStateOf("unknown") }
     val scope = rememberCoroutineScope()
+    var loadedBlocked by remember { mutableStateOf<List<RoomMemberDto>>(emptyList()) }
+    var triedBlocked by remember { mutableStateOf(false) }
+    val blocked = if (blockedNow == null) loadedBlocked else loadedBlocked.filter { it.userId in blockedNow }
+    var unblockFailure by remember { mutableStateOf(initialUnblockFailure) }
+    var unblocking by remember { mutableStateOf(false) }
+    val haptics = LocalHapticFeedback.current
 
     LaunchedEffect(Unit) {
         account = loadAccount()
+    }
+    // Loads when the panel opens (`AccountPanel.swift:177-180`). After that it
+    // reloads only for an id the list lacks, a block made from room info or on
+    // another device. The core's list is its local store, which still holds
+    // someone just unblocked until sync echoes it, so it is never trusted to
+    // remove a row; `blockedNow` does that. A failed read keeps the last list.
+    LaunchedEffect(blockedNow) {
+        val missing = blockedNow?.any { id -> loadedBlocked.none { it.userId == id } } == true
+        if (!triedBlocked || missing) {
+            triedBlocked = true
+            loadBlocked()?.let { loadedBlocked = it }
+        }
     }
 
     val name = accountName(account)
@@ -231,11 +271,84 @@ fun AccountPanel(
                 "Waiting first puts what needs an answer at the top. Agent state is the dot and word beside an agent's name.",
             )
 
+            // Only when someone is in it (`AccountPanel.swift:112-130`).
+            if (blocked.isNotEmpty()) {
+                Column(Modifier.testTag("account-blocked")) {
+                    AccountSectionHeader("Blocked")
+                    blocked.forEach { member ->
+                        val name = member.displayName ?: member.userId
+                        Row(
+                            Modifier.fillMaxWidth().padding(end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            MemberRow(member, blocked = false, onClick = null, modifier = Modifier.weight(1f))
+                            TextButton(
+                                onClick = {
+                                    unblockFailure = null
+                                    unblocking = true
+                                    scope.launch {
+                                        try {
+                                            val refused = onUnblock(member.userId)
+                                            if (refused != null) {
+                                                unblockFailure = refused
+                                            } else {
+                                                loadedBlocked = loadedBlocked.filter { it.userId != member.userId }
+                                                haptics.play(Haptic.Success)
+                                            }
+                                        } finally {
+                                            unblocking = false
+                                        }
+                                    }
+                                },
+                                enabled = !unblocking,
+                                modifier = Modifier
+                                    .semantics { contentDescription = "Unblock $name" }
+                                    .testTag("account-unblock-${member.userId}"),
+                            ) { Text("Unblock") }
+                        }
+                    }
+                    val failure = unblockFailure
+                    if (failure != null) {
+                        Text(
+                            failure,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .semantics { liveRegion = LiveRegionMode.Polite }
+                                .testTag("account-blocked-failure"),
+                        )
+                    } else {
+                        Text(
+                            "Their messages are hidden in every room, on all your devices. A blocked agent keeps running. " +
+                                "Block someone from a room's member list.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SupermessageTheme.colors.contentFaint,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp)
+                                .testTag("account-blocked-footer"),
+                        )
+                    }
+                }
+            }
+
             // No heading, as on iOS: the three links name themselves.
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             HelpLink("Help & support", SupportUrl, "account-link-support")
             HelpLink("Terms of use", TermsUrl, "account-link-terms")
             HelpLink("Privacy", PrivacyUrl, "account-link-privacy")
+            Text(
+                "To report abuse, long-press a message or open a room's info. " +
+                    "Reports go to your homeserver's administrators.",
+                style = MaterialTheme.typography.bodySmall,
+                color = SupermessageTheme.colors.contentFaint,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .testTag("account-report-footer"),
+            )
 
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
 

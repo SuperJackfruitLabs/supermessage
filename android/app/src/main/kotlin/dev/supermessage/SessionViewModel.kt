@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.supermessage.kit.CoreClient
 import dev.supermessage.kit.Session
+import dev.supermessage.kit.stores.HiddenEventStorage
+import dev.supermessage.kit.stores.InMemoryHiddenEvents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import uniffi.supermessage_ffi.Core
@@ -44,6 +46,7 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
             store = AndroidSecretStore(app),
         ),
         viewModelScope,
+        HiddenEventsPreferences(app),
     )
 
     /**
@@ -65,8 +68,11 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     companion object {
-        internal fun build(core: CoreInterface, scope: CoroutineScope): Session =
-            Session(client = CoreClient(core), scope = scope)
+        internal fun build(
+            core: CoreInterface,
+            scope: CoroutineScope,
+            hiddenEvents: HiddenEventStorage = InMemoryHiddenEvents(),
+        ): Session = Session(client = CoreClient(core), scope = scope, hiddenEvents = hiddenEvents)
 
         /**
          * The JVM-only construction path [SessionViewModelTest] drives.
