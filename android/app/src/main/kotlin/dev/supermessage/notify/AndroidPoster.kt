@@ -39,7 +39,9 @@ import uniffi.supermessage_ffi.notificationUserInfo
  *   `supermessage://open?room=<id>`. The room, the event and the account the
  *   note was made for ride along as extras, so a later action can check the
  *   account before it answers.
- * - Amber (`signal`) is for a decision and nothing else.
+ * - Amber (`signal`) is for a pending decision and nothing else. The
+ *   failure notice is not one, though the core files it under Decision
+ *   ([postFailure]).
  */
 internal class AndroidPoster(
     context: Context,
@@ -48,25 +50,47 @@ internal class AndroidPoster(
 ) : Poster {
     private val context = context.applicationContext
 
+    override fun post(note: PlannedNotification) = post(note, pendingDecision = note.category != NotificationCategory.MESSAGE)
+
+    /**
+     * "Your answer wasn't sent" (`answerFailedNotification`). Nothing is
+     * pending any more, so it is not amber and does not interrupt as a
+     * decision does: it goes on the Messages channel with no accent, as iOS
+     * posts it like any other notification (`LocalNotifier.postFailure`). Its
+     * tap opens the room, and its words and "Open" are the core's.
+     */
+    fun postFailure(note: PlannedNotification) = post(note, pendingDecision = false)
+
+    /**
+     * The same note again, for the reader to tap (an action that came back
+     * as `Open`, which a receiver cannot start an Activity for). Silent: it
+     * was already announced once.
+     */
+    fun postAgain(note: PlannedNotification) =
+        post(note, pendingDecision = note.category != NotificationCategory.MESSAGE, silent = true)
+
     @SuppressLint("MissingPermission") // checked: a refused permission posts nothing
-    override fun post(note: PlannedNotification) {
+    private fun post(note: PlannedNotification, pendingDecision: Boolean, silent: Boolean = false) {
         // At post time, so a post from a cold process or a receiver never
         // meets a missing channel.
         ensureChannels(context)
         val manager = NotificationManagerCompat.from(context)
         if (!manager.areNotificationsEnabled() || !permitted()) return
-        val isMessage = note.category == NotificationCategory.MESSAGE
-        val builder = NotificationCompat.Builder(context, if (isMessage) Channels.MESSAGES else Channels.DECISIONS)
+        val builder = NotificationCompat.Builder(context, if (pendingDecision) Channels.DECISIONS else Channels.MESSAGES)
             .setSmallIcon(R.drawable.ic_stat_supermessage)
             .setContentTitle(note.title)
             .setContentText(note.body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(note.body))
             .setGroup(note.roomId)
             .setAutoCancel(true)
+            // A replacement under the same tag (the same event, posted by the
+            // roster and then the push) does not sound or pop up again.
+            .setOnlyAlertOnce(true)
+            .setSilent(silent)
             .setContentIntent(openRoom(note))
         note.subtitle?.let { builder.setSubText(it) }
         addActions(builder, note)
-        if (!isMessage) builder.setColor(GeneratedThemeTokens.light.signal.toArgb())
+        if (pendingDecision) builder.setColor(GeneratedThemeTokens.light.signal.toArgb())
         manager.notify(note.id, NOTIFICATION_ID, builder.build())
     }
 

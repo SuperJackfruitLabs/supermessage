@@ -108,13 +108,13 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 val failed = answerFailedNotification(roomOf(response))
                 when (sent) {
                     // Another account's note is dropped without a word.
-                    false -> if (!guarded.refusedOtherAccount) poster.post(failed)
+                    false -> if (!guarded.refusedOtherAccount) poster.postFailure(failed)
                     true -> Unit
                     null -> {
                         // Still under way, and it may yet land: say so only if it fails.
                         scope.launch {
                             try {
-                                if (!work.await() && !guarded.refusedOtherAccount) poster.post(failed)
+                                if (!work.await() && !guarded.refusedOtherAccount) poster.postFailure(failed)
                             } finally {
                                 release()
                             }
@@ -123,7 +123,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     }
                 }
             }
-            is NotificationResponse.Open -> AndroidPoster.noteFromExtras(intent)?.let { poster.post(it) }
+            is NotificationResponse.Open -> AndroidPoster.noteFromExtras(intent)?.let { poster.postAgain(it) }
             NotificationResponse.Ignore -> Unit
         }
         return false

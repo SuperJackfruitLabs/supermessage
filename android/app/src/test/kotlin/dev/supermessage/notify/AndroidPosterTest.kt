@@ -61,6 +61,15 @@ class AndroidPosterTest {
         assertEquals("two ids, so two notifications; the repeat replaced", 2, shadowOf(manager).allNotifications.size)
     }
 
+    /** Review Minor 4: the same event posted again under its tag (roster, then push) alerts once. */
+    @Test
+    fun aReplacementUnderTheSameTagAlertsOnce() {
+        poster.post(note(id = "a"))
+        poster.post(note(id = "a"))
+        assertTrue((shown("a").flags and Notification.FLAG_ONLY_ALERT_ONCE) != 0)
+        assertEquals("a first post is not silenced", Notification.GROUP_ALERT_ALL, shown("a").groupAlertBehavior)
+    }
+
     @Test
     fun theTapOpensTheRoom() {
         poster.post(note(roomId = "!r:x"))
@@ -68,6 +77,16 @@ class AndroidPosterTest {
         assertEquals("supermessage://open?room=%21r%3Ax", intent.data.toString())
         assertEquals("!r:x", intent.getStringExtra(AndroidPoster.EXTRA_ROOM))
         assertEquals("@me:x", intent.getStringExtra(AndroidPoster.EXTRA_ACCOUNT))
+    }
+
+    /** Ruling: amber is a pending decision only; "Your answer wasn't sent" is not one (iOS gives it no accent). */
+    @Test
+    fun theFailureNoticeIsNeutral() {
+        poster.postFailure(uniffi.supermessage_ffi.answerFailedNotification("!r:x"))
+        val failed = shown("!r:x#answer-failed")
+        assertEquals("messages", failed.channelId)
+        assertEquals(Notification.COLOR_DEFAULT, failed.color)
+        assertEquals("Your answer wasn't sent", failed.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
     }
 
     @Test
