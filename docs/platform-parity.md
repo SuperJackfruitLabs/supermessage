@@ -13,7 +13,7 @@ caught rather than trusted.
 >
 > | | Desktop | Android |
 > |---|---|---|
-> | At parity with iOS | 52 of 60 rows | 57 of 60 rows (two pending #149 merge) |
+> | At parity with iOS | 52 of 60 rows | 57 of 60 rows |
 > | Partial | 3: voice recording, the staged-image thumbnail, notifications on macOS and Windows | 2: the voice waveform, push needing a UnifiedPush distributor |
 > | Missing | 0 | 0 |
 > | Not applicable, or blocked everywhere | 5 | 1 (Stop, blocked on AgentPod) |

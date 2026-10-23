@@ -1,15 +1,16 @@
 # Android and desktop against iOS — parity verification
 
-**Status:** verification record, 23 Oct 2026, against `main` at `c949915` (after PR #148). A
-dated record: it will not be edited to look current, except that the rows marked "pending #149
-merge" are finalised once Android M7 merges.
+**Status:** final verification record, 23 Oct 2026, final as of `main` at `7b22dc7` (after PR #149,
+Android M7, the last implementation milestone; rows other than Android M7 were read at `c949915`,
+section 2). A dated record: it will not be edited to look
+current.
 
 **Supersedes:** [the 2026-10-22 parity matrix](../2026-10-22-ios-parity/README.md), which
 assessed `main` at `f64629f`, before any of the parity work. That matrix is left as written. It
 is now out of date in most rows: between 22 and 23 Oct the roadmap
 (`docs/superpowers/plans/2026-10-22-ios-parity-roadmap.md`) merged the platform milestones M0
-and M2 to M7 on desktop and M0 and M2 to M6 on Android, plus the core's M1 moves and two core
-batches ([#140], [#141]). Android M7 is in review. This record
+and M2 to M7 on desktop and on Android, plus the core's M1 moves and two core
+batches ([#140], [#141]). This record
 is the M8 step of that roadmap: the matrix's audit repeated against `main`, the G5 runtime pass
 as far as it could be run, and the result per row.
 
@@ -19,16 +20,17 @@ iOS, what evidence says so, which milestone changed it, and what is still unveri
 **Audience:** the maintainer deciding whether the parity work is done, and what to run by hand.
 
 **Working evidence:** the per-platform audit halves (the iOS reference and the platform's
-file:line for every row) and the desktop screenshots are kept in the maintainer's working notes,
-not published, because they record a live account. Section 9 lists where this record corrects
-them.
+file:line for every row) and the desktop live-pass captures are not published, because the
+captures record a live account. Section 9 lists where this record corrects the audit halves.
 
 ## 1. The short version
 
 - **No row is missing on either platform.** Every matrix row is now at parity, partial with a
   stated reason, or not applicable with an agreed equivalent. Desktop: 52 at parity, 3 partial,
-  5 not applicable or blocked, of 60. Android: 57 at parity (two of them pending #149 merge),
-  2 partial, 1 blocked, of 60. The seven bugs of the matrix's section 2 are all closed.
+  5 not applicable or blocked, of 60. Android: 57 at parity, 2 partial, 1 blocked, of 60. The seven bugs of the matrix's section 2 are all closed.
+- **Android M7 ([#149]) is verified from source and tests.** The ongoing notification for a
+  running turn (P3) and the Needs you and Agents widgets (P4) are at parity as read on `main`;
+  the Android count was 57 before the merge and stays 57. See section 6 for the M7 review.
 - **That is a source-and-test verdict on Android, not a runtime one.** G5 asked for every row
   to be run once on the phone AVD, the tablet AVD and desktop Linux. Desktop Linux was run,
   read-only, against the owner's live account. **No Android row has ever been seen against an
@@ -53,12 +55,13 @@ in the matrix were stale, because many rules moved into the core in M1, so the i
 were re-found first (in the desktop half; `apple/` did not change between its base and
 `c949915`). Desktop was read at `9968c6b`, Android at `c949915`; `git diff --stat 9968c6b
 c949915 -- src src-tauri crates apple` is empty, so both readings describe `c949915`. Android
-M7 is not on `main`; its rows were read from `origin/parity/m7-android` at `d0cb39a`.
+M7 ([#149]) merged afterwards; its rows were first read from the branch and finalised against
+`main` at `7b22dc7` (section 6).
 
 **G5 runtime pass, desktop Linux.** A debug build from this worktree, `pnpm dev`, and the
 embedded WebDriver on `127.0.0.1:4445`, on KDE Wayland, signed in to the owner's account. Every
 row with something to see signed in was looked at, read-only, and 35 screenshots were taken.
-They are kept in the working notes and not published, because they show a live account. Local
+They are not published, because they show a live account. Local
 settings that were changed to look at a state (roster filter, appearance mode, the demo flags)
 were restored and checked afterwards. Nothing was sent: the edit, report and sign-out flows were
 opened and cancelled. The exception is in section 7.
@@ -67,9 +70,9 @@ opened and cancelled. The exception is in section 7.
 Every Android verdict is from source, with the evidence column naming the instrumented, JVM or
 Roborazzi test that covers the row, as recorded in the M2 to M7 verification tables and checked
 against the code. Those tests were not re-run for M8. Their recorded counts: M6, 599
-instrumented tests passing at both heights; the M7 branch, 605 instrumented with no failures at
-both heights, 432 kit unit tests and 466 app unit tests. M6 merged as #148 on green CI, with all
-three instrumented-test shards passing.
+instrumented tests passing at both heights; M7 after its review fixes, 606
+instrumented tests with no failures at both heights, 438 kit unit tests and 482 app unit tests,
+all with fakes. M6 merged as [#148] on green CI, with all three instrumented-test shards passing.
 
 **What could not be run, and why:**
 
@@ -99,20 +102,20 @@ three instrumented-test shards passing.
 
 | | Desktop | Android |
 |---|---|---|
-| ✅ parity | 52 | 57 (P3 and P4 pending #149 merge) |
+| ✅ parity | 52 | 57 |
 | ⚠️ partial | 3: C2 voice, C3 composer thumbnail, P2 notifications off Linux | 2: C2 voice waveform, P1 push needs a distributor |
 | ❌ missing | 0 | 0 |
 | ➖ n/a or blocked | 5: deep links, A4 Stop, P1, P3, M2 haptics | 1: A4 Stop |
 | Rows with live evidence | most, read-only (see the Evidence column) | none |
 | Matrix bugs | B5, B6 closed | B1, B2, B3, B4 closed |
 
-The working halves count 62 desktop rows and 65 Android rows: they list the matrix's bugs as
+The audit halves count 62 desktop rows and 65 Android rows: they list the matrix's bugs as
 rows, and the Android half splits O1 into the welcome and the demo. The verdicts are the same.
 
 ## 4. Row by row
 
 The "Changed by" column names the milestone and PR that moved the row since the matrix. The
-working notes have the file:line for each row on iOS and each platform.
+file:line for each row on iOS and each platform is in the unpublished audit halves.
 
 ### Navigation and onboarding
 
@@ -192,8 +195,8 @@ working notes have the file:line for each row on iOS and each platform.
 |---|---|---|---|---|
 | P2 | Local notifications with actions | ⚠️ Linux full (M6's real-server test on KDE; not re-run); macOS and Windows informational | ✅ TEST | M6 ([#144], [#148]); core policy [#140] |
 | P1 | Background push | ➖ | ⚠️ UnifiedPush only, needs a distributor | Android M6 [#148] |
-| P3 | Live Activity analogue | ➖ (the tray's working line stands in, per G4) | ✅ ongoing notification for a running turn, **pending #149 merge** | Desktop M7 [#146]; Android M7 (#149) |
-| P4 | Widgets, counts | ✅ RUN (title, tray menu read over dbusmenu), D1 | ✅ Glance widgets, **pending #149 merge**, D1 | Desktop M6 [#144] (title), M7 [#146] (tray); Android M7 (#149); widget view [#140] |
+| P3 | Live Activity analogue | ➖ (the tray's working line stands in, per G4) | ✅ TEST: ongoing notification for a running turn (quiet, never amber, gone when the turn ends or on sign-out); the live turn is owner-pending | Desktop M7 [#146]; Android M7 [#149] |
+| P4 | Widgets, counts | ✅ RUN (title, tray menu read over dbusmenu), D1 | ✅ TEST: Needs you and Agents Glance widgets, drawn within a running session after the M7 fixes; D1 for the Needs you widget; a real launcher is owner-pending | Desktop M6 [#144] (title), M7 [#146] (tray); Android M7 [#149]; widget view [#140] |
 | — | Block / unblock, blocked list | ✅ RUN (member actions present) | ✅ TEST | M3 ([#133], [#137]) |
 | — | Report message / room / user | ✅ RUN (sheet opened, cancelled) | ✅ TEST | M3 ([#133], [#137]) |
 | — | Recovery: new key at sign-in | ✅ RUN (panel) | ✅ TEST, unchanged | Desktop M0 [#127] (B5) |
@@ -288,11 +291,21 @@ count, badge, pill, dot, title count or widget can pass a live check.
   - A session revoked remotely while the app is dead runs no sign-out hook.
 - **Android Mark read from the row** calls `markRoomReadFromList`, which builds a timeline per
   call and has never run against a real room.
-- **Android M7 was NOT READY at its whole-branch review.** Widgets read the snapshot once per
-  Glance session, so a write within about 45 s is never drawn. A widget's failure shows amber,
-  including after sign-out. A push across sign-out merges the old account into the snapshot. The
-  ongoing card survives sign-out. One decision can be answered twice across surfaces. A fix round
-  is running; P3 and P4 must be re-checked after #149 merges.
+- **Android M7 was not ready at its first whole-branch review, and was fixed before it merged
+  as [#149].** The review found one Critical (C1: widgets read the snapshot once per Glance
+  session, so a write within about 45 s was never drawn) and four Important findings (I1: a
+  widget's failure showed amber, including after sign-out; I2: a push across sign-out merged the
+  old account into the snapshot; I3: the ongoing card survived sign-out; I4: one decision could
+  be answered twice across widget and notification). All five were fixed on the branch, each
+  with a test that fails when the fix is removed, and a second review of the fix round found no
+  Critical or Important findings and recommended merging. A widget now follows the snapshot
+  inside its running session, the failure notice is never amber and is gated on the account
+  still being signed in, and the old account's data cannot land after sign-out. What remains is
+  Minor: the ongoing card can outlive a feed's `stop()` until the words change (the card tags
+  are shared between feeds, so cancelling them there needs per-feed ownership), widget ages
+  refresh on a redraw rather than continuously, and some test timing is exposed to a slow CI.
+  Not re-run for M8; local results for the fixed branch are 606 instrumented tests at both
+  heights with no failures.
 - **Desktop notifications:** a note posted while 16 others are waiting, or on a notification
   server without actions, cannot be clicked to open its room. A single shared click listener
   would lift this, but that is a redesign.
@@ -318,7 +331,7 @@ Opening a room marks it read by design (`src/lib/components/Timeline.svelte:789-
 `readTracking.ts`). The agent installed a page-level guard that rejected `mark_room_read` over
 `ipc://`, believing that blocked it. It did not: when the custom-protocol fetch fails, Tauri
 falls back to `window.ipc.postMessage`, which was not wrapped, so the command still ran. The
-evidence is in the working notes' screenshots: one room showed "4 unread" before it was opened
+evidence was seen in the live pass: one room showed "4 unread" before it was opened
 and none after, and the Unread chip went from 12 to 11 after a restart. From the second session on,
 `window.ipc.postMessage` was guarded too, and nothing further was blocked or sent.
 
@@ -397,7 +410,7 @@ working halves differ, this record is right:
 | Android spaces | M5 | The menu in M2 [#135]; readable names from the core in M1.6 [#134], used in M5 [#147] |
 | Android connection status | M2 | M0 [#127] |
 | Android Mark read from the row | Core `mark_room_read_from_list` | Core [#141], used by Android in M5 [#147] |
-| Android half, D6 | "Remote CI has not run on the M6 or M7 branches" | M6 merged as [#148] on green CI, all three instrumented shards passing. M7 has no PR yet. |
+| Android half, D6 | "Remote CI has not run on the M6 or M7 branches" | M6 merged as [#148] on green CI, all three instrumented shards passing. M7 merged as [#149]; its CI result is not re-checked here. |
 
 ## 10. What the owner still has to check live
 
@@ -464,10 +477,16 @@ step-by-step detail. The blocking items come first.
     hidden; GNOME with and without AppIndicator; a tray screenshot; the macOS template icon and
     Dock reopen; Windows.
 
-**After #149 merges (Android M7)**
+**Android M7 ([#149])**
 21. Place both widgets on a real launcher, answer from a widget on a locked phone, tap a widget
     row, sign out with a widget placed, and watch the ongoing notification during a real turn
-    (including a bridge agent and a room with several agents).
+    (including a bridge agent that answers by editing a progress message, and a room with
+    several agents).
+22. The ongoing notification respects the room in front: absent while that room is open in the
+    app, present when the reader looks away, gone when they return. It goes away when the turn
+    ends however it ends.
+23. A widget answered, then the same decision's notification (and the reverse): it must be
+    answered once. A failed widget answer shows a plain, non-amber "wasn't sent".
 
 ## 11. Follow-ups
 
@@ -499,17 +518,6 @@ step-by-step detail. The blocking items come first.
 - **Android emulator:** CI runs on `swiftshader_indirect`, which emulator 36.4.9 and later list
   as deprecated. Host-GPU mode fails two focus-return tests that pass on the software renderer.
 
-## 12. Rows pending #149 merge
-
-Android M7 is the only unmerged milestone. These entries are placeholders until it merges, and
-are re-checked against the fixed branch then:
-- **P3, Android:** the ongoing notification for a running turn (`notify/TurnNotifier.kt`,
-  `kit/notify/TurnNotifications.kt` on `d0cb39a`).
-- **P4, Android:** the Needs you and Agents Glance widgets (`widgets/`, `kit/widgets/` on
-  `d0cb39a`); the Needs you widget also carries the D1 caveat.
-- **The Android ✅ count** in sections 1 and 3 (57 includes P3 and P4).
-- **The M7 defects** in section 6: re-checked after the fix round.
-
 [#127]: https://github.com/SuperJackfruitLabs/supermessage/pull/127
 [#128]: https://github.com/SuperJackfruitLabs/supermessage/pull/128
 [#129]: https://github.com/SuperJackfruitLabs/supermessage/pull/129
@@ -531,3 +539,4 @@ are re-checked against the fixed branch then:
 [#146]: https://github.com/SuperJackfruitLabs/supermessage/pull/146
 [#147]: https://github.com/SuperJackfruitLabs/supermessage/pull/147
 [#148]: https://github.com/SuperJackfruitLabs/supermessage/pull/148
+[#149]: https://github.com/SuperJackfruitLabs/supermessage/pull/149
