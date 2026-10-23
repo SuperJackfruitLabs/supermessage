@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
@@ -258,6 +259,60 @@ class RosterReachabilityTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag("invitation-message").assertTextEquals("You have been invited to Workspace.")
+    }
+
+    /**
+     * The header's pill follows the live turn (A1): an agent's room that is
+     * running a turn says Working, and Active once the turn ends. The turn is
+     * pushed into the live store the way `Session` does for `FfiEvent.Turn`
+     * (`SessionTest` covers that route).
+     */
+    @Test
+    fun theStatusFollowsTheTurn() {
+        val atlas = RoomRow(
+            room = RoomSummary(
+                id = "!atlas:example.org", name = "Atlas", avatarUrl = null, unread = 0uL, lastMessage = null,
+                lastMessageIsOwn = false, lastMessageNamesSender = false, lastEventType = null,
+                lastActivityMs = System.currentTimeMillis().toULong() - 60_000uL,
+                runtime = uniffi.supermessage_core.RuntimeDto("claude-code", "Ashram"),
+                membership = Membership.JOINED,
+            ),
+            identity = RoomIdentity(glyph = null, name = "Atlas", role = null, initial = "A"),
+            preview = null,
+            affordance = RoomAffordance.COMPOSE,
+        )
+        val session = sessionOf(FakeCore(roomsSnapshotResult = { RoomsSnapshot(seq = 0uL, rooms = listOf(atlas)) }))
+        compose.setContent {
+            androidx.compose.runtime.CompositionLocalProvider(LocalReduceMotion provides true) {
+                Box(Modifier.requiredWidth(411.dp).fillMaxHeight().testTag("test-shell")) {
+                    AppRoot(session = session, prefs = preferences())
+                }
+            }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Atlas").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("room-header").assertIsDisplayed()
+        compose.onAllNodesWithText("Working").assertCountEquals(0)
+
+        val thought = uniffi.supermessage_core.TurnInput.Thought(1uL, "hmm", false, 500uL)
+        val started = uniffi.supermessage_ffi.foldTurn("!atlas:example.org", listOf(thought))!!
+        compose.runOnUiThread { session.live.apply(uniffi.supermessage_core.TurnUpdate(started.summary, null)) }
+        compose.waitForIdle()
+        compose.onNodeWithTag("status-pill", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNode(hasTestTag("room-header")).assertExists()
+        compose.onNode(hasText("Working") and hasAnyAncestor(hasTestTag("room-header")), useUnmergedTree = true)
+            .assertIsDisplayed()
+
+        val ended = uniffi.supermessage_ffi.foldTurn(
+            "!atlas:example.org",
+            listOf(thought, uniffi.supermessage_core.TurnInput.Answer(1uL, true, 1_000uL)),
+        )!!
+        compose.runOnUiThread { session.live.apply(uniffi.supermessage_core.TurnUpdate(ended.summary, null)) }
+        compose.waitForIdle()
+        compose.onNode(hasText("Active") and hasAnyAncestor(hasTestTag("room-header")), useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onAllNodesWithText("Working", useUnmergedTree = true).assertCountEquals(0)
     }
 
     private fun joinedRow(roomId: String, name: String) = RoomRow(
@@ -702,6 +757,9 @@ class RosterReachabilityTest {
             }
         }
         compose.waitForIdle()
+        // The core answers on Dispatchers.IO here, which waitForIdle does not wait for: on CI's
+        // slow AVD the roster had not arrived when the scroll looked for "Alpha".
+        compose.waitUntil(5_000) { compose.onAllNodesWithText("Alpha").fetchSemanticsNodes().isNotEmpty() }
 
         compose.onNodeWithText("Alpha").performScrollTo().performClick()
         compose.waitForIdle()
@@ -1154,6 +1212,14 @@ class RosterReachabilityTest {
         private var subscribedRoomId: String? = null
 
         // The composer asks for the room's cast on opening it; nobody here is mentioned.
+        override fun turn(roomId: String): uniffi.supermessage_core.TurnSnapshot? = null
+
+        // The pane asks the core what the dock says; these tests have nothing to say.
+        override fun acknowledgement(
+            roomId: String, addressee: String?, agentIds: List<String>,
+            typingAgents: List<String>, turnInProgress: Boolean,
+        ): uniffi.supermessage_core.Acknowledgement? = null
+
         override fun roomCast(roomId: String) = uniffi.supermessage_core.RoomCast(
             roomId = roomId, people = emptyList(), counterpart = null,
             agentIds = emptyList(), addressee = null, mentionables = emptyList(),

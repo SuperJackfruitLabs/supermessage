@@ -3,6 +3,7 @@ package dev.supermessage.kit
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import uniffi.supermessage_core.Acknowledgement
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
@@ -12,6 +13,7 @@ import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.RoomMemberDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
+import uniffi.supermessage_core.TurnSnapshot
 import uniffi.supermessage_ffi.AttachmentSendOutcome
 import uniffi.supermessage_ffi.ConnectionState
 import uniffi.supermessage_ffi.CoreInterface
@@ -159,6 +161,18 @@ class CoreClient(
     suspend fun knownPeople(): List<PersonDto> = run { it.knownPeople() }
 
     suspend fun roomCast(roomId: String): RoomCast = run { it.roomCast(roomId) }
+
+    /** The core's record of the room's latest turn, or `null` when it has none. */
+    suspend fun turn(roomId: String): TurnSnapshot? = run { it.turn(roomId) }
+
+    /** The core's sentence for the room's last send, or `null` when it has none to say. */
+    suspend fun acknowledgement(
+        roomId: String,
+        addressee: String?,
+        agentIds: List<String>,
+        typingAgents: List<String>,
+        turnInProgress: Boolean,
+    ): Acknowledgement? = run { it.acknowledgement(roomId, addressee, agentIds, typingAgents, turnInProgress) }
 
     suspend fun directRoomWith(userId: String): String? = run { it.directRoomWith(userId) }
 

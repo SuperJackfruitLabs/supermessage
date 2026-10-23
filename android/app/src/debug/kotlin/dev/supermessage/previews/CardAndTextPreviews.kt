@@ -11,7 +11,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import dev.supermessage.AnsweredHere
 import dev.supermessage.DecisionCard
-import dev.supermessage.LiveTurn
 import dev.supermessage.RichText
 import dev.supermessage.rememberDecisionAnswers
 import java.time.Instant
@@ -258,75 +257,5 @@ internal fun RichTextEveryBlock() {
 internal fun RichTextWideCode() {
     PreviewGround(width = 360.dp) {
         RichText(blocks = PreviewFixtures.wideCode)
-    }
-}
-
-/**
- * A turn in flight: a thought, three tools with one failed, and an answer
- * arriving.
- *
- * None of this is history — not persisted, not paginated, and a device that
- * was asleep never sees it. Which is why the still frame matters: in a
- * running app the failed-tool row is gone in seconds.
- */
-@Preview(name = "Live turn, mid-turn", showBackground = true, heightDp = 420)
-@Composable
-internal fun LiveTurnMidTurn() {
-    PreviewGround {
-        LiveTurn(
-            answer = PreviewFixtures.LIVE_ANSWER,
-            thought = PreviewFixtures.LIVE_THOUGHT,
-            tools = PreviewFixtures.liveTools,
-            finished = false,
-        )
-    }
-}
-
-/**
- * Thinking, with nothing to show yet.
- *
- * The first thing a reader sees after sending.
- */
-@Preview(name = "Live turn, thinking", showBackground = true, heightDp = 200)
-@Composable
-internal fun LiveTurnThinking() {
-    PreviewGround {
-        LiveTurn(
-            answer = null,
-            thought = PreviewFixtures.LIVE_THOUGHT,
-            tools = emptyList(),
-            finished = false,
-        )
-    }
-}
-
-/**
- * An answer with markdown in it: the completed lines are bold, a list and a
- * heading, and the last line is still the plain tail.
- */
-@Preview(name = "Live turn, markdown", showBackground = true, heightDp = 260)
-@Composable
-internal fun LiveTurnMarkdown() {
-    PreviewGround {
-        LiveTurn(
-            answer = "# Findings\n**Observed:** the build is green\n- two warnings\n- no failures\nNext I will check the",
-            thought = null,
-            tools = emptyList(),
-            finished = true,
-        )
-    }
-}
-
-/** A finished turn, which is what the composable has to stop showing. */
-@Preview(name = "Live turn, finished", showBackground = true, heightDp = 200)
-@Composable
-internal fun LiveTurnFinished() {
-    PreviewGround {
-        LiveTurn(
-            answer = PreviewFixtures.LIVE_ANSWER,
-            thought = null,
-            tools = emptyList(),
-            finished = true,
-        )
     }
 }

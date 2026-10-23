@@ -98,6 +98,7 @@ fun Roster(
                     `when` = RelativeTime.label(entry.row.room.lastActivityMs, now),
                     showsState = showsState,
                     describesAgent = entry.describesAgent,
+                    style = entry.avatar,
                     onOpenInfo = { onOpenInfo(roomId) },
                 )
             }

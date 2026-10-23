@@ -83,6 +83,8 @@ internal fun AudioRow(
     continuesRun: Boolean,
     modifier: Modifier = Modifier,
     transcript: VoiceNoteTranscript? = null,
+    faceUri: (mxcUri: String) -> String? = { null },
+    loadFace: suspend (mxcUri: String) -> Unit = {},
 ) {
     val isOwn = row.item.isOwn
     val eventId = row.item.eventId
@@ -101,11 +103,7 @@ internal fun AudioRow(
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (!isOwn && !continuesRun) {
-            Text(
-                named,
-                style = MaterialTheme.typography.labelLarge,
-                color = row.item.sender?.let { SupermessageTheme.peer(it) } ?: Color.Unspecified,
-            )
+            PeerHeader(row = row, named = named, faceUri = faceUri, loadFace = loadFace, showsEdited = false)
         }
         AudioNote(
             audio = audio,

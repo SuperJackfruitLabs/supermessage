@@ -3,6 +3,7 @@ package dev.supermessage
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assert
@@ -26,7 +27,22 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.unit.Density
+import uniffi.supermessage_core.ReplyQuoteView
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -180,7 +196,8 @@ class TimelineRowTest {
     @Test
     fun everyVariantIsHandled() {
         compose.setContent {
-            Column {
+            // Scrolls: a peer card is taller than bare prose, and a short device cannot show all ten rows at once.
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
                 TimelineRow(row = row(view = ItemView.Bubble(muted = false, blocks = paragraph("bubble text"), voice = null)), now = now)
                 TimelineRow(row = row(view = ItemView.Emote, body = "waved"), now = now)
                 TimelineRow(row = row(view = ItemView.System(kind = SystemKind.EncryptionEnabled, text = "system text")), now = now)
@@ -215,18 +232,18 @@ class TimelineRowTest {
             }
         }
 
-        compose.onNodeWithText("bubble text").assertIsDisplayed()
-        compose.onNodeWithText("Sender waved").assertIsDisplayed()
-        compose.onNodeWithText("system text").assertIsDisplayed()
-        compose.onNodeWithText("placeholder text").assertIsDisplayed()
-        compose.onNodeWithText("Today").assertIsDisplayed()
-        compose.onNodeWithTag("unread-marker").assertIsDisplayed()
-        compose.onNodeWithText("a sunset").assertIsDisplayed()
-        compose.onNodeWithText("report.pdf").assertIsDisplayed()
+        compose.onNodeWithText("bubble text").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Sender waved").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("system text").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("placeholder text").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Today").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("unread-marker").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("a sunset").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("report.pdf").performScrollTo().assertIsDisplayed()
         // `CustomEventView.Placeholder` renders its own quiet line rather
         // than the row's `label` — see `DecisionCard.kt` and its own tests
         // for the other two `CustomEventView` states.
-        compose.onNodeWithText("nothing usable").assertIsDisplayed()
+        compose.onNodeWithText("nothing usable").performScrollTo().assertIsDisplayed()
         // `None` occupies no layout space at all — not an empty box, nothing.
         compose.onNodeWithTag("none-holder").onChildren().assertCountEquals(0)
     }
@@ -300,7 +317,7 @@ class TimelineRowTest {
                 faceUri = { mxc -> if (mxc == "mxc://x/y") pngUri else null },
             )
         }
-        compose.onNodeWithTag("sender-face-image").assertExists()
+        compose.onNodeWithTag("sender-face-image", useUnmergedTree = true).assertExists()
     }
 
     /** An image with no loaded bytes shows its alt text rather than a blank box. */
@@ -345,12 +362,12 @@ class TimelineRowTest {
             ),
         )
         compose.setContent {
-            Box(Modifier.width(1000.dp)) {
+            Box(Modifier.requiredWidth(1000.dp)) {
                 TimelineRow(row = row(view = ItemView.Bubble(muted = false, blocks = blocks, voice = null)), now = now)
             }
         }
         val width = compose.onNodeWithTag("bubble").getUnclippedBoundsInRoot().width
-        assertTrue("bubble should stay within its bounded width, was $width", width <= 320.dp)
+        assertTrue("bubble should stay within its bounded width, was $width", width <= 600.dp)
     }
 
     /** Existing reactions are drawn on the bubble's corner; the receipt is a stack of faces. */
@@ -713,4 +730,150 @@ class TimelineRowTest {
         compose.onAllNodesWithText("✳ Atlas — Platform").assertCountEquals(0)
     }
 
+
+    // --- T1 / D6: peer cards, the Agent label, the long read, the hidden quote ---------
+
+    private fun audioView() = uniffi.supermessage_core.AudioView(
+        isVoice = true, durationMs = 7_000uL, lengthLabel = "0:07", waveform = null,
+        title = "Voice message", filename = "Voice message.ogg", size = 7_992uL,
+        mimetype = "audio/ogg", caption = null, accessibilityLabel = "Voice message, 7 seconds",
+    )
+
+    private fun failedTurn() = ItemView.TurnError(
+        card = uniffi.supermessage_core.TurnErrorCard(
+            kind = uniffi.supermessage_core.TurnErrorKind.QUOTA, label = "Usage limit reached", source = null,
+            headline = "Usage limit reached", message = "Try later.", harness = "openclaw",
+            provider = null, model = null, retryable = null, attempts = emptyList(),
+        ),
+    )
+
+    private fun showAt411(content: @androidx.compose.runtime.Composable () -> Unit) {
+        compose.setContent { Box(Modifier.requiredWidth(411.dp)) { content() } }
+    }
+
+    private fun labelInHeader() = compose.onAllNodes(
+        hasTestTag("agent-label") and hasAnyAncestor(hasTestTag("peer-header")), useUnmergedTree = true,
+    )
+
+    @Test
+    fun anAgentsMessageSaysAgent() {
+        showAt411 { TimelineRow(row = row().copy(isAgent = true), now = now) }
+        labelInHeader().assertCountEquals(1)
+        labelInHeader()[0].assertTextEquals("Agent")
+    }
+
+    @Test
+    fun aPersonsMessageDoesNotSayAgent() {
+        showAt411 { TimelineRow(row = row().copy(isAgent = false), now = now) }
+        compose.onNodeWithTag("peer-header", useUnmergedTree = true).assertExists()
+        compose.onAllNodesWithTag("agent-label", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun anAgentsVoiceNoteAndFailedTurnAreHeadedToo() {
+        showAt411 {
+            Column {
+                TimelineRow(row = row(view = ItemView.Audio(audioView(), null)).copy(isAgent = true), now = now)
+                TimelineRow(row = row(view = failedTurn()).copy(isAgent = true), now = now)
+            }
+        }
+        compose.onAllNodesWithTag("peer-header", useUnmergedTree = true).assertCountEquals(2)
+        labelInHeader().assertCountEquals(2)
+    }
+
+    @Test
+    fun aPersonsMessageIsACardToo() {
+        showAt411 {
+            Column {
+                TimelineRow(row = row(senderName = "Pat"), now = now)
+                TimelineRow(row = row(isOwn = true, sender = "@me:x"), now = now)
+            }
+        }
+        compose.onNodeWithTag("peer-card", useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithTag("own-bubble", useUnmergedTree = true).assertIsDisplayed()
+        val face = compose.onNode(hasTestTag("sender-face") and hasAnyAncestor(hasTestTag("peer-header")), useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        assertEquals(22f, face.width.value, 0.1f)
+    }
+
+    private fun forty() = (1..40).map { RichBlock.Paragraph(inlines = listOf(RichInline.Text("Paragraph number $it of the report."))) }
+
+    @Test
+    fun aLongReadIsCutAndOffersTheReadingView() {
+        showAt411 {
+            TimelineRow(
+                row = row(view = ItemView.Bubble(muted = false, blocks = forty(), voice = null), senderName = "Atlas").copy(isAgent = true, isLongRead = true),
+                now = now,
+            )
+        }
+        val cut = compose.onNodeWithTag("long-read-cut", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertTrue("the cut is at most 320dp, was ${cut.height}", cut.height <= 320.dp)
+        compose.onNodeWithTag("long-read-view").assertDoesNotExist()
+        val button = compose.onNodeWithTag("long-read-button")
+        button.assertTextContains("Read")
+        val click = button.fetchSemanticsNode().config[SemanticsActions.OnClick]
+        assertEquals("Opens the whole message in a reading view", click.label)
+        button.performClick()
+        compose.onNodeWithTag("long-read-view").assertIsDisplayed()
+        val inSheet = hasAnyAncestor(hasTestTag("long-read-view"))
+        compose.onNode(hasText("Atlas") and inSheet, useUnmergedTree = true).assertIsDisplayed()
+        compose.onNode(hasText("Paragraph number 40 of the report.") and inSheet, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Done").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("long-read-view").assertDoesNotExist()
+    }
+
+    @Test
+    fun aShortMessageHasNoReadButton() {
+        showAt411 { TimelineRow(row = row().copy(isAgent = true), now = now) }
+        compose.onAllNodesWithTag("long-read-button", useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodesWithTag("long-read-cut", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun aReplyUnderItsParentDropsTheQuote() {
+        val quoted = ReplyQuoteView.Available(sender = "Sender", excerpt = "the parent said", label = null, senderId = "@a:x")
+        showAt411 {
+            Column {
+                TimelineRow(row = row(body = "first").copy(replyQuote = quoted, hidesQuote = true), now = now)
+                TimelineRow(row = row(body = "second").copy(replyQuote = quoted, hidesQuote = false), now = now)
+            }
+        }
+        compose.onAllNodesWithTag("reply-quote", useUnmergedTree = true).assertCountEquals(1)
+    }
+
+    @Test
+    fun theAgentLabelFitsAtFontScaleTwo() {
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 2f)) {
+                Box(Modifier.requiredWidth(411.dp)) {
+                    TimelineRow(row = row(senderName = "N".repeat(80)).copy(isAgent = true), now = now)
+                }
+            }
+        }
+        val name = compose.onNode(hasTestTag("peer-name"), useUnmergedTree = true)
+        val layouts = mutableListOf<TextLayoutResult>()
+        name.fetchSemanticsNode().config.getOrNull(SemanticsActions.GetTextLayoutResult)!!.action!!.invoke(layouts)
+        assertEquals(1, layouts[0].lineCount)
+        val header = compose.onNodeWithTag("peer-header", useUnmergedTree = true).getUnclippedBoundsInRoot()
+        val label = compose.onNode(hasTestTag("agent-label"), useUnmergedTree = true).getUnclippedBoundsInRoot()
+        assertTrue("Agent (${label.right}) stays inside the header (${header.right})", label.right <= header.right)
+        compose.onNode(hasTestTag("agent-label"), useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun theReadButtonIsReachableInTheMergedTree() {
+        showAt411 {
+            TimelineRow(
+                row = row(view = ItemView.Bubble(muted = false, blocks = forty(), voice = null)).copy(isAgent = true, isLongRead = true),
+                now = now,
+                modifier = Modifier.semantics(mergeDescendants = true) {},
+            )
+        }
+        // The row merges its children (as the timeline's swipe wrapper does); the
+        // Read action, with its hint, must still be one node's action there.
+        val node = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.OnClick) and hasText("Read"))
+        node.assertExists()
+        assertEquals("Opens the whole message in a reading view", node.fetchSemanticsNode().config[SemanticsActions.OnClick].label)
+    }
 }

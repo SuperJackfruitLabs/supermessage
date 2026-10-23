@@ -14,12 +14,14 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import uniffi.supermessage_ffi.roomStatus
 import dev.supermessage.kit.MentionCast
 import dev.supermessage.kit.ReportSubject
 import dev.supermessage.kit.RosterArrangement
@@ -91,8 +93,16 @@ internal fun RoomPane(
     // invitation, say nothing (iOS `RoomScreen.swift:116-123`). Reset on every
     // room change, so a count never outlives the room it was fetched for
     // (`RoomScreen.swift:35-39`).
-    val describesAgent = remember(roomId, rooms, now) {
-        roomId?.let { RosterArrangement.rosterRow(it, rooms, now)?.describesAgent } ?: false
+    val rosterRow = remember(roomId, rooms, now) {
+        roomId?.let { RosterArrangement.rosterRow(it, rooms, now) }
+    }
+    val describesAgent = rosterRow?.describesAgent ?: false
+    // The header's status is the core's precedence over the roster's state and
+    // the live turn (iOS `RoomScreen.swift:74-84`); `now` ticking re-reads the
+    // state, so Active drifts to Idle to Quiet while the reader stays.
+    val turnInProgress by session.live.inProgress.collectAsStateWithLifecycle()
+    val status = if (isInvitation) null else rosterRow?.let {
+        roomStatus(it.state, it.describesAgent, turnInProgress)
     }
     // Keyed by the room, so a new room starts with no count on its very first
     // frame instead of borrowing the last room's until an effect runs.
@@ -120,7 +130,7 @@ internal fun RoomPane(
         }
     } else if (isInvitation) {
         Column(modifier = modifier.fillMaxSize().testTag("pane-timeline")) {
-            RoomHeader(currentRow, memberCount = null, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
+            RoomHeader(currentRow, status = null, memberCount = null, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
             InvitationEmptyTimeline(modifier = Modifier.weight(1f).fillMaxWidth())
             InvitationView(
                 roomId = currentRoomId,
@@ -149,18 +159,16 @@ internal fun RoomPane(
         val mediaCache by session.media.cache.collectAsStateWithLifecycle()
         val faceCache by session.faces.cache.collectAsStateWithLifecycle()
 
-        // `TypingStore.line` is a computed property,
-        // not a StateFlow — `typers` is what is
-        // actually observable, so that is what is
-        // collected; `line` is re-read from it every
-        // time `typers` changes.
-        val typers by session.typing.typers.collectAsStateWithLifecycle()
-        val typingLine = remember(typers) { session.typing.line }
+        // The line is the core's `typingView` of the typers and the room's
+        // cast; either changing moves it, so the view is what is collected.
+        val typingView by session.typing.view.collectAsStateWithLifecycle()
+        val typingLine = typingView.line
+        val typingAgents = typingView.agents
 
+        val liveSummary by session.live.summary.collectAsStateWithLifecycle()
         val liveAnswer by session.live.answer.collectAsStateWithLifecycle()
         val liveThought by session.live.thought.collectAsStateWithLifecycle()
-        val liveTools by session.live.tools.collectAsStateWithLifecycle()
-        val liveFinished by session.live.finished.collectAsStateWithLifecycle()
+        val liveSteps by session.live.steps.collectAsStateWithLifecycle()
 
         // Reply/edit/attachment: reactive so a long
         // press elsewhere (Timeline's message menu,
@@ -200,14 +208,42 @@ internal fun RoomPane(
         // room never starts with the last one's people, and `load` drops an
         // answer for a room already left.
         val mentionCast = remember(currentRoomId) { MentionCast() }
-        LaunchedEffect(currentRoomId) { mentionCast.load(currentRoomId, session::roomCast) }
+        LaunchedEffect(currentRoomId) {
+            mentionCast.load(currentRoomId, session::roomCast)
+            // The same cast tells the typing line which typers are agents
+            // and the card what the header calls its agent (iOS `loadCast`).
+            mentionCast.cast.value?.takeIf { it.roomId == currentRoomId }?.let { cast ->
+                session.typing.recognise(cast, currentRoomId)
+                session.live.setAgentName(cast.counterpart?.name, currentRoomId)
+            }
+        }
         val castPeople by mentionCast.cast.collectAsStateWithLifecycle()
+        // The cast says who the addressee and the agents are only for the room
+        // it was loaded for; a cast still held from another room says nothing
+        // here (iOS `TimelineView.swift:177-195`).
+        val castHere = castPeople?.takeIf { it.roomId == currentRoomId }
+        val held by session.dock.held.collectAsStateWithLifecycle()
+        val dock = held?.takeIf { it.roomId == currentRoomId }?.acknowledgement
+        // The core decides what the dock says; it is asked again whenever a fact
+        // it reads changes: the history (an agent's reply, or its edit of a
+        // progress message, ends "Sent to"), who is typing, the turn, the cast.
+        // The answer is kept only while this room is the open one.
+        LaunchedEffect(currentRoomId, revision, typingAgents, turnInProgress, castHere?.roomId) {
+            val ack = session.acknowledgement(
+                roomId = currentRoomId,
+                addressee = castHere?.addressee,
+                agentIds = castHere?.agentIds.orEmpty(),
+                typingAgents = typingAgents,
+                turnInProgress = turnInProgress,
+            )
+            session.dock.hold(currentRoomId, ack)
+        }
         var sending by remember(currentRoomId) { mutableStateOf(false) }
         var composerFailure by remember(currentRoomId) { mutableStateOf<String?>(null) }
 
         Column(modifier = modifier.fillMaxSize().testTag("pane-timeline")) {
             currentRow?.let {
-                RoomHeader(it, memberCount = if (describesAgent || isInvitation) null else memberCount, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
+                RoomHeader(it, status = status, memberCount = if (describesAgent || isInvitation) null else memberCount, onOpenInfo = { onOpenRoomInfo(currentRoomId) })
             }
             // The note that is playing belongs to this room and
             // this pane: leaving either stops it (the key is the
@@ -217,12 +253,18 @@ internal fun RoomPane(
             // message menu, a who-reacted popover, a swipe, the scroll position)
             // belongs to one room and must not be lent to the next
             // (`RoomScreen.swift:35-39` resets on `roomId` too).
+            // The dock and the pill float over the bottom of the timeline: they
+            // never take height from it, so the newest messages do not move. The
+            // list reserves their (constant) height as bottom padding, so they
+            // never cover the newest message or Jump to newest either.
+            var accessoriesPx by remember { mutableStateOf(0) }
+            val accessoriesDp = with(LocalDensity.current) { accessoriesPx.toDp() }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
             key(currentRoomId) {
                 CompositionLocalProvider(LocalVoicePlayback provides voice) {
                     Timeline(
                         rows = items,
                         revision = revision,
-                        typingLine = typingLine,
                         isPaginating = isPaginating,
                         canPaginate = canPaginate,
                         onPaginate = { scope.launch { session.timeline.paginateBack() } },
@@ -230,11 +272,18 @@ internal fun RoomPane(
                         faceUri = { mxc -> faceCache[mxc] },
                         loadFace = session.faces::load,
                         roomId = currentRoomId,
+                        bottomReserve = accessoriesDp,
                         onMarkRead = { scope.launch { session.timeline.markRead() } },
-                        liveAnswer = liveAnswer,
+                        liveSummary = liveSummary,
+                        liveSteps = liveSteps,
                         liveThought = liveThought,
-                        liveTools = liveTools,
-                        liveFinished = liveFinished,
+                        liveAnswer = liveAnswer,
+                        // D11: the turn's own agent when the cast knows it, else the
+                        // room's agent (the cast's counterpart), else the last speaker.
+                        liveName = liveWriterName(
+                            castPeople?.counterpart?.name ?: session.live.agentName(currentRoomId), items,
+                            agentId = liveSummary?.agentId, cast = castPeople,
+                        ),
                         onReact = { row, key ->
                             scope.launch {
                                 session.toggleReaction(row.item.eventId, key, currentRoomId)
@@ -276,9 +325,17 @@ internal fun RoomPane(
                                 if (subject == null) reportOrigin = null else reporting = subject
                             }
                         },
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
+            }
+            key(currentRoomId) {
+            ComposerAccessories(
+                ack = dock, typingLine = typingLine, modifier = Modifier.align(Alignment.BottomStart),
+                reserveDock = castHere?.agentIds?.isNotEmpty() == true,
+                onHeight = { accessoriesPx = it },
+            )
+            }
             }
 
             Composer(
