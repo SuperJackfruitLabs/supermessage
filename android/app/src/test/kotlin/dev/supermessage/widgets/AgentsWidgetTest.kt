@@ -225,8 +225,8 @@ class AgentsWidgetTest {
         feed.apply(WidgetFixtures.said("!a:hs", "\$1", "Recent", "hi", NOW - 3 * MINUTE))
         feed.apply(WidgetFixtures.said("!b:hs", "\$2", "Older", "hi", NOW - 130 * MINUTE))
         show {
-            onNode(text("3 min")).assertExists()
-            onNode(text("2 hr")).assertExists()
+            onNode(text("3m")).assertExists()
+            onNode(text("2h")).assertExists()
         }
     }
 

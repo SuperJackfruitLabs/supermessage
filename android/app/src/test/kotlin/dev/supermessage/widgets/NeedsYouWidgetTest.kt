@@ -232,11 +232,11 @@ class NeedsYouWidgetTest {
     @Test
     fun aCardSaysHowLongAgoTheWayIosDoes() = runBlocking {
         feed.apply(WidgetFixtures.permission(at = NOW - 4 * MINUTE))
-        show { onNode(text("4 min")).assertExists() }
+        show { onNode(text("4m")).assertExists() }
         feed.apply(WidgetFixtures.permission(event = "\$old", room = "!old:hs", question = "Old?", at = NOW - 130 * MINUTE))
         show {
-            onNode(text("2 hr")).assertExists()
-            onNode(text("4 min")).assertExists()
+            onNode(text("2h")).assertExists()
+            onNode(text("4m")).assertExists()
         }
     }
 
