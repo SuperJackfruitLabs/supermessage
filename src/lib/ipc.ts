@@ -2689,6 +2689,14 @@ export async function setAttention(needsYou: number, working: number): Promise<v
   await invoke<void>("set_attention", { needsYou, working });
 }
 
+/**
+ * Tells Rust whether closing the window should hide it to the tray instead of quitting.
+ * Resolves to whether that can happen: false where no tray could be created.
+ */
+export async function windowCloseBehaviour(keepRunning: boolean): Promise<boolean> {
+  return invoke<boolean>("window_close_behaviour", { keepRunning });
+}
+
 /** Removes every delivered notification (sign-out). */
 export async function notificationClearAll(): Promise<void> {
   await invoke<void>("notification_clear_all");

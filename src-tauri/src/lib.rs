@@ -260,6 +260,16 @@ pub fn run() {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
                 host::on_files_dropped(window.app_handle(), paths.clone());
             }
+            // With "keep running in the tray" on (and a tray to come back by), closing hides the
+            // window; the process, sync and notifications carry on. Otherwise the close goes
+            // through and the app exits with its last window.
+            #[cfg(desktop)]
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if tray::close_action_now(window.app_handle()) == tray::CloseAction::Hide {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .setup(|app| {
             // `tauri.conf.json`'s `main` window has `create: false` — that
@@ -327,11 +337,16 @@ pub fn run() {
             // The tray: a menu with the Needs you line and the way back into the app. Absent,
             // with a log line, where the desktop cannot show one.
             #[cfg(desktop)]
-            tray::install(app.handle());
+            {
+                app.manage(tray::CloseBehaviour::default());
+                tray::install(app.handle());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             attention::set_attention,
+            #[cfg(desktop)]
+            tray::window_close_behaviour,
             attachment_stage_recording,
             attachment_mark_voice,
             voice_recording_spec,
@@ -438,6 +453,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            // A Dock click with no window showing brings the window back (it may be hidden in
+            // the tray).
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                tray::Shell::show_window(app);
+            }
             // Notifications belong to the running app; none should outlive it.
             if let tauri::RunEvent::Exit = event {
                 if let Some(poster) = tauri::Manager::try_state::<Arc<dyn notify::Poster>>(app) {

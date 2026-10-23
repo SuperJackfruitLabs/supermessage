@@ -1,3 +1,7 @@
+<script lang="ts">
+  let toggled = $state(false);
+</script>
+
 <script module lang="ts">
   import { defineMeta } from "@storybook/addon-svelte-csf";
 
@@ -35,6 +39,9 @@
       version: "0.0.15",
       prefs: DEFAULT_PREFS,
       onChange: noop,
+      keepRunning: false,
+      trayAvailable: true,
+      onKeepRunning: noop,
       onOpenRecovery: noop,
       onSignOut: () => Promise.resolve(),
       onOpenLink: noop,
@@ -90,5 +97,77 @@
     ((await settled(() => buttonNamed(root, "Unblock Spammy"))) as HTMLElement).click();
     const alert = await settled(() => root.querySelector("[role=alert]"));
     if (alert.textContent?.trim() !== "Couldn't reach the homeserver.") throw new Error("the refusal is not shown");
+  }}
+/>
+
+<!-- Keep running off (the default): the switch reads unchecked, under the Notifications footnote. -->
+<Story
+  name="Keep running off"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const toggle = await settled(() => root.querySelector("[role='switch']"));
+    if (toggle.getAttribute("aria-checked") !== "false") throw new Error("the switch is not off");
+  }}
+/>
+
+<!-- Keep running on. The interaction turns a story-local state on and off again. -->
+<Story
+  name="Keep running on"
+  args={{ keepRunning: true }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const toggle = (await settled(() => root.querySelector("[role='switch']"))) as HTMLElement;
+    if (toggle.getAttribute("aria-checked") !== "true") throw new Error("the switch is not on");
+  }}
+/>
+
+<!-- The switch drives story-local state: a click turns it on, a second turns it off. -->
+<Story
+  name="Keep running toggles"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const toggle = (await settled(() => root.querySelector("[role='switch']"))) as HTMLElement;
+    if (toggle.getAttribute("aria-checked") !== "false") throw new Error("it does not start off");
+    toggle.click();
+    await settled(() => (toggle.getAttribute("aria-checked") === "true" ? toggle : null));
+    toggle.click();
+    await settled(() => (toggle.getAttribute("aria-checked") === "false" ? toggle : null));
+  }}
+>
+  {#snippet template(args)}
+    <AccountPanel {...args} keepRunning={toggled} onKeepRunning={(on) => (toggled = on)} />
+  {/snippet}
+</Story>
+
+<!-- 150 % text in a 600px window: the label wraps beside the switch and nothing overflows. -->
+<Story
+  name="Keep running at largest text, 600px"
+  args={{ keepRunning: true }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const toggle = (await settled(() => root.querySelector("[role='switch']"))) as HTMLElement;
+    const row = toggle.parentElement as HTMLElement;
+    if (row.scrollWidth > row.clientWidth + 1) throw new Error(`the row overflows: ${row.scrollWidth} > ${row.clientWidth}`);
+    const switchBox = toggle.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
+    if (switchBox.right > rowBox.right + 1) throw new Error("the switch is clipped");
+  }}
+>
+  {#snippet template(args)}
+    <div style="zoom: 1.5; width: 600px; height: 100vh; overflow: hidden; transform: translateZ(0);">
+      <AccountPanel {...args} />
+    </div>
+  {/snippet}
+</Story>
+
+<!-- No tray here: the switch is disabled and the footnote says closing quits. -->
+<Story
+  name="Keep running without a tray"
+  args={{ keepRunning: true, trayAvailable: false }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const toggle = (await settled(() => root.querySelector("[role='switch']"))) as HTMLButtonElement;
+    if (!toggle.disabled) throw new Error("the switch is not disabled");
+    if (toggle.getAttribute("aria-checked") !== "false") throw new Error("a disabled switch must not read on");
   }}
 />

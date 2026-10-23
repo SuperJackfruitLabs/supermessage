@@ -19,6 +19,7 @@
 //! It is built from Rust only and the webview is granted no tray permission.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use supermessage_core::widget;
 use tauri::image::Image;
@@ -229,6 +230,65 @@ impl<R: Runtime> TrayView for TauriTray<R> {
     }
 }
 
+/// What closing the main window does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloseAction {
+    /// Hide the window and keep the app (sync, notifications, the tray) running.
+    Hide,
+    /// Close it, which ends the app: Tauri exits when its last window is destroyed, on every
+    /// platform (macOS included; its "stay open with no windows" convention is not applied).
+    Close,
+}
+
+/// `Hide` exactly when the reader chose to keep running.
+pub fn close_action(keep_running: bool) -> CloseAction {
+    if keep_running {
+        CloseAction::Hide
+    } else {
+        CloseAction::Close
+    }
+}
+
+/// The reader's "keep running in the tray" choice, sent by the page at start and on change.
+/// Off until the page says otherwise.
+#[derive(Default)]
+pub struct CloseBehaviour(AtomicBool);
+
+impl CloseBehaviour {
+    pub fn set(&self, keep_running: bool) {
+        self.0.store(keep_running, Ordering::SeqCst);
+    }
+
+    pub fn keep_running(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
+/// What closing the main window does now. The setting only counts where the tray exists:
+/// hiding the window with no tray would leave a process with no way back to it.
+pub fn close_action_now<R: Runtime>(app: &AppHandle<R>) -> CloseAction {
+    let chosen = app
+        .try_state::<CloseBehaviour>()
+        .is_some_and(|setting| setting.keep_running());
+    effective_close(chosen, app.try_state::<TauriTray<R>>().is_some())
+}
+
+/// The reader's choice, held to what the desktop can honour: no tray, no hiding.
+pub fn effective_close(chosen: bool, tray_exists: bool) -> CloseAction {
+    close_action(chosen && tray_exists)
+}
+
+/// The page tells Rust whether the reader wants the app to keep running when the window is
+/// closed. Returns whether it can: false where the tray could not be created, and then closing
+/// still quits.
+#[tauri::command]
+pub fn window_close_behaviour<R: Runtime>(keep_running: bool, app: AppHandle<R>) -> bool {
+    if let Some(setting) = app.try_state::<CloseBehaviour>() {
+        setting.set(keep_running);
+    }
+    app.try_state::<TauriTray<R>>().is_some()
+}
+
 /// What a menu choice does to the app.
 pub trait Shell {
     /// Shows, unminimises and focuses the main window.
@@ -401,6 +461,39 @@ mod tests {
         let shell = FakeShell::default();
         handle_menu(id, &shell);
         shell.calls.into_inner()
+    }
+
+    #[test]
+    fn close_hides_only_when_keep_running_is_on() {
+        assert_eq!(close_action(true), CloseAction::Hide);
+        assert_eq!(close_action(false), CloseAction::Close);
+    }
+
+    #[test]
+    fn closing_quits_by_default() {
+        let app = tauri::test::mock_app();
+        app.manage(CloseBehaviour::default());
+        assert_eq!(close_action_now(app.handle()), CloseAction::Close);
+        assert_eq!(effective_close(false, true), CloseAction::Close);
+    }
+
+    #[test]
+    fn closing_hides_when_chosen_and_the_tray_exists() {
+        assert_eq!(effective_close(true, true), CloseAction::Hide);
+    }
+
+    #[test]
+    fn with_no_tray_the_setting_is_ignored_and_closing_quits() {
+        let app = tauri::test::mock_app();
+        app.manage(CloseBehaviour::default());
+        let can = window_close_behaviour(true, app.handle().clone());
+        assert!(!can, "the page is told it cannot keep running");
+        assert!(
+            app.state::<CloseBehaviour>().keep_running(),
+            "the choice is remembered"
+        );
+        assert_eq!(close_action_now(app.handle()), CloseAction::Close);
+        assert_eq!(effective_close(true, false), CloseAction::Close);
     }
 
     #[test]

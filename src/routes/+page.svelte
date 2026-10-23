@@ -85,6 +85,7 @@
   import AccountPanel from "$lib/components/AccountPanel.svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { appearanceStore } from "$lib/stores/appearance.svelte";
+  import { closeBehaviour } from "$lib/stores/closeBehaviour.svelte";
   import { resetSessionState } from "$lib/stores/sessionReset";
   import { safetyStore } from "$lib/stores/safety.svelte";
   import { unblock } from "$lib/safety";
@@ -827,6 +828,8 @@
   }
 
   onMount(() => windowFocus.start());
+  // The device's "keep running in the tray" choice reaches Rust before anyone can close the window.
+  onMount(() => void closeBehaviour.install());
 
   onMount(async () => {
     onIgnoredUsers((ids) => safetyStore.apply(ids))
@@ -1534,6 +1537,9 @@
     {version}
     prefs={appearanceStore.prefs}
     onChange={(patch) => appearanceStore.update(patch)}
+    keepRunning={closeBehaviour.keepRunning}
+    trayAvailable={closeBehaviour.available}
+    onKeepRunning={(on) => closeBehaviour.set(on)}
     onOpenRecovery={() => {
       accountOpen = false;
       void openRecovery();
