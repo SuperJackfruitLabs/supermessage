@@ -252,25 +252,102 @@ pub fn close_action(keep_running: bool) -> CloseAction {
 /// The reader's "keep running in the tray" choice, sent by the page at start and on change.
 /// Off until the page says otherwise.
 #[derive(Default)]
-pub struct CloseBehaviour(AtomicBool);
+pub struct CloseBehaviour {
+    keep_running: AtomicBool,
+    told: AtomicBool,
+}
 
 impl CloseBehaviour {
     pub fn set(&self, keep_running: bool) {
-        self.0.store(keep_running, Ordering::SeqCst);
+        self.keep_running.store(keep_running, Ordering::SeqCst);
     }
 
     pub fn keep_running(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+        self.keep_running.load(Ordering::SeqCst)
+    }
+
+    /// True exactly once per run: the first time the window hides, which is when the reader
+    /// needs telling where the app went.
+    pub fn first_hide(&self) -> bool {
+        !self.told.swap(true, Ordering::SeqCst)
     }
 }
 
-/// What closing the main window does now. The setting only counts where the tray exists:
-/// hiding the window with no tray would leave a process with no way back to it.
-pub fn close_action_now<R: Runtime>(app: &AppHandle<R>) -> CloseAction {
-    let chosen = app
-        .try_state::<CloseBehaviour>()
-        .is_some_and(|setting| setting.keep_running());
-    effective_close(chosen, app.try_state::<TauriTray<R>>().is_some())
+/// What the app says the first time its window hides to the tray. Short and plain, no iOS
+/// counterpart and none in the core *(desktop-only copy)*.
+pub const STILL_RUNNING_TITLE: &str = "supermessage is still running";
+pub const STILL_RUNNING_BODY: &str =
+    "It stays in the tray. Choose Quit from the tray menu to close it.";
+
+/// A window the close handler can keep open and out of sight.
+pub trait CloseTarget {
+    /// Stops the close and hides the window.
+    fn keep_hidden(&self);
+}
+
+/// Decides one close request: with "keep running" chosen and a tray to come back by, the window
+/// is hidden instead of closed, and `tell` runs the first time that happens. Otherwise nothing
+/// is done and the close goes through. Returns whether the window was kept.
+pub fn on_close_request(
+    chosen: bool,
+    tray_exists: bool,
+    behaviour: &CloseBehaviour,
+    window: &dyn CloseTarget,
+    tell: impl FnOnce(),
+) -> bool {
+    if effective_close(chosen, tray_exists) != CloseAction::Hide {
+        return false;
+    }
+    window.keep_hidden();
+    if behaviour.first_hide() {
+        tell();
+    }
+    true
+}
+
+/// A second launch of the app: the running one comes to the front, hidden or not.
+pub fn reveal_running_app(shell: &dyn Shell) {
+    shell.show_window();
+}
+
+/// Handles `CloseRequested` for the main window (see [`on_close_request`]). The first-hide
+/// notice is posted off this thread: a post is a bus round trip.
+pub fn handle_close_requested<R: Runtime>(window: &tauri::Window<R>, api: &tauri::CloseRequestApi) {
+    struct Target<'a, R: Runtime>(&'a tauri::Window<R>, &'a tauri::CloseRequestApi);
+    impl<R: Runtime> CloseTarget for Target<'_, R> {
+        fn keep_hidden(&self) {
+            self.1.prevent_close();
+            let _ = self.0.hide();
+        }
+    }
+    let app = window.app_handle();
+    let Some(behaviour) = app.try_state::<CloseBehaviour>() else {
+        return;
+    };
+    let tray_exists = app.try_state::<TauriTray<R>>().is_some();
+    on_close_request(
+        behaviour.keep_running(),
+        tray_exists,
+        &behaviour,
+        &Target(window, api),
+        || {
+            let Some(poster) = app.try_state::<std::sync::Arc<dyn crate::notify::Poster>>() else {
+                return;
+            };
+            let poster = std::sync::Arc::clone(&poster);
+            std::thread::spawn(move || {
+                let _ = poster.post(&crate::notify::PostedNote {
+                    id: "tray:still-running".into(),
+                    room_id: String::new(),
+                    title: STILL_RUNNING_TITLE.into(),
+                    body: STILL_RUNNING_BODY.into(),
+                    actions: Vec::new(),
+                    user_info: Default::default(),
+                    account: None,
+                });
+            });
+        },
+    );
 }
 
 /// The reader's choice, held to what the desktop can honour: no tray, no hiding.
@@ -473,7 +550,6 @@ mod tests {
     fn closing_quits_by_default() {
         let app = tauri::test::mock_app();
         app.manage(CloseBehaviour::default());
-        assert_eq!(close_action_now(app.handle()), CloseAction::Close);
         assert_eq!(effective_close(false, true), CloseAction::Close);
     }
 
@@ -492,8 +568,49 @@ mod tests {
             app.state::<CloseBehaviour>().keep_running(),
             "the choice is remembered"
         );
-        assert_eq!(close_action_now(app.handle()), CloseAction::Close);
         assert_eq!(effective_close(true, false), CloseAction::Close);
+    }
+
+    #[derive(Default)]
+    struct FakeWindow {
+        kept: std::cell::Cell<u32>,
+    }
+    impl CloseTarget for FakeWindow {
+        fn keep_hidden(&self) {
+            self.kept.set(self.kept.get() + 1);
+        }
+    }
+
+    #[test]
+    fn with_a_tray_and_the_choice_closing_hides_and_tells_once() {
+        let (window, behaviour) = (FakeWindow::default(), CloseBehaviour::default());
+        let told = std::cell::Cell::new(0);
+        for _ in 0..2 {
+            assert!(on_close_request(true, true, &behaviour, &window, || {
+                told.set(told.get() + 1)
+            }));
+        }
+        assert_eq!(window.kept.get(), 2, "every close is kept");
+        assert_eq!(told.get(), 1, "the notice is posted the first time only");
+    }
+
+    #[test]
+    fn without_the_choice_or_a_tray_closing_goes_through_silently() {
+        for (chosen, tray) in [(false, true), (true, false), (false, false)] {
+            let (window, behaviour) = (FakeWindow::default(), CloseBehaviour::default());
+            let kept = on_close_request(chosen, tray, &behaviour, &window, || {
+                panic!("nothing to tell")
+            });
+            assert!(!kept);
+            assert_eq!(window.kept.get(), 0);
+        }
+    }
+
+    #[test]
+    fn a_second_launch_reveals_the_running_window() {
+        let shell = FakeShell::default();
+        reveal_running_app(&shell);
+        assert_eq!(shell.calls.into_inner(), ["show"]);
     }
 
     #[test]

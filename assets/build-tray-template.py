@@ -9,7 +9,7 @@ Needs `rsvg-convert` (librsvg); not run in CI. Rerun by hand after the mark chan
 
     python3 assets/build-tray-template.py
 
-Writes src-tauri/tray/template.png (32x32) and template@2x.png (64x64).
+Writes src-tauri/tray/template@2x.png (64x64), the one the tray embeds.
 """
 import pathlib
 import subprocess
@@ -60,7 +60,7 @@ def svg(canvas: int) -> str:
 
 OUT = REPO / "src-tauri" / "tray"
 OUT.mkdir(exist_ok=True)
-for canvas, name in ((32, "template.png"), (64, "template@2x.png")):
+for canvas, name in ((64, "template@2x.png"),):
     with tempfile.NamedTemporaryFile("w", suffix=".svg", delete=False) as fh:
         fh.write(svg(canvas))
     subprocess.run(["rsvg-convert", "-w", str(canvas), "-h", str(canvas), fh.name,

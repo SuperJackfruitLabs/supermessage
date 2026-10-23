@@ -85,7 +85,10 @@ impl<R: Runtime> Opener for WindowOpener<R> {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-        let _ = window.emit(OPEN_EVENT, serde_json::json!({ "roomId": room_id }));
+        // A note about no room (the tray notice) only brings the window back.
+        if !room_id.is_empty() {
+            let _ = window.emit(OPEN_EVENT, serde_json::json!({ "roomId": room_id }));
+        }
     }
 }
 

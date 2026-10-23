@@ -135,6 +135,9 @@ tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
 # registration on `desktop` to match.
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 tauri-plugin-wdio-webdriver = { version = "1", optional = true }
+# A second launch reveals the running app instead of starting another (the window may be hidden in
+# a tray the desktop does not show). Exact pin, a release more than two weeks old.
+tauri-plugin-single-instance = "=2.5.2"
 
 
 # The D-Bus client the notification plugin and `notify-rust` already resolve,

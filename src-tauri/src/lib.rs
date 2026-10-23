@@ -222,6 +222,13 @@ pub fn run() {
     #[cfg(all(debug_assertions, feature = "mcp"))]
     let builder = builder.plugin(tauri_plugin_mcp_bridge::init());
 
+    // A second launch reveals this app instead of starting another process. First in the chain,
+    // as the plugin asks, so the second process exits before it opens a store.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        tray::reveal_running_app(app);
+    }));
+
     builder
         .on_page_load(|webview, payload| {
             tracing::debug!(
@@ -265,10 +272,7 @@ pub fn run() {
             // through and the app exits with its last window.
             #[cfg(desktop)]
             if let WindowEvent::CloseRequested { api, .. } = event {
-                if tray::close_action_now(window.app_handle()) == tray::CloseAction::Hide {
-                    api.prevent_close();
-                    let _ = window.hide();
-                }
+                tray::handle_close_requested(window, api);
             }
         })
         .setup(|app| {

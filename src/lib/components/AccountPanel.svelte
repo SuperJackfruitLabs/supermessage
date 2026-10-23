@@ -301,7 +301,7 @@
           aria-checked={keepRunning && trayAvailable}
           disabled={!trayAvailable}
           onclick={() => onKeepRunning(!keepRunning)}
-          class="relative mt-0.5 h-6 w-10 shrink-0 rounded-pill border border-border transition-colors disabled:opacity-50 {keepRunning &&
+          class="relative mt-0.5 h-6 w-10 shrink-0 rounded-pill border border-border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-50 {keepRunning &&
           trayAvailable
             ? 'bg-accent'
             : 'bg-surface-sunken'}"
