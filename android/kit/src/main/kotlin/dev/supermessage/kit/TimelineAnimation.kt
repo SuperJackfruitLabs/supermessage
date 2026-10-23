@@ -15,12 +15,14 @@ object TimelineAnimation {
      * @param had how many rows were there before
      * @param hasApplied whether any snapshot has been applied to this room yet
      * @param wasAway whether the reader was scrolled away from the newest end
+     * @param prepended whether any new row landed before rows already shown: older
+     *   history arriving by pagination, which is never an arrival
      */
-    fun animates(arrived: Int, had: Int, hasApplied: Boolean, wasAway: Boolean): Boolean {
+    fun animates(arrived: Int, had: Int, hasApplied: Boolean, wasAway: Boolean, prepended: Boolean = false): Boolean {
         // A room's first fill is the room appearing, not an arrival; a reader
         // who was away did not watch it happen; and an empty room gaining rows
         // is a fill. Any of the three and nothing animates.
-        if (!hasApplied || wasAway || had <= 0) return false
+        if (!hasApplied || wasAway || had <= 0 || prepended) return false
         // More than a handful at once is a page of history or a resync.
         return arrived in 1..3
     }

@@ -3,24 +3,13 @@ import type { ReplyQuoteView } from "$lib/ipc";
 /**
  * The facts the core decides about a message row (C6, C9): who is an agent,
  * what is a long read, whether the quote hides under its parent and whether
- * the runtime is named. They are optional because a row from before core
- * batch B carries none; absent means "no".
+ * the runtime is named. They are the row's own fields; absent means "no".
  */
 export interface MessageFacts {
   isAgent?: boolean;
   isLongRead?: boolean;
   hidesQuote?: boolean;
   showsRuntime?: boolean;
-}
-
-/** The facts a row carries, leaving out any it does not (so a spread never overwrites with `undefined`). */
-export function factsOf(row: MessageFacts): MessageFacts {
-  const facts: MessageFacts = {};
-  if (row.isAgent !== undefined) facts.isAgent = row.isAgent;
-  if (row.isLongRead !== undefined) facts.isLongRead = row.isLongRead;
-  if (row.hidesQuote !== undefined) facts.hidesQuote = row.hidesQuote;
-  if (row.showsRuntime !== undefined) facts.showsRuntime = row.showsRuntime;
-  return facts;
 }
 
 /** The part of a timeline row these functions read. */

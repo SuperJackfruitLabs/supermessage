@@ -1,11 +1,32 @@
 package dev.supermessage
 
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.activity.compose.LocalActivityResultRegistryOwner
+import androidx.activity.result.ActivityResultRegistry
+import androidx.activity.result.ActivityResultRegistryOwner
+import androidx.activity.result.contract.ActivityResultContract
+import androidx.core.app.ActivityOptionsCompat
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.unit.Density
+import androidx.test.platform.app.InstrumentationRegistry
+import dev.supermessage.kit.stores.StagedAttachment
+import java.io.File
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -69,7 +90,7 @@ class ComposerTest {
         compose.setContent {
             Composer(
                 text = "  ", onTextChange = {}, onSend = {},
-                attachment = stubAttachment(),
+                attachment = chipOf(stubAttachment()),
             )
         }
         compose.onNodeWithTag("composer-send").assertIsEnabled()
@@ -85,7 +106,7 @@ class ComposerTest {
             Composer(
                 text = "  ", onTextChange = {}, onSend = {},
                 editing = EditTarget.Pending(eventId = "e1", body = "original text"),
-                attachment = stubAttachment(),
+                attachment = chipOf(stubAttachment()),
             )
         }
         compose.onNodeWithTag("composer-send").assertIsNotEnabled()
@@ -190,59 +211,40 @@ class ComposerTest {
     }
 
     /**
-     * A long sender name must not starve the Cancel button of the width (and,
-     * downstream of that, the height) it needs to lay out normally — geometry,
-     * not existence: the node exists either way, starved or not.
-     *
-     * [composer-attach] is the reference: an ordinary single-line
-     * [androidx.compose.material3.TextButton] elsewhere in this same
-     * composable, never touched by this banner's Row, so its width and height
-     * are what an unstarved text button in this exact theme looks like. An
-     * unweighted `Row` measures its non-weighted children in order, handing
-     * each the *remaining* width after the ones before it — so a name long
-     * enough to consume the row on its own leaves Cancel measured with
-     * (close to) zero width, and therefore zero height too, not a many-lines-
-     * tall button. Confirmed empirically: before this test's own fix landed,
-     * `cancelHeight` measured here was exactly `0f`, not merely "smaller."
+     * A long sender name must not starve the Cancel button: its box with a
+     * name that cannot fit on one line is exactly its box with a short name.
+     * Geometry, not existence: the node exists either way, starved or not.
+     * (Before the weight on the name's column, an unweighted `Row` measured
+     * the button last and left it close to zero width.)
      */
     @Test
     fun theCancelButtonStaysOnOneLineWithALongSenderName() {
+        var sender by mutableStateOf("Alice")
         compose.setContent {
-            // Narrowed to 320dp so the long name below has no way to fit on
-            // one line regardless of the physical device's own width — the
-            // fault this test exists to catch depends on the name actually
-            // needing to wrap (or fully consume the row) rather than merely
-            // being long in characters.
+            // Narrowed to 320dp so the long name has no way to fit on one
+            // line whatever the device's width.
             Box(Modifier.width(320.dp)) {
                 Composer(
                     text = "hey",
                     onTextChange = {},
                     onSend = {},
-                    replyTo = ReplyTarget.Pending(
-                        eventId = "e1",
-                        sender = "Alexandria Fitzgerald-Montgomery Wraithborne the Third " +
-                            "of Barsetshire-upon-Avonlea and its Environs",
-                        excerpt = null,
-                    ),
+                    replyTo = ReplyTarget.Pending(eventId = "e1", sender = sender, excerpt = null),
                 )
             }
         }
+        val own = compose.onNodeWithTag("composer-cancel-reply").fetchSemanticsNode().boundsInRoot
 
-        val cancelBounds = compose.onNodeWithTag("composer-cancel-reply").fetchSemanticsNode().boundsInRoot
-        val attachBounds = compose.onNodeWithTag("composer-attach").fetchSemanticsNode().boundsInRoot
+        sender = "Alexandria Fitzgerald-Montgomery Wraithborne the Third " +
+            "of Barsetshire-upon-Avonlea and its Environs"
+        compose.waitForIdle()
+        val starved = compose.onNodeWithTag("composer-cancel-reply").fetchSemanticsNode().boundsInRoot
 
-        // Close to the reference button's own size, not merely "not
-        // enormous": a starved button collapses toward zero on both axes,
-        // which a one-sided upper-bound-only check would miss entirely.
-        assertTrue(
-            "Cancel's width ${cancelBounds.width} starved far below the reference (${attachBounds.width})",
-            cancelBounds.width >= attachBounds.width * 0.6f,
-        )
-        assertTrue(
-            "Cancel's height ${cancelBounds.height} starved far below the reference (${attachBounds.height})",
-            cancelBounds.height >= attachBounds.height * 0.6f,
-        )
+        assertEquals("Cancel's width with a long name", own.width, starved.width, 0.5f)
+        assertEquals("Cancel's height with a long name", own.height, starved.height, 0.5f)
+        assertTrue("Cancel has a real target (${own.width}x${own.height})", own.width > 0f && own.height > 0f)
     }
+
+    private fun chipOf(file: StagedFile, path: String? = null) = ChipState(file = file, path = path, failure = null)
 
     private fun stubAttachment() = StagedFile(
         token = "t1",
@@ -267,7 +269,7 @@ class ComposerTest {
         compose.setContent {
             Composer(
                 text = "hey", onTextChange = {}, onSend = {},
-                attachment = stubAttachment(),
+                attachment = chipOf(stubAttachment()),
             )
         }
 
@@ -284,7 +286,7 @@ class ComposerTest {
      */
     @Test
     fun discardingRemovesTheStagedAttachment() {
-        var attachment by mutableStateOf<StagedFile?>(stubAttachment())
+        var attachment by mutableStateOf<ChipState?>(chipOf(stubAttachment()))
         compose.setContent {
             Composer(
                 text = "hey", onTextChange = {}, onSend = {},
@@ -298,5 +300,268 @@ class ComposerTest {
         compose.waitForIdle()
 
         compose.onNodeWithTag("composer-attachment-chip").assertDoesNotExist()
+    }
+
+    /** The strip, the chip and the field are one capsule (iOS `floatingSurface`). */
+    @Test
+    fun theCapsuleHoldsTheStripChipAndField() {
+        compose.setContent {
+            Composer(
+                text = "hey", onTextChange = {}, onSend = {},
+                replyTo = ReplyTarget.Pending(eventId = "e1", sender = "Alice", excerpt = "see you"),
+                attachment = chipOf(stubAttachment()),
+            )
+        }
+        val capsule = compose.onNodeWithTag("composer-capsule").fetchSemanticsNode().boundsInRoot
+        for (tag in listOf("composer-reply-banner", "composer-attachment-chip", "composer-text", "composer-send", "composer-attach")) {
+            val inner = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+            assertTrue("$tag $inner is not inside the capsule $capsule",
+                inner.left >= capsule.left && inner.right <= capsule.right &&
+                    inner.top >= capsule.top && inner.bottom <= capsule.bottom)
+        }
+    }
+
+    @Test
+    fun attachOffersPhotoAndFile() {
+        compose.setContent { Composer(text = "", onTextChange = {}, onSend = {}) }
+        compose.onNodeWithTag("composer-attach").performClick()
+        compose.onNodeWithTag("composer-attach-photo").assertIsDisplayed()
+        compose.onNodeWithTag("composer-attach-file").assertIsDisplayed()
+        compose.onNodeWithText("Photo").assertIsDisplayed()
+        compose.onNodeWithText("File").assertIsDisplayed()
+    }
+
+    /** A picture shows itself (C3), not a generic icon. */
+    @Test
+    fun anImageChipShowsItsThumbnail() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val png = File(context.cacheDir, "thumb-2x2.png")
+        Bitmap.createBitmap(2, 2, Bitmap.Config.ARGB_8888).also { it.eraseColor(0xFF2356C2.toInt()) }
+            .let { b -> png.outputStream().use { b.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        compose.setContent {
+            Composer(
+                text = "", onTextChange = {}, onSend = {},
+                attachment = chipOf(stubAttachment().copy(filename = "thumb-2x2.png", mime = "image/png"), png.absolutePath),
+            )
+        }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithTag("composer-chip-thumbnail").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("composer-chip-thumbnail").assertIsDisplayed()
+    }
+
+    /** A file that is not a picture does not claim to be one. */
+    @Test
+    fun aNonImageChipHasNoThumbnail() {
+        compose.setContent {
+            Composer(text = "", onTextChange = {}, onSend = {},
+                attachment = chipOf(stubAttachment().copy(mime = "application/pdf"), "/nonexistent.pdf"))
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("composer-chip-thumbnail").assertDoesNotExist()
+    }
+
+    /** The reason is on the chip, and the text is held back with it (D12). */
+    @Test
+    fun aFailedChipSaysWhyAndHoldsSendBack() {
+        compose.setContent {
+            Composer(
+                text = "hi", onTextChange = {}, onSend = {},
+                attachment = ChipState(
+                    file = null, path = null,
+                    failure = StagedAttachment.Failure("big.mov", "That file is too large to send."),
+                ),
+            )
+        }
+        compose.onNodeWithTag("composer-chip-failure").assertTextEquals("That file is too large to send.")
+        compose.onNodeWithTag("composer-attachment-name").assertTextEquals("big.mov")
+        compose.onNodeWithTag("composer-send").assertIsNotEnabled()
+    }
+
+    /** A failed send keeps the re-staged file: the reason shows and Send is the retry. */
+    @Test
+    fun aRestagedFailureSaysWhyAndCanBeRetried() {
+        compose.setContent {
+            Composer(
+                text = "", onTextChange = {}, onSend = {},
+                attachment = ChipState(
+                    file = stubAttachment(), path = null,
+                    failure = StagedAttachment.Failure("vacation.jpg", "Could not reach the homeserver."),
+                ),
+            )
+        }
+        compose.onNodeWithTag("composer-chip-failure").assertTextEquals("Could not reach the homeserver.")
+        compose.onNodeWithTag("composer-send").assertIsEnabled()
+    }
+
+    /** O2: iOS keeps "+" and the chip while editing. */
+    @Test
+    fun attachStaysVisibleWhileEditing() {
+        compose.setContent {
+            Composer(
+                text = "x", onTextChange = {}, onSend = {},
+                editing = EditTarget.Pending(eventId = "e1", body = "x"),
+                attachment = chipOf(stubAttachment()),
+            )
+        }
+        compose.onNodeWithTag("composer-attach").assertIsDisplayed()
+        compose.onNodeWithTag("composer-attachment-chip").assertIsDisplayed()
+    }
+
+    @Test
+    fun theControlsHaveLabelsAndTheChipCanBeRemoved() {
+        var removed = false
+        compose.setContent {
+            Composer(
+                text = "hi", onTextChange = {}, onSend = {},
+                replyTo = ReplyTarget.Pending(eventId = "e1", sender = "Alice", excerpt = null),
+                attachment = chipOf(stubAttachment()),
+                onDiscardAttachment = { removed = true },
+            )
+        }
+        compose.onNodeWithContentDescription("Attach").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Send").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Cancel").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Remove attachment").performClick()
+        assertTrue(removed)
+    }
+
+    @Test
+    fun theEditControlIsLabelledSaveEdit() {
+        compose.setContent {
+            Composer(
+                text = "x", onTextChange = {}, onSend = {},
+                editing = EditTarget.Pending(eventId = "e1", body = "x"),
+            )
+        }
+        compose.onNodeWithContentDescription("Save edit").assertIsDisplayed()
+    }
+
+    /** The send control survives a 2x font and a long message (review focus 1). */
+    @Test
+    fun sendStaysOnScreenAtFontScaleTwo() {
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
+                Box(Modifier.requiredWidth(411.dp).testTag("shell")) {
+                    Composer(text = "x".repeat(200), onTextChange = {}, onSend = {})
+                }
+            }
+        }
+        val root = compose.onNodeWithTag("shell").fetchSemanticsNode().boundsInRoot
+        val send = compose.onNodeWithTag("composer-send").fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithTag("composer-send").assertIsDisplayed()
+        assertTrue("send $send past the right edge of $root", send.right <= root.right)
+        val field = compose.onNodeWithTag("composer-text").fetchSemanticsNode().boundsInRoot
+        val minWidth = with(Density(compose.density.density)) { 120.dp.toPx() }
+        assertTrue("field is only ${field.width}px wide", field.width >= minWidth)
+    }
+
+    /** A photo or file whose bytes cannot be read is refused out loud, with iOS's words. */
+    @Test
+    fun anUnreadablePhotoOrFileIsRefusedWithTheIosWords() {
+        val refusals = mutableListOf<Pair<String, String>>()
+        val missing = Uri.parse("content://dev.supermessage.nobody/missing.jpg")
+        compose.setContent {
+            WithPicker(missing) {
+                Composer(text = "", onTextChange = {}, onSend = {}, onRefuse = { n, m -> refusals += n to m })
+            }
+        }
+        compose.onNodeWithTag("composer-attach").performClick()
+        compose.onNodeWithTag("composer-attach-photo").performClick()
+        compose.waitUntil(5_000) { refusals.size == 1 }
+        compose.onNodeWithTag("composer-attach").performClick()
+        compose.onNodeWithTag("composer-attach-file").performClick()
+        compose.waitUntil(5_000) { refusals.size == 2 }
+        assertEquals(
+            listOf("missing.jpg" to "Couldn't read that photo.", "missing.jpg" to "Couldn't read that file."),
+            refusals,
+        )
+    }
+
+    /** A readable pick is copied into the cache and handed up as a path. */
+    @Test
+    fun aReadableFilePickIsStagedFromACachedCopy() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val source = File(context.filesDir, "picked-report.txt").apply { writeText("hello") }
+        val attached = mutableListOf<String>()
+        compose.setContent {
+            WithPicker(Uri.fromFile(source)) {
+                Composer(text = "", onTextChange = {}, onSend = {}, onAttach = { attached += it })
+            }
+        }
+        compose.onNodeWithTag("composer-attach").performClick()
+        compose.onNodeWithTag("composer-attach-file").performClick()
+        compose.waitUntil(5_000) { attached.isNotEmpty() }
+        assertEquals(File(context.cacheDir, "picked-report.txt").absolutePath, attached.single())
+        assertEquals("hello", File(attached.single()).readText())
+    }
+
+    /** Both failure lines are live regions, so TalkBack announces them. */
+    @Test
+    fun failuresAreAnnouncedAsLiveRegions() {
+        compose.setContent {
+            Composer(
+                text = "hi", onTextChange = {}, onSend = {},
+                failure = "Couldn't send that.",
+                attachment = ChipState(
+                    file = null, path = null,
+                    failure = StagedAttachment.Failure("big.mov", "That file is too large to send."),
+                ),
+            )
+        }
+        val polite = androidx.compose.ui.semantics.LiveRegionMode.Polite
+        for (tag in listOf("composer-failure", "composer-chip-failure")) {
+            compose.onNodeWithTag(tag).assert(
+                androidx.compose.ui.test.SemanticsMatcher.expectValue(
+                    androidx.compose.ui.semantics.SemanticsProperties.LiveRegion, polite,
+                ),
+            )
+        }
+    }
+
+    /** The File option takes any file, and Photo only images and video. */
+    @Test
+    fun theFileOptionLaunchesWithAnyFileAndPhotoWithImagesAndVideo() {
+        val launched = mutableListOf<Any?>()
+        val missing = Uri.parse("content://dev.supermessage.nobody/missing.jpg")
+        compose.setContent {
+            WithPicker(missing, onLaunched = { launched += it }) {
+                Composer(text = "", onTextChange = {}, onSend = {})
+            }
+        }
+        compose.onNodeWithTag("composer-attach").performClick()
+        compose.onNodeWithTag("composer-attach-file").performClick()
+        compose.waitUntil(5_000) { launched.size == 1 }
+        assertEquals(listOf("*/*"), (launched[0] as Array<*>).toList())
+        compose.onNodeWithTag("composer-attach").performClick()
+        compose.onNodeWithTag("composer-attach-photo").performClick()
+        compose.waitUntil(5_000) { launched.size == 2 }
+        val photo = launched[1] as androidx.activity.result.PickVisualMediaRequest
+        assertEquals(
+            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageAndVideo,
+            photo.mediaType,
+        )
+    }
+
+    /** Answers every picker launch with [result], as the system would. */
+    @Composable
+    private fun WithPicker(result: Uri, onLaunched: (Any?) -> Unit = {}, content: @Composable () -> Unit) {
+        val registry = object : ActivityResultRegistry() {
+            override fun <I : Any?, O : Any?> onLaunch(
+                requestCode: Int,
+                contract: ActivityResultContract<I, O>,
+                input: I,
+                options: ActivityOptionsCompat?,
+            ) {
+                onLaunched(input)
+                @Suppress("UNCHECKED_CAST")
+                dispatchResult(requestCode, result as O)
+            }
+        }
+        val owner = object : ActivityResultRegistryOwner {
+            override val activityResultRegistry = registry
+        }
+        CompositionLocalProvider(LocalActivityResultRegistryOwner provides owner, content = content)
     }
 }

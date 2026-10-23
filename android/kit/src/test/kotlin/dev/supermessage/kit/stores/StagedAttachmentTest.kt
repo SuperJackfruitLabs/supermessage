@@ -5,9 +5,12 @@ import dev.supermessage.kit.StubCore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -128,13 +131,9 @@ class StagedAttachmentTest {
         assertEquals("tok-1", staged.file.value?.token)
     }
 
-    /**
-     * A send that fails after the token was taken comes back as an outcome,
-     * not a throw. The message is returned and the fresh token the core
-     * staged is released, since this chip does not use it yet.
-     */
+    /** The core re-staged the file on failure: the chip keeps that file, with the failure on it. */
     @Test
-    fun `failedOutcomeReturnsTheMessageAndReleasesTheFreshToken`() = runTest {
+    fun aFailedSendKeepsTheFileTheCoreRestaged() = runTest {
         val fake = FakeCore(
             stageResult = { stagedFile("tok-1") },
             sendResult = {
@@ -142,12 +141,158 @@ class StagedAttachmentTest {
             },
         )
         val staged = StagedAttachment(client(fake))
-        staged.stage(path = "/tmp/photo.jpg", roomId = "!a:x")
+        staged.stage(path = "/tmp/photo.jpg", roomId = "!r")
 
-        val message = staged.send(roomId = "!a:x")
+        val message = staged.send(roomId = "!r")
 
         assertTrue(message != null && message.isNotEmpty())
-        assertTrue(fake.discardedTokens.contains("tok-2"))
+        assertEquals("tok-2", staged.file.value?.token)
+        assertEquals(message, staged.failure.value?.message)
+        assertTrue(fake.discardedTokens.isEmpty())
+        assertFalse(staged.blocksSend("!r"))
+        assertTrue(staged.isPresent("!r"))
+    }
+
+    /** The file is gone and cannot be re-staged: the failure stands alone and blocks the text. */
+    @Test
+    fun whenTheCoreCannotRestageTheChipIsFailed() = runTest {
+        val fake = FakeCore(
+            stageResult = { stagedFile("tok-1") },
+            sendResult = { AttachmentSendOutcome.Failed(FfiException.Network("upload failed"), null) },
+        )
+        val staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/photo.jpg", roomId = "!r")
+
+        staged.send(roomId = "!r")
+
+        assertNull(staged.file.value)
+        assertNotNull(staged.failure.value)
+        assertTrue(staged.blocksSend("!r"))
+    }
+
+    /**
+     * The send suspends, so the reader can pick another file meanwhile. The
+     * re-staged file of the failed send must not replace that newer pick: its
+     * token is released, the pick stays, and the caller still gets the message.
+     */
+    @Test
+    fun aFailedSendDoesNotReplaceAFileThePickedMidSend() = runTest {
+        var staged: StagedAttachment? = null
+        var picks = 0
+        val fake = FakeCore(
+            stageResult = { picks += 1; stagedFile("pick-$picks") },
+            sendResult = {
+                // The reader picks a new file while the first is still sending.
+                runBlocking { staged!!.stage(path = "/tmp/newer.jpg", roomId = "!r") }
+                AttachmentSendOutcome.Failed(FfiException.Network("upload failed"), stagedFile("restaged"))
+            },
+        )
+        staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/photo.jpg", roomId = "!r")
+
+        val message = staged.send(roomId = "!r")
+
+        assertTrue(message != null && message.isNotEmpty())
+        assertEquals("pick-2", staged.file.value?.token)
+        assertEquals("/tmp/newer.jpg", staged.path.value)
+        assertNull(staged.failure.value)
+        assertTrue(fake.discardedTokens.contains("restaged"))
+    }
+
+    /** A successful send must not wipe, or leak, a file picked while it was in flight. */
+    @Test
+    fun aSuccessfulSendDoesNotClearAFilePickedMidSend() = runTest {
+        var staged: StagedAttachment? = null
+        var picks = 0
+        val fake = FakeCore(
+            stageResult = { picks += 1; stagedFile("pick-$picks") },
+            sendResult = {
+                runBlocking { staged!!.stage(path = "/tmp/newer.jpg", roomId = "!r") }
+                AttachmentSendOutcome.Sent
+            },
+        )
+        staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/photo.jpg", roomId = "!r")
+
+        assertNull(staged.send(roomId = "!r"))
+
+        assertEquals("pick-2", staged.file.value?.token)
+        assertEquals("/tmp/newer.jpg", staged.path.value)
+    }
+
+    /** The newer pick's own refusal is not overwritten by the old send's failure. */
+    @Test
+    fun aFailedSendDoesNotOverwriteTheNewerPicksFailure() = runTest {
+        var staged: StagedAttachment? = null
+        var picks = 0
+        val fake = FakeCore(
+            stageResult = { picks += 1; if (picks == 1) stagedFile("pick-1") else throw FfiException.Store("too large") },
+            sendResult = {
+                runBlocking { staged!!.stage(path = "/tmp/newer.mov", roomId = "!r") }
+                AttachmentSendOutcome.Failed(FfiException.Network("upload failed"), stagedFile("restaged"))
+            },
+        )
+        staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/photo.jpg", roomId = "!r")
+
+        staged.send(roomId = "!r")
+
+        assertNull(staged.file.value)
+        assertEquals("newer.mov", staged.failure.value?.filename)
+        assertTrue(fake.discardedTokens.contains("restaged"))
+    }
+
+    /** A refusal to stage leaves a failure on the chip that blocks the text. */
+    @Test
+    fun aRefusedStageLeavesAFailureOnTheChip() = runTest {
+        val fake = FakeCore(stageResult = { throw FfiException.Store("too large") })
+        val staged = StagedAttachment(client(fake))
+
+        val message = staged.stage(path = "/tmp/dir/big.mov", roomId = "!r")
+
+        assertNotNull(message)
+        assertEquals("big.mov", staged.failure.value?.filename)
+        assertEquals(message, staged.failure.value?.message)
+        assertTrue(staged.isPresent("!r"))
+        assertTrue(staged.blocksSend("!r"))
+    }
+
+    @Test
+    fun isPresentIsPerRoom() = runTest {
+        val fake = FakeCore(stageResult = { stagedFile("tok-1") })
+        val staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/photo.jpg", roomId = "!a")
+
+        assertTrue(staged.isPresent("!a"))
+        assertFalse(staged.isPresent("!b"))
+        assertFalse(staged.blocksSend("!b"))
+    }
+
+    /** A failure with no file refuses without asking the core anything. */
+    @Test
+    fun sendingAFailedChipRefusesWithoutAskingTheCore() = runTest {
+        val fake = FakeCore()
+        val staged = StagedAttachment(client(fake))
+        staged.refuse(filename = "a.png", message = "Couldn't read that file.", roomId = "!r")
+
+        assertEquals("Couldn't read that file.", staged.send(roomId = "!r"))
+        assertTrue(fake.sentTokens.isEmpty())
+    }
+
+    /** The core no longer holds the token and there is no path to stage again. */
+    @Test
+    fun anUnknownAttachmentClearsTheFile() = runTest {
+        val fake = FakeCore(
+            stageResult = { stagedFile("tok-1") },
+            sendResult = { throw FfiException.UnknownAttachment() },
+        )
+        val staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/photo.jpg", roomId = "!r")
+
+        staged.send(roomId = "!r")
+
+        assertNull(staged.file.value)
+        assertTrue(staged.blocksSend("!r"))
     }
 
     /** discarding tells the core and clears the staged file */

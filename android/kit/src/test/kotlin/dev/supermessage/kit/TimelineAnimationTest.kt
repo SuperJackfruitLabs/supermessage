@@ -5,8 +5,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TimelineAnimationTest {
-    private fun animates(arrived: Int, had: Int = 5, hasApplied: Boolean = true, wasAway: Boolean = false) =
-        TimelineAnimation.animates(arrived, had, hasApplied, wasAway)
+    private fun animates(arrived: Int, had: Int = 5, hasApplied: Boolean = true, wasAway: Boolean = false, prepended: Boolean = false) =
+        TimelineAnimation.animates(arrived, had, hasApplied, wasAway, prepended)
 
     /** One to three arrivals into a room already on screen: the case that animates. */
     @Test fun aHandfulArrivingIsAnArrival() {
@@ -38,4 +38,10 @@ class TimelineAnimationTest {
 
     /** Nothing arrived. */
     @Test fun nothingArrivingDoesNotAnimate() = assertFalse(animates(arrived = 0))
+
+    /** Older history prepended by pagination is never an arrival, however few rows. */
+    @Test fun prependedHistoryIsNotAnArrival() {
+        assertFalse(animates(arrived = 1, prepended = true))
+        assertFalse(animates(arrived = 3, prepended = true))
+    }
 }

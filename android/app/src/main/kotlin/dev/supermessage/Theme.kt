@@ -66,6 +66,9 @@ object SupermessageThemeFonts {
     val code: FontFamily = FontFamily.Monospace
 }
 
+/** Whether the theme in force resolved to a dark appearance (swatches are drawn for it). */
+internal val LocalSupermessageDark = staticCompositionLocalOf { false }
+
 private val LocalSupermessageColors =
     staticCompositionLocalOf { GeneratedThemeTokens.paper }
 private val LocalSupermessagePeers =
@@ -114,11 +117,12 @@ object SupermessageTheme {
  * describing.
  */
 @Composable
-fun SupermessageTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+fun SupermessageTheme(choice: ThemeChoice = ThemeChoice(), content: @Composable () -> Unit) {
     // Android binds `paper` to light: paper is what "light" means on a
-    // phone. The third appearance is not a user setting, which is why there
-    // is nothing to read here beyond the system's own dark flag.
-    val colors = if (darkTheme) GeneratedThemeTokens.dark else GeneratedThemeTokens.paper
+    // phone. Which appearance is in force is the reader's choice (Task 14):
+    // System follows the phone, Light and Dark do not.
+    val darkTheme = choice.resolvesDark(isSystemInDarkTheme())
+    val colors = choice.palette(darkTheme)
     val typography = SupermessageTypography(
         body = SupermessageThemeFonts.body,
         own = SupermessageThemeFonts.own,
@@ -204,8 +208,23 @@ fun SupermessageTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Comp
     CompositionLocalProvider(
         LocalSupermessageColors provides colors,
         LocalSupermessageTypography provides typography,
-        LocalSupermessagePeers provides if (darkTheme) GeneratedPeers.dark else GeneratedPeers.paper,
+        LocalSupermessagePeers provides choice.peers(darkTheme),
+        LocalSupermessageDark provides darkTheme,
     ) {
         MaterialTheme(colorScheme = colorScheme, content = content)
     }
+}
+
+/**
+ * The same theme for a caller that only knows light or dark (previews and the
+ * tests written before the chooser existed): the house palette, no accent.
+ * Deliberately without a default, so `SupermessageTheme { }` stays the
+ * choice-reading overload.
+ */
+@Composable
+fun SupermessageTheme(darkTheme: Boolean, content: @Composable () -> Unit) {
+    SupermessageTheme(
+        choice = ThemeChoice(mode = if (darkTheme) AppearanceMode.DARK else AppearanceMode.LIGHT),
+        content = content,
+    )
 }

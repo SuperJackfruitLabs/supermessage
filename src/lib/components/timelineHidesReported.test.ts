@@ -1,5 +1,5 @@
 /**
- * A reported message leaves the timeline at once, and every action pill can report.
+ * A reported message leaves the timeline (the core marks it hidden), and every action pill can report.
  *
  * Asserted on the source, as `timelineActionAnchor.test.ts` does, because the
  * vitest environment is `node` and the timeline is not mounted in tests.
@@ -11,8 +11,12 @@ import { describe, expect, test } from "vitest";
 const source = readFileSync(fileURLToPath(new URL("./Timeline.svelte", import.meta.url)), "utf8");
 
 describe("Timeline and reports", () => {
-  test("rows reported on this device are dropped before grouping", () => {
-    expect(source).toContain("groupTimelineItems(safetyStore.visible(");
+  test("rows reported on this device are the core's to hide, not filtered here", () => {
+    // The core groups as if a reported row were absent and marks it `hidden`;
+    // `groupTimelineItems` skips it (timelineGrouping.test.ts). A host filter
+    // before or after grouping would be a second copy of that rule.
+    expect(source).toContain("groupTimelineItems(timelineStore.items, expanded");
+    expect(source).not.toContain("safetyStore.visible(");
   });
 
   test("every MessageActions tag carries onReport", () => {

@@ -577,6 +577,11 @@ void uniffi_supermessage_ffi_fn_method_core_send_permission_answer(void*_Nonnull
 void uniffi_supermessage_ffi_fn_method_core_send_reply(void*_Nonnull ptr, RustBuffer room_id, RustBuffer body, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_HIDDEN_EVENTS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_HIDDEN_EVENTS
+void uniffi_supermessage_ffi_fn_method_core_set_hidden_events(void*_Nonnull ptr, RustBuffer event_ids, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_ROOM_NOTIFICATIONS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SET_ROOM_NOTIFICATIONS
 void uniffi_supermessage_ffi_fn_method_core_set_room_notifications(void*_Nonnull ptr, RustBuffer room_id, RustBuffer mode, RustCallStatus *_Nonnull out_status
@@ -722,6 +727,17 @@ RustBuffer uniffi_supermessage_ffi_fn_func_first_run_script(RustCallStatus *_Non
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FOLD_TURN
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FOLD_TURN
 RustBuffer uniffi_supermessage_ffi_fn_func_fold_turn(RustBuffer room_id, RustBuffer inputs, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GROUP_TIMELINE_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GROUP_TIMELINE_ROWS
+RustBuffer uniffi_supermessage_ffi_fn_func_group_timeline_rows(RustBuffer rows, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_LONG_READ_GRAPHEMES
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_LONG_READ_GRAPHEMES
+uint32_t uniffi_supermessage_ffi_fn_func_long_read_graphemes(RustCallStatus *_Nonnull out_status
+    
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_NEXT_NOTIFICATION_MODE
@@ -1265,6 +1281,18 @@ uint16_t uniffi_supermessage_ffi_checksum_func_fold_turn(void
     
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GROUP_TIMELINE_ROWS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GROUP_TIMELINE_ROWS
+uint16_t uniffi_supermessage_ffi_checksum_func_group_timeline_rows(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_LONG_READ_GRAPHEMES
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_LONG_READ_GRAPHEMES
+uint16_t uniffi_supermessage_ffi_checksum_func_long_read_graphemes(void
+    
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NEXT_NOTIFICATION_MODE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_NEXT_NOTIFICATION_MODE
 uint16_t uniffi_supermessage_ffi_checksum_func_next_notification_mode(void
@@ -1802,6 +1830,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_send_permission_answer(voi
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_REPLY
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_REPLY
 uint16_t uniffi_supermessage_ffi_checksum_method_core_send_reply(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SET_HIDDEN_EVENTS
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SET_HIDDEN_EVENTS
+uint16_t uniffi_supermessage_ffi_checksum_method_core_set_hidden_events(void
     
 );
 #endif

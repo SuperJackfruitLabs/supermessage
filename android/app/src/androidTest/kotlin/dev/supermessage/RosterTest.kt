@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import java.time.Instant
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -69,7 +70,7 @@ class RosterTest {
         )
 
         compose.setContent {
-            Roster(sections = sections, hiddenInvitations = 0, now = Instant.now(), avatarUri = { null })
+            Roster(sections = sections, invitations = emptyList(), invitationsOpen = false, onToggleInvitations = {}, now = Instant.now(), avatarUri = { null })
         }
 
         val alphaTop = compose.onNodeWithText("Alpha").fetchSemanticsNode().boundsInRoot.top
@@ -99,7 +100,7 @@ class RosterTest {
         var sections by mutableStateOf(listOf(section(id = "s1", title = "Idle", entryName = "Alpha")))
 
         compose.setContent {
-            Roster(sections = sections, hiddenInvitations = 0, now = Instant.now(), avatarUri = { null })
+            Roster(sections = sections, invitations = emptyList(), invitationsOpen = false, onToggleInvitations = {}, now = Instant.now(), avatarUri = { null })
         }
 
         compose.onNodeWithText("Alpha").assertIsDisplayed()
@@ -116,64 +117,84 @@ class RosterTest {
         compose.onNodeWithText("Bravo").assertIsDisplayed()
     }
 
-    /** The picker admits how many invitations it is withholding. */
-    @Test
-    fun hiddenInvitationsAreCounted() {
-        compose.setContent {
-            Roster(sections = emptyList(), hiddenInvitations = 3, now = Instant.now(), avatarUri = { null })
-        }
+    private fun invitation(id: String, name: String) = RosterRow(
+        row = row(id, name).let {
+            it.copy(
+                room = it.room.copy(membership = Membership.INVITED),
+                affordance = RoomAffordance.RESPOND_TO_INVITATION,
+            )
+        },
+        state = AgentState.QUIET,
+        describesAgent = false,
+    )
 
-        compose.onNodeWithTag("hidden-invitations").assertIsDisplayed()
-        compose.onNodeWithText("3 invitations hidden").assertIsDisplayed()
-    }
-
-    /** Nothing withheld, nothing said. */
-    @Test
-    fun zeroHiddenInvitationsShowsNoBanner() {
-        compose.setContent {
-            Roster(sections = emptyList(), hiddenInvitations = 0, now = Instant.now(), avatarUri = { null })
-        }
-
-        compose.onNodeWithTag("hidden-invitations").assertDoesNotExist()
-    }
-
-    /**
-     * Tap-to-reveal is the only way an invitation can be reached at all —
-     * see `Roster`'s own KDoc on `onRevealInvitations`. This drives the
-     * round trip the same way `anArrivingRoomIsShownWithoutATouch` drives a
-     * roster update: the tap fires the callback, and the callback (standing
-     * in for `MainActivity`'s real `prefs.setShowsInvitations(true)`) is
-     * what actually changes `sections`/`hiddenInvitations` — `Roster` itself
-     * holds none of that state, per its own "parses nothing, decides
-     * nothing" rule.
-     */
-    @Test
-    fun tappingTheHiddenInvitationsBannerRevealsInvitations() {
-        var hiddenInvitations by mutableStateOf(1)
-        var sections by mutableStateOf(emptyList<RosterSection>())
-        var revealCalls = 0
-
+    private fun rosterWithInvitations(open: Boolean, toggles: () -> Unit = {}) {
         compose.setContent {
             Roster(
-                sections = sections,
-                hiddenInvitations = hiddenInvitations,
+                sections = listOf(section(id = "s1", title = "Idle", entryName = "Alpha")),
+                invitations = listOf(invitation("!i1:x", "Lab Room"), invitation("!i2:x", "Ops Room")),
+                invitationsOpen = open,
+                onToggleInvitations = toggles,
                 now = Instant.now(),
                 avatarUri = { null },
-                onRevealInvitations = {
-                    revealCalls++
-                    hiddenInvitations = 0
-                    sections = listOf(section(id = "invites", title = "Invitations", entryName = "Charlie"))
-                },
             )
         }
+    }
 
-        compose.onNodeWithText("Charlie").assertDoesNotExist()
+    /** Invitations are one row that opens in place, above the sections (`RoomListView.swift:122-136`). */
+    @Test
+    fun invitationsAreARowThatOpensInPlace() {
+        var open by mutableStateOf(false)
+        compose.setContent {
+            Roster(
+                sections = listOf(section(id = "s1", title = "Idle", entryName = "Alpha")),
+                invitations = listOf(invitation("!i1:x", "Lab Room"), invitation("!i2:x", "Ops Room")),
+                invitationsOpen = open,
+                onToggleInvitations = { open = !open },
+                now = Instant.now(),
+                avatarUri = { null },
+            )
+        }
+        compose.onNodeWithText("2 invitations").assertIsDisplayed()
+        compose.onNodeWithText("Lab Room").assertDoesNotExist()
+        compose.onNodeWithText("Ops Room").assertDoesNotExist()
 
-        compose.onNodeWithTag("hidden-invitations").performClick()
+        compose.onNodeWithTag("invitations-row").performClick()
         compose.waitForIdle()
 
-        assertTrue("tapping the banner should call onRevealInvitations exactly once", revealCalls == 1)
-        compose.onNodeWithTag("hidden-invitations").assertDoesNotExist()
-        compose.onNodeWithText("Charlie").assertIsDisplayed()
+        val rowBottom = compose.onNodeWithTag("invitations-row").fetchSemanticsNode().boundsInRoot.bottom
+        val headerTop = compose.onNodeWithTag("section-header").fetchSemanticsNode().boundsInRoot.top
+        for (name in listOf("Lab Room", "Ops Room")) {
+            val top = compose.onNodeWithText(name).fetchSemanticsNode().boundsInRoot.top
+            assertTrue("$name at $top must sit below the row ($rowBottom)", top >= rowBottom)
+            assertTrue("$name at $top must sit above the first header ($headerTop)", top < headerTop)
+        }
+    }
+
+    @Test
+    fun oneInvitationIsSingular() {
+        assertEquals("1 invitation", invitationsLabel(1))
+        assertEquals("3 invitations", invitationsLabel(3))
+    }
+
+    /** The toggle is the caller's; the row only reports the tap. */
+    @Test
+    fun tappingTheInvitationsRowAsksToToggle() {
+        var toggles = 0
+        rosterWithInvitations(open = false) { toggles++ }
+        compose.onNodeWithTag("invitations-row").performClick()
+        assertEquals(1, toggles)
+    }
+
+    /** No invitations, no row. */
+    @Test
+    fun noInvitationsShowsNoRow() {
+        compose.setContent {
+            Roster(
+                sections = emptyList(), invitations = emptyList(), invitationsOpen = false,
+                onToggleInvitations = {}, now = Instant.now(), avatarUri = { null },
+            )
+        }
+        compose.onNodeWithTag("invitations-row").assertDoesNotExist()
     }
 }

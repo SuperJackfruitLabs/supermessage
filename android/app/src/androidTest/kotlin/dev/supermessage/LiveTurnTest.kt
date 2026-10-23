@@ -4,7 +4,10 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -22,11 +25,30 @@ import uniffi.supermessage_core.ToolPhase
 class LiveTurnTest {
     @get:Rule val compose = createComposeRule()
 
-    /** The text currently on the `live-answer` node, or `null` if it is not composed. */
+    /** The text of the plain line still being written (`live-answer-tail`), or `null` if there is none. */
     private fun answerText(): String? {
-        val nodes = compose.onAllNodesWithTag("live-answer").fetchSemanticsNodes()
+        val nodes = compose.onAllNodesWithTag("live-answer-tail").fetchSemanticsNodes()
         if (nodes.isEmpty()) return null
         return nodes.first().config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }
+    }
+
+    /**
+     * A bold line is drawn bold while it streams, not as raw `**` markup.
+     * The completed first line goes through the core's parser; "next" is
+     * still the line being written.
+     */
+    @Test
+    fun aBoldLineIsBoldWhileStreaming() {
+        compose.setContent {
+            LiveTurn(answer = "**Observed:** ok\nnext", thought = null, tools = emptyList(), finished = true)
+        }
+
+        compose.waitUntil(timeoutMillis = 5_000) {
+            compose.onAllNodesWithText("Observed:", substring = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("Observed:", substring = true).assertIsDisplayed()
+        compose.onAllNodesWithText("**", substring = true).assertCountEquals(0)
+        compose.onNodeWithTag("live-answer-tail").assertTextEquals("next")
     }
 
     /**

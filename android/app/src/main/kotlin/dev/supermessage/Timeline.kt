@@ -28,15 +28,40 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.scrollBy
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.testTag as semanticsTestTag
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
+import kotlin.math.roundToInt
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.DisplayRow
 import dev.supermessage.kit.TimelineAnimation
-import dev.supermessage.kit.TimelineGrouping
+import dev.supermessage.kit.displayRows
 import dev.supermessage.kit.stores.LiveStore
 import java.time.Instant
 import kotlinx.coroutines.launch
@@ -75,19 +100,18 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * `TimelineCollectionView.swift`'s explicit `display.reversed()` before it
  * applies its own snapshot.
  *
- * ## Grouping — [TimelineRow]'s stated gap, closed here
+ * ## Grouping — the core's, drawn here
  *
- * [TimelineRow] takes `continuesRun`/`attribution` as parameters precisely
- * because, in its own words, that decision is "chosen by the list that can
- * see every row; a single row cannot." This container is where the whole
- * list is in hand, so it is where [TimelineGrouping.continuesRun] and
- * [TimelineGrouping.hasSingleSpeaker] actually run — mirroring
- * `TimelineCollectionView.swift`'s `rowsById`/`singleSpeaker`. A row's
- * attribution is its short name when one agent does all the talking in the
- * room, and its full name otherwise; a row continues the run above it when
- * [TimelineGrouping.continuesRun] says so, computed walking [rows] in the
- * chronological order it already arrives in (not [newestFirst]'s reversed
- * order — "the row above it" means the row before it in time).
+ * Whether a row continues the run above it, ends its run or shows the
+ * bridge's runtime suffix is decided once, in the core (`timeline_grouping.rs`),
+ * and arrives on every row as `continuesRun`, `endsRun` and `showsRuntime`.
+ * [TimelineRow] takes them as parameters; this container only reads them off
+ * the row. (The core also sends `hidesQuote`. Android draws every reply's
+ * quote for now: switching it on is M4/M5 UI in the M1b plan, and no Android
+ * code ever had its own copy of that rule.) Rows the core marks `hidden` get
+ * no entry ([displayRows]). A row's attribution
+ * is its full name where two or more peers speak (`showsRuntime`), and its
+ * short name otherwise.
  *
  * ## The live turn's place in the list
  *
@@ -101,38 +125,35 @@ import uniffi.supermessage_core.TimelineRow as TimelineRowDto
  * show ([LiveStore.isLive]); nothing here duplicates that check to decide
  * *whether* to render it, only *where*.
  *
- * ## Membership runs — collapsed after grouping, before reversing
+ * ## Membership runs and stretches — the core groups, the reader opens
  *
- * [rows] is fed through [TimelineGrouping.collapseMembershipRuns] before
- * anything else touches it, so a run of consecutive "updated their
- * membership" rows becomes one [DisplayRow.MembershipRun] rather than one
- * line per row — the failure [TimelineGrouping.collapseMembershipRuns]'s own
- * doc names, found on a device that drew eight of them in a row. Collapsing
- * happens **before** [newestFirst]'s `asReversed()`: runs are consecutive in
- * the chronological order [rows] already arrives in, so collapsing first and
- * reversing the (shorter) result keeps the newest-first contract with one
- * less thing to reason about than reversing first would.
+ * [rows] is walked by [displayRows] before anything else touches it. A run of
+ * consecutive membership rows becomes one [DisplayRow.MembershipRun]; a
+ * stretch of three or more runs becomes one summary line the reader taps to
+ * open ([expanded], by stretch id, saved per [roomId]). This happens
+ * **before** [newestFirst]'s `asReversed()`: runs are consecutive in the
+ * chronological order [rows] already arrives in, so collapsing first and
+ * reversing the (shorter) result keeps the newest-first contract.
  *
- * ## Starting a reply or an edit — this list's job, the way iOS's is
+ * ## The message menu — this list's job, the way iOS's is
  *
- * `apple/Supermessage/Timeline/TimelineCollectionView.swift` starts a reply
- * two ways — a leading swipe action, and a long-press context menu that also
- * offers Edit — and both live on the *collection view*, never on
- * `TimelineRowView` itself (whose own `onReply` closure sits unused,
- * mirroring [TimelineRow]'s own "No onReply yet" note). This container is
- * that same layer on Android: a long press on a row that has something to
- * offer calls [onRowLongPress] with the row, and it is left to the caller
- * (which holds [dev.supermessage.kit.stores.ReplyTarget] and
- * [dev.supermessage.kit.stores.EditTarget]) to decide what a long press
- * means. A row with neither `canReplyOrReact` nor `item.editable` gets no
- * gesture at all, rather than a long press that silently does nothing —
- * `TimelineCollectionView.swift`'s own guards (`row.canReplyOrReact`,
- * `row.item.editable`) are read to decide *whether* a menu offers each
- * action; this container's equivalent is *whether the gesture exists at
- * all*, a narrower affordance than iOS's two-item menu, chosen because nothing
- * here builds the menu surface iOS's `UIContextMenuConfiguration` gets for
- * free. No swipe gesture, and no avatar cache: the former would fight this
- * list's own vertical drag, the latter is a different task's wiring.
+ * `apple/Supermessage/Timeline/TimelineCollectionView.swift:1039-1150` builds
+ * one long-press menu on the *collection view*, never on `TimelineRowView`.
+ * This container is that layer: a long press on a row opens [MessageMenu]
+ * for it (react, Reply, Copy, Edit, Delete as [messageMenuActions] allows),
+ * and a row with nothing to offer gets no gesture at all. Reply and edit are
+ * reported through [onReply] and [onEdit], which the caller binds to its
+ * `ReplyTarget`/`EditTarget` stores; Copy is done here through the clipboard;
+ * Delete asks first ([DeleteConfirm]) and then calls [onDelete], whose `false`
+ * puts "Not sent. Try again." under the row for a few seconds (no iOS copy:
+ * iOS swallows a failed delete). Which row the menu is for is held by id and
+ * dropped when that row leaves [rows]. A redacted row does *not* leave: the
+ * core keeps a redacted item's id (`crates/supermessage-core/src/timeline.rs`),
+ * so its menu stays until the room changes (the caller keys this list by room)
+ * or the item drops out of the list, as on iOS. The horizontal swipes live in
+ * [timelineSwipe]; they claim only a mostly horizontal drag, so they neither
+ * fight this list's vertical scroll nor the long press. No avatar cache: a
+ * different task's wiring.
  *
  * ## Reacting
  *
@@ -156,56 +177,112 @@ fun Timeline(
     liveFinished: Boolean = false,
     onReact: (row: TimelineRowDto, key: String) -> Unit = { _, _ -> },
     onDecide: suspend (row: TimelineRowDto, answer: GateAnswer) -> Boolean = { _, _ -> false },
-    onRowLongPress: (row: TimelineRowDto) -> Unit = {},
+    onReply: (row: TimelineRowDto) -> Unit = {},
+    onEdit: (row: TimelineRowDto) -> Unit = {},
+    onDelete: suspend (row: TimelineRowDto) -> Boolean = { false },
+    onSwipeReply: (row: TimelineRowDto) -> Unit = {},
     imageUri: (eventId: String) -> String? = { null },
     faceUri: (mxcUri: String) -> String? = { null },
     loadFace: suspend (mxcUri: String) -> Unit = {},
+    roomId: String = "",
     modifier: Modifier = Modifier,
 ) {
+    // Per list, so per room (the pane keys the list by room), and above the
+    // lazy items so a recycled row cannot forget what this device answered.
+    val decisionAnswers = rememberDecisionAnswers()
     val isLive = liveAnswer != null || liveThought != null || liveTools.isNotEmpty()
 
-    // Keyed on `revision`, not `rows` itself. `TimelineStore.revision` is
-    // bumped exactly once per wholesale replacement of `items` and nowhere
-    // else, so it answers "did the history actually change" in the
-    // constant time a `ULong` comparison costs — the whole reason it exists
-    // (see `TimelineStore.kt`'s own doc on it). Keying these three off
-    // `rows` instead pays a structural, element-by-element comparison of
-    // the entire list on every recomposition this container has, including
-    // the many-times-a-second ones a live turn's own answer/thought/tools
-    // cause while `rows` itself has not moved.
-    //
-    // Walked in the order `rows` already arrives in — oldest first —
-    // because "the row above it" means the row before it in time, not
-    // before it in the inverted list this container displays.
-    val continuesRun = remember(revision) {
-        val out = HashMap<String, Boolean>(rows.size)
-        var previous: TimelineRowDto? = null
-        for (row in rows) {
-            out[row.item.id] = TimelineGrouping.continuesRun(row, previous)
-            previous = row
-        }
-        out
-    }
-    // The mirror of `continuesRun`: a row ends its run when the row after
-    // it (in time) does not continue it. Derived from the same rule rather
-    // than a second one, so the two can never disagree about where a run is.
-    val endsRun = remember(revision) {
-        val out = HashMap<String, Boolean>(rows.size)
-        for (i in rows.indices) {
-            val next = rows.getOrNull(i + 1)
-            out[rows[i].item.id] = next == null || !TimelineGrouping.continuesRun(next, rows[i])
-        }
-        out
-    }
-    val singleSpeaker = remember(revision) { TimelineGrouping.hasSingleSpeaker(rows) }
+    // Faces for readers, from the messages they have sent here. A receipt
+    // carries only a user id; the room has usually already shown that
+    // person's face beside something they said.
+    val facesBySender = remember(revision) { readerFaces(rows) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    // Collapse membership runs first — they are consecutive in the
-    // chronological order `rows` already arrives in — then reverse. See the
-    // class doc's "Feed order" and "Membership runs" sections.
-    val displayRows = remember(revision) { TimelineGrouping.collapseMembershipRuns(rows) }
-    val newestFirst = displayRows.asReversed()
+    // The menu and the delete confirmation are about one row, held by id so
+    // they survive recomposition and die with the row: a redaction, or a
+    // different room's rows, removes the id from `rows` and both close.
+    var menuFor by remember { mutableStateOf<String?>(null) }
+    var confirmingDelete by remember { mutableStateOf<String?>(null) }
+    var failedDelete by remember { mutableStateOf<String?>(null) }
+    val menuRow = menuFor?.let { id -> rows.firstOrNull { it.item.id == id } }
+    val confirmRow = confirmingDelete?.let { id -> rows.firstOrNull { it.item.id == id } }
+    LaunchedEffect(menuFor, menuRow == null) { if (menuFor != null && menuRow == null) menuFor = null }
+    LaunchedEffect(confirmingDelete, confirmRow == null) {
+        if (confirmingDelete != null && confirmRow == null) confirmingDelete = null
+    }
+    LaunchedEffect(failedDelete) {
+        if (failedDelete != null) {
+            delay(DeleteFailureShownMs)
+            failedDelete = null
+        }
+    }
+    // Quote jump: a quote is tappable only when its parent is in the loaded
+    // list (`TimelineCollectionView.swift:590-592`). Keyed by display id, so a
+    // parent folded into a membership run is not a target.
+    var highlightedId by remember { mutableStateOf<String?>(null) }
+    var jumpSerial by remember { mutableStateOf(0) }
+    val reduceMotion = reducesMotion()
+    LaunchedEffect(highlightedId, jumpSerial) {
+        if (highlightedId != null) {
+            delay(QuoteHighlightMs)
+            highlightedId = null
+        }
+    }
+    val reveal = remember { TimeReveal() }
+    // Whether a pull is showing at all. Rows read this, not `reveal.offset`:
+    // the offset changes on every frame of a drag and of the spring back, and
+    // a row that read it in composition recomposed on each one. The offset
+    // itself is read only in layout and draw lambdas below.
+    val revealing by remember { derivedStateOf { reveal.offset > 0f } }
+    val revealWidthPx = with(LocalDensity.current) { RevealWidthDp.dp.toPx() }
+    val clipboard = LocalClipboardManager.current
+    val haptics = LocalHapticFeedback.current
+
+    // The stretches the reader has opened. Per room: another room's stretch
+    // ids are not this room's, and the same stretch should survive rotation.
+    var expanded by rememberSaveable(roomId, stateSaver = ExpandedStretches) {
+        mutableStateOf(emptySet<String>())
+    }
+
+    // The core's grouping, walked in the chronological order `rows` already
+    // arrives in, then reversed. Keyed on `revision` (a constant-time
+    // comparison; see `TimelineStore.revision`) and on what the reader opened.
+    val entries = remember(revision, expanded) { displayRows(rows, expanded) }
+    val newestFirst = entries.asReversed()
+    val idByEventId = remember(revision, expanded) {
+        buildMap {
+            for (d in entries) if (d is DisplayRow.Row) d.row.item.eventId?.let { put(it, d.id) }
+        }
+    }
+    val liveAtZero = isLive && !liveFinished
+    val liveAtOne = isLive && liveFinished && newestFirst.isNotEmpty()
+
+    // A turn finishing in the room on screen is a success haptic, once, on the
+    // change to finished (`TimelineView.swift:143`, `!was && now`). A list that
+    // opens onto an already-finished turn starts with `finished` remembered,
+    // and a turn that goes away without finishing never flips it.
+    var wasFinished by remember { mutableStateOf(liveFinished) }
+    LaunchedEffect(liveFinished) {
+        if (!wasFinished && liveFinished) haptics.play(Haptic.Success)
+        wasFinished = liveFinished
+    }
+    fun jumpTo(id: String) {
+        val position = newestFirst.indexOfFirst { it.id == id }
+        if (position < 0) return
+        val index = position + if (liveAtZero || (liveAtOne && position >= 1)) 1 else 0
+        highlightedId = id
+        jumpSerial++
+        scope.launch {
+            // Bring it in, then nudge it to the middle of the viewport.
+            if (reduceMotion) listState.scrollToItem(index) else listState.animateScrollToItem(index)
+            val info = listState.layoutInfo
+            val item = info.visibleItemsInfo.firstOrNull { it.index == index } ?: return@launch
+            val delta = (item.offset + item.size / 2f) -
+                (info.viewportStartOffset + info.viewportEndOffset) / 2f
+            if (reduceMotion) listState.scrollBy(delta) else listState.animateScrollBy(delta)
+        }
+    }
 
     // Exact, not a tuned threshold — `derivedStateOf` so scrolling a single
     // pixel does not recompose anything that reads this; it only changes
@@ -232,20 +309,28 @@ fun Timeline(
     // — so it stays a plain `remember(revision)` read. `isAtNewest` is
     // already derived above, so away-ness costs nothing extra here.
     val previousRowsHolder = remember { mutableStateOf<List<TimelineRowDto>?>(null) }
+    val arrivals = remember { Arrivals() }
     val animatesThisUpdate = remember(revision) {
         val before = previousRowsHolder.value
-        val arrived = if (before == null) {
-            0
-        } else {
-            val previousIds = before.mapTo(HashSet(before.size)) { it.item.id }
-            rows.count { it.item.id !in previousIds }
-        }
-        TimelineAnimation.animates(
-            arrived = arrived,
+        val previousIds = before?.mapTo(HashSet(before.size)) { it.item.id }.orEmpty()
+        // Every new item counts, whatever it is: a membership line is as much
+        // an arrival as a message. The limit is on what arrived, never on what
+        // is left once filtered to messages.
+        val added = rows.withIndex().filter { it.value.item.id !in previousIds }
+        // Where they landed. New items after the newest one already shown are
+        // arrivals; any before it are history being prepended (pagination) or
+        // a resync, and never animate however few there are.
+        val lastKnown = rows.indexOfLast { it.item.id in previousIds }
+        val atNewestEnd = added.filter { it.index > lastKnown }
+        val animates = TimelineAnimation.animates(
+            arrived = added.size,
             had = before?.size ?: 0,
             hasApplied = before != null,
             wasAway = !isAtNewest,
+            prepended = atNewestEnd.size != added.size,
         )
+        arrivals.pending = if (animates) atNewestEnd.mapTo(HashSet()) { it.value.item.id } else emptySet()
+        animates
     }
 
     // The bookkeeping write is different from the decision above: it only
@@ -305,44 +390,116 @@ fun Timeline(
     // is a compile error here rather than a blank row.
     @Composable
     fun HistoryRow(display: DisplayRow, itemModifier: Modifier = Modifier) {
-        val rowModifier = itemModifier
+        val rowModifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .testTag("row-${display.id}")
         when (display) {
-            is DisplayRow.Row -> {
-                // No gesture at all when a long press would have nothing to
-                // do — see this file's class doc's "Starting a reply or an
-                // edit" section for why `canReplyOrReact`/`editable` gate
-                // the gesture's *existence* here, rather than the two-item
-                // menu iOS builds from the same two flags.
+            is DisplayRow.Row -> Column(modifier = itemModifier) {
+                // No long-press gesture at all when the menu would be empty;
+                // the swipes decide for themselves (a reply needs
+                // `canReplyOrReact`, a reveal needs a time to show).
                 val row = display.row
-                val longPressable = row.canReplyOrReact || row.item.editable
-                TimelineRow(
-                    row = row,
-                    now = Instant.now(),
-                    continuesRun = continuesRun[row.item.id] ?: false,
-                    endsRun = endsRun[row.item.id] ?: true,
-                    attribution = if (singleSpeaker) row.senderShort else row.senderName,
-                    imageUri = imageUri,
-                    faceUri = faceUri,
-                    loadFace = loadFace,
-                    onReact = { key -> onReact(row, key) },
-                    onDecide = { answer -> onDecide(row, answer) },
-                    modifier = if (longPressable) {
-                        rowModifier.combinedClickable(
-                            onClick = {},
-                            onLongClick = { onRowLongPress(row) },
+                val hasMenu = !messageMenuActions(row).isEmpty
+                val time = revealedTime(row, ::clockLabel)
+                val quoteJump: (() -> Unit)? = row.item.replyTo?.eventId?.let { parent ->
+                    idByEventId[parent]?.let { target -> { jumpTo(target) } }
+                }
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    TimelineRow(
+                        row = row,
+                        now = Instant.now(),
+                        continuesRun = row.continuesRun,
+                        endsRun = row.endsRun,
+                        readers = row.item.readBy.map { facesBySender[it] ?: ReaderFace(it, null, null) },
+                        highlighted = highlightedId == row.item.id,
+                        onQuoteTap = quoteJump,
+                        attribution = if (row.showsRuntime) row.senderName else row.senderShort,
+                        imageUri = imageUri,
+                        faceUri = faceUri,
+                        loadFace = loadFace,
+                        onReact = { key -> onReact(row, key) },
+                        onDecide = { answer -> onDecide(row, answer) },
+                        decisionAnswers = decisionAnswers,
+                        modifier = (
+                            if (hasMenu) {
+                                rowModifier.combinedClickable(
+                                    onClick = {},
+                                    onLongClick = { menuFor = row.item.id },
+                                )
+                            } else {
+                                rowModifier
+                            }
+                            ).timelineSwipe(
+                                row, reveal, revealWidthPx, onSwipeReply,
+                                // The row merges its children, which drops the quote's own
+                                // action; TalkBack reaches the jump from here.
+                                extraActions = quoteJump?.let {
+                                    listOf(CustomAccessibilityAction("Show original message") { it(); true })
+                                } ?: emptyList(),
+                            ),
+                    )
+                    // The time waits just past the trailing edge and slides in
+                    // as the rows slide out, fading in with the pull. Hidden
+                    // from accessibility: the row already says when it was
+                    // sent (`TimelineChrome.swift:64-67`).
+                    if (time != null && revealing) {
+                        Text(
+                            time,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .width(RevealWidthDp.dp)
+                                .offset { IntOffset((revealWidthPx - reveal.offset).roundToInt(), 0) }
+                                .graphicsLayer { alpha = minOf(1f, reveal.offset / revealWidthPx) }
+                                .clearAndSetSemantics { semanticsTestTag = "revealed-time" },
                         )
-                    } else {
-                        rowModifier
-                    },
-                )
+                    }
+                }
+                if (failedDelete == row.item.id) {
+                    Text(
+                        "Not sent. Try again.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            // The one failure text that was silent to TalkBack.
+                            .semantics { liveRegion = LiveRegionMode.Polite }
+                            .testTag("delete-failed"),
+                    )
+                }
             }
 
             is DisplayRow.MembershipRun ->
-                SystemLine(text = display.text, modifier = rowModifier)
+                if (display.isStretch) {
+                    StretchLine(
+                        text = display.text,
+                        onOpen = { expanded = expanded + display.id },
+                        modifier = itemModifier.then(rowModifier),
+                    )
+                } else {
+                    SystemLine(text = display.text, modifier = itemModifier.then(rowModifier))
+                }
         }
+    }
+
+    // What a row does as it arrives and as its neighbours move. The streaming
+    // turn's cell gets none of it, so its growth never animates. While a turn
+    // streams, history rows do not spring either: M4 ports iOS's 0.32 s glide
+    // (owner ruling, M4 Q5), and until then they hold still.
+    @Composable
+    fun androidx.compose.foundation.lazy.LazyItemScope.rowMotion(id: String): Modifier {
+        if (!animatesThisUpdate) return Modifier
+        return Modifier
+            .animateItem(
+                fadeInSpec = null,
+                placementSpec = if (reduceMotion || liveAtZero) null else spring<androidx.compose.ui.unit.IntOffset>(),
+                fadeOutSpec = motion(reduceMotion, tween<Float>(150)),
+            )
+            .arrivalRise(arrivals, id, reduceMotion)
     }
 
     @Composable
@@ -401,15 +558,15 @@ fun Timeline(
                     // answer". The newest message stays at the very bottom.
                     val newest = newestFirst.first()
                     item(key = newest.id) {
-                        HistoryRow(newest, itemModifier = if (animatesThisUpdate) Modifier.animateItem() else Modifier)
+                        HistoryRow(newest, itemModifier = rowMotion(newest.id))
                     }
                     item(key = "live-turn") { LiveTurnCell() }
                     items(newestFirst.drop(1), key = { it.id }) { row ->
-                        HistoryRow(row, itemModifier = if (animatesThisUpdate) Modifier.animateItem() else Modifier)
+                        HistoryRow(row, itemModifier = rowMotion(row.id))
                     }
                 } else {
                     items(newestFirst, key = { it.id }) { row ->
-                        HistoryRow(row, itemModifier = if (animatesThisUpdate) Modifier.animateItem() else Modifier)
+                        HistoryRow(row, itemModifier = rowMotion(row.id))
                     }
                 }
                 if (isPaginating) {
@@ -438,6 +595,36 @@ fun Timeline(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+
+        menuRow?.let { target ->
+            MessageMenu(
+                row = target,
+                onReact = { key ->
+                    haptics.play(Haptic.Selection)
+                    menuFor = null
+                    onReact(target, key)
+                },
+                onReply = { menuFor = null; onReply(target) },
+                onCopy = {
+                    menuFor = null
+                    target.item.body?.let { clipboard.setText(AnnotatedString(it)) }
+                },
+                onEdit = { menuFor = null; onEdit(target) },
+                onDelete = { menuFor = null; confirmingDelete = target.item.id },
+                onDismiss = { menuFor = null },
+            )
+        }
+        confirmRow?.let { target ->
+            DeleteConfirm(
+                onConfirm = {
+                    confirmingDelete = null
+                    scope.launch {
+                        if (!onDelete(target)) failedDelete = target.item.id
+                    }
+                },
+                onDismiss = { confirmingDelete = null },
+            )
         }
 
         // A way back, and only when there is somewhere to go back from —
@@ -503,3 +690,44 @@ internal fun JumpToNewestButton(onClick: () -> Unit, modifier: Modifier = Modifi
  * pagination fire before the reader hits a visible dead stop.
  */
 private const val PaginationLookahead = 3
+
+/** How long "Not sent. Try again." stays under a row whose delete failed. */
+private const val DeleteFailureShownMs = 4_000L
+
+
+/**
+ * The rows that arrived in the latest update and have not yet played their
+ * entrance, the Android counterpart of `TimelineCollectionView`'s `arriving`
+ * set: a row takes its place in it once, when it is first composed, so
+ * scrolling it out of view and back never replays it.
+ */
+internal class Arrivals {
+    var pending: Set<String> = emptySet()
+    private val taken = HashSet<String>()
+
+    fun take(id: String): Boolean = id in pending && taken.add(id)
+}
+
+/** The arrival's spring: 0.38 s, damping 0.78 (`TimelineCollectionView.swift:1186-1189`). */
+private val ArrivalSpring = spring<Float>(dampingRatio = 0.78f, stiffness = 270f)
+private val ArrivalRise = 16.dp
+
+/** A new message rises 16dp and fades in on a spring; under Reduce Motion it is simply there. */
+@Composable
+internal fun Modifier.arrivalRise(arrivals: Arrivals, id: String, reduce: Boolean): Modifier {
+    val arriving = remember(id) { !reduce && arrivals.take(id) }
+    if (!arriving) return this
+    val progress = remember(id) { Animatable(0f) }
+    LaunchedEffect(id) { progress.animateTo(1f, ArrivalSpring) }
+    val rise = with(LocalDensity.current) { ArrivalRise.toPx() }
+    return graphicsLayer {
+        alpha = progress.value.coerceIn(0f, 1f)
+        translationY = (1f - progress.value) * rise
+    }
+}
+
+/** The opened stretch ids as a saveable list, so rotation keeps them open. */
+private val ExpandedStretches = listSaver<Set<String>, String>(
+    save = { it.toList() },
+    restore = { it.toSet() },
+)

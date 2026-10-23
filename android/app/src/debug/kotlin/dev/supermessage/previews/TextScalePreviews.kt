@@ -78,6 +78,7 @@ internal fun CardPendingHuge() {
             view = PreviewFixtures.cardPending,
             label = "Gate",
             eventType = "dev.superpipeline.gate.v1",
+            senderName = "Atlas — Platform",
             onDecide = { true },
         )
     }

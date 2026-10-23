@@ -1,10 +1,19 @@
 package dev.supermessage
 
 import android.content.Context
+import android.content.res.Configuration
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.toArgb
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,8 +48,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.RosterChoice
-import dev.supermessage.kit.stores.ConnectionStore.Connection
 import dev.supermessage.kit.Session
+import dev.supermessage.kit.stores.ConnectionStore.Connection
 import dev.supermessage.kit.VoicePlayback
 import java.io.File
 import java.time.Instant
@@ -59,12 +68,39 @@ import uniffi.supermessage_core.RoomAffordance
  */
 private val Context.rosterDataStore: DataStore<Preferences> by preferencesDataStore(name = "roster")
 
+/** The theme choice's own store, read before the first frame (see [MainActivity.onCreate]). */
+private val Context.appearanceDataStore: DataStore<Preferences> by preferencesDataStore(name = "appearance")
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        val appearance = AppearancePreferences(applicationContext.appearanceDataStore)
+        // Read before `setContent`, so the first frame is drawn in the stored
+        // choice rather than in the house palette and then repainted (iOS:
+        // `ThemeState.init`). A small local file; the cost is a few
+        // milliseconds before the first frame, which is the point.
+        val stored = runBlocking { appearance.choice.first() }
+        val systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        applySystemBars(stored.resolvesDark(systemDark))
+        // The window behind the first frame already agrees with the stored
+        // choice, so a Dark choice on a light phone does not flash light.
+        window.setBackgroundDrawable(
+            ColorDrawable(stored.palette(stored.resolvesDark(systemDark)).surface.toArgb()),
+        )
         setContent {
-            SupermessageTheme {
+            val choice by appearance.choice.collectAsStateWithLifecycle(initialValue = stored)
+            val dark = choice.resolvesDark(isSystemInDarkTheme())
+            val surface = choice.palette(dark).surface
+            // The status and navigation bars follow the chosen scheme, not the
+            // phone's: a Dark choice on a light phone needs light icons.
+            DisposableEffect(dark) {
+                applySystemBars(dark)
+                onDispose {}
+            }
+            // The window behind the first frame, and behind a transition, agrees with the choice.
+            SideEffect { window.setBackgroundDrawable(ColorDrawable(surface.toArgb())) }
+            SupermessageTheme(choice) {
                 Surface {
                     val vm: SessionViewModel = viewModel()
 
@@ -73,11 +109,17 @@ class MainActivity : ComponentActivity() {
                     // the one place in the tree that has one to give it.
                     val prefs = remember { RosterPreferences(applicationContext.rosterDataStore) }
 
-                    AppRoot(session = vm.session, prefs = prefs)
+                    AppRoot(session = vm.session, prefs = prefs, appearance = appearance)
                 }
             }
         }
     }
+}
+
+/** Edge to edge, with bar icons for the scheme in force rather than the phone's. */
+private fun ComponentActivity.applySystemBars(dark: Boolean) {
+    val bar = if (dark) SystemBarStyle.dark(Color.TRANSPARENT) else SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+    enableEdgeToEdge(statusBarStyle = bar, navigationBarStyle = bar)
 }
 
 /**
@@ -98,7 +140,7 @@ class MainActivity : ComponentActivity() {
  * already reaches `AndroidSecretStore.rawForTest`.
  */
 @Composable
-internal fun AppRoot(session: Session, prefs: RosterPreferences) {
+internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: AppearancePreferences? = null) {
     val phase by session.phase.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         if (phase == Session.Phase.STARTING) session.start()
@@ -176,23 +218,12 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
         NewRecoveryKeyDialog(key = key, onDone = session::clearNewRecoveryKey)
     }
 
-    // The roster's own three remembered choices — see
-    // RosterPreferences for why each defaults the way it does.
-    val rosterView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
-    val showsInvitations by prefs.showsInvitations.collectAsStateWithLifecycle(initialValue = false)
-    val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
-
     // Reactive, not a one-time snapshot: collectAsStateWithLifecycle
     // is what makes a later RoomsDiff actually redraw this
     // tree — see Roster.kt's own KDoc for the failure mode a
     // plain `.value` read here would reproduce.
     val rooms by session.rooms.rooms.collectAsStateWithLifecycle()
     val avatarCache by session.avatars.cache.collectAsStateWithLifecycle()
-
-    // Collected so the bar redraws; whether to show it is derived from the
-    // collected state below, never read off the store.
-    val connectionState by session.connection.state.collectAsStateWithLifecycle()
-    val connectionMessage by session.connection.message.collectAsStateWithLifecycle()
 
     // Re-read every 30 seconds so a roster that said "3m" says
     // "4m" without anything else having changed — the clock
@@ -205,332 +236,36 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
         }
     }
 
-    val sections = remember(rooms, rosterView, showsInvitations, now) {
-        RosterArrangement.sections(
-            rows = rooms, view = rosterView, showsInvitations = showsInvitations, now = now,
-        )
-    }
-    val hiddenInvitations = remember(rooms, showsInvitations) {
-        RosterArrangement.hiddenInvitations(rows = rooms, showsInvitations = showsInvitations)
-    }
-
     RootScaffold(
         phase = phase,
         listPaneContent = { _, openDetail, openInfo ->
-            Column(Modifier.fillMaxSize()) {
-                ConnectionBar(
-                    state = connectionState,
-                    message = connectionMessage,
-                    worthShowing = connectionState != Connection.Live,
-                )
-                // Search and the account panel share the
-                // Extra pane with room info, so both are
-                // reached the same way room info already is:
-                // set which panel `extraPaneContent` below
-                // should show, then ask RootScaffold to open
-                // it. Plain text buttons, not icons — this
-                // app declares no material-icons-extended
-                // dependency, and these two are the whole
-                // affordance for now.
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.End,
-                ) {
-                    // The new-room affordance: unreachable until this task
-                    // (see AppRoot's own KDoc) — `NewRoomPanel` shared the
-                    // Extra pane's ExtraPanel machinery already built for
-                    // room info/search/account, but nothing ever set
-                    // `extraPanel` to show it.
-                    TextButton(
-                        onClick = { extraPanel = ExtraPanel.NewRoom; openInfo() },
-                        modifier = Modifier.testTag("roster-open-new-room"),
-                    ) { Text("New room") }
-                    TextButton(
-                        onClick = { extraPanel = ExtraPanel.Search; openInfo() },
-                        modifier = Modifier.testTag("roster-open-search"),
-                    ) { Text("Search") }
-                    TextButton(
-                        onClick = { extraPanel = ExtraPanel.Account; openInfo() },
-                        modifier = Modifier.testTag("roster-open-account"),
-                    ) { Text("Account") }
-                }
-
-                Roster(
-                    sections = sections,
-                    hiddenInvitations = hiddenInvitations,
-                    now = now,
-                    avatarUri = { roomId -> avatarCache[roomId] },
-                    showsState = showsState,
-                    hidesHost = rosterView == RosterChoice.MACHINE,
-                    onOpenRoom = { roomId ->
-                        session.rooms.select(roomId)
-                        scope.launch { session.open(roomId) }
-                        openDetail()
-                    },
-                    // A dead affordance from A1 until Task 2:
-                    // nothing threaded the tapped room any
-                    // further, because the info pane itself was
-                    // still RootScaffold's default placeholder.
-                    // `extraPanel` is what `extraPaneContent`
-                    // below reads to know which room it is about.
-                    onOpenInfo = { roomId ->
-                        extraPanel = ExtraPanel.RoomInfo(roomId)
-                        openInfo()
-                    },
-                    onLoadAvatar = { roomId -> session.avatars.load(roomId) },
-                    // The other half of this task: the roster already says
-                    // out loud that invitations are being withheld (see
-                    // Roster.kt's own KDoc on this parameter) — this is what
-                    // lets tapping that admission actually do something
-                    // about it, rather than only ever naming a count nobody
-                    // can act on.
-                    onRevealInvitations = { scope.launch { prefs.setShowsInvitations(true) } },
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                )
-            }
+            // Search and the account panel share the Extra pane with room
+            // info: set which panel `extraPaneContent` below should show, then
+            // ask RootScaffold to open it.
+            RosterPane(
+                session = session,
+                prefs = prefs,
+                rooms = rooms,
+                avatarCache = avatarCache,
+                now = now,
+                openDetail = openDetail,
+                openPanel = { panel ->
+                    extraPanel = panel
+                    openInfo()
+                },
+            )
         },
-        detailPaneContent = { _ ->
-            // The room this pane is showing, reactively:
-            // `TimelineStore.roomId` is set the moment
-            // `Session.open` subscribes, before the first
-            // diff for it has even arrived.
-            val roomId by session.timeline.roomId.collectAsStateWithLifecycle()
-
-            // What the core already decided about this room — never
-            // re-derived here. An invited room shows InvitationView in
-            // place of the composer (and InvitationEmptyTimeline in place
-            // of history) purely because its own row already carries
-            // `RoomAffordance.RESPOND_TO_INVITATION`; this file adds no
-            // second opinion about which rooms are invitations.
-            val currentRow = roomId?.let { id -> rooms.firstOrNull { it.room.id == id } }
-            val isInvitation = currentRow?.affordance == RoomAffordance.RESPOND_TO_INVITATION
-
-            // Trigger 1 of spec §6's two: on room change,
-            // mark it read. Trigger 2 — on any history
-            // change while at the newest end — is Timeline's
-            // own job (see its class doc): it can see `rows`
-            // and `isAtNewest` together, neither of which
-            // this call site has reason to duplicate.
-            //
-            // Not for an invitation: membership is `invite`, so there is no
-            // history here for "read" to mean anything about yet (see
-            // InvitationEmptyTimeline's own KDoc).
-            LaunchedEffect(roomId, isInvitation) {
-                if (roomId != null && !isInvitation) session.timeline.markRead()
-            }
-
-            val currentRoomId = roomId
-            if (currentRoomId == null) {
-                Box(
-                    Modifier.fillMaxSize().testTag("pane-timeline"),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text("Select a room")
-                }
-            } else if (isInvitation) {
-                Column(modifier = Modifier.fillMaxSize().testTag("pane-timeline")) {
-                    InvitationEmptyTimeline(modifier = Modifier.weight(1f).fillMaxWidth())
-                    InvitationView(
-                        roomId = currentRoomId,
-                        roomName = currentRow?.identity?.name ?: currentRoomId,
-                        inviter = session::inviter,
-                        joinRoom = session::joinRoom,
-                        leaveRoom = session::leaveRoom,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            } else {
-                val items by session.timeline.items.collectAsStateWithLifecycle()
-                // `Timeline` keys its grouping and its mark-read effect off
-                // this rather than off `items` itself — see `Timeline.kt`'s
-                // own note on why a revision bump, not a structural diff of
-                // the whole list, is what "the history changed" means.
-                val revision by session.timeline.revision.collectAsStateWithLifecycle()
-                val isPaginating by session.timeline.isPaginating.collectAsStateWithLifecycle()
-                val canPaginate by session.timeline.canPaginate.collectAsStateWithLifecycle()
-                // Collected so a fetch that lands recomposes the rows that
-                // asked for it; the lambdas below read from these.
-                val mediaCache by session.media.cache.collectAsStateWithLifecycle()
-                val faceCache by session.faces.cache.collectAsStateWithLifecycle()
-
-                // `TypingStore.line` is a computed property,
-                // not a StateFlow — `typers` is what is
-                // actually observable, so that is what is
-                // collected; `line` is re-read from it every
-                // time `typers` changes.
-                val typers by session.typing.typers.collectAsStateWithLifecycle()
-                val typingLine = remember(typers) { session.typing.line }
-
-                val liveAnswer by session.live.answer.collectAsStateWithLifecycle()
-                val liveThought by session.live.thought.collectAsStateWithLifecycle()
-                val liveTools by session.live.tools.collectAsStateWithLifecycle()
-                val liveFinished by session.live.finished.collectAsStateWithLifecycle()
-
-                // Reply/edit/attachment: reactive so a long
-                // press elsewhere (Timeline's onRowLongPress,
-                // below) or a picked photo shows up here the
-                // moment the store records it.
-                val replyTargets by session.replies.targets.collectAsStateWithLifecycle()
-                val editTargets by session.edits.targets.collectAsStateWithLifecycle()
-                val attachment by session.staged.file.collectAsStateWithLifecycle()
-                val editing = editTargets[currentRoomId]
-
-                // The composer's own text, held here rather
-                // than mirrored live off `DraftStore` — the
-                // same shape `ComposerView.swift`'s `@State
-                // private var text` takes, seeded once per
-                // room (`remember(currentRoomId)` standing in
-                // for that file's `.task(id: roomId)`) rather
-                // than re-derived from the store on every
-                // recomposition. That distinction is what
-                // makes editing work at all: see
-                // `onTextChange` below for why a live mirror
-                // would fight it.
-                var text by remember(currentRoomId) {
-                    mutableStateOf(session.drafts.draft(currentRoomId))
-                }
-                var sending by remember(currentRoomId) { mutableStateOf(false) }
-                var composerFailure by remember(currentRoomId) { mutableStateOf<String?>(null) }
-
-                Column(modifier = Modifier.fillMaxSize().testTag("pane-timeline")) {
-                    // The note that is playing belongs to this room and
-                    // this pane: leaving either stops it (the key is the
-                    // room; disposal is the pane going away).
-                    DisposableEffect(currentRoomId) { onDispose { voice.stop() } }
-                    CompositionLocalProvider(LocalVoicePlayback provides voice) {
-                        Timeline(
-                            rows = items,
-                            revision = revision,
-                            typingLine = typingLine,
-                            isPaginating = isPaginating,
-                            canPaginate = canPaginate,
-                            onPaginate = { scope.launch { session.timeline.paginateBack() } },
-                            imageUri = { id -> mediaCache[id] ?: session.media.image(id) },
-                            faceUri = { mxc -> faceCache[mxc] },
-                            loadFace = session.faces::load,
-                            onMarkRead = { scope.launch { session.timeline.markRead() } },
-                            liveAnswer = liveAnswer,
-                            liveThought = liveThought,
-                            liveTools = liveTools,
-                            liveFinished = liveFinished,
-                            onReact = { row, key ->
-                                scope.launch {
-                                    session.toggleReaction(row.item.eventId, key, currentRoomId)
-                                }
-                            },
-                            // The event id is the gate's own, which the decision
-                            // references; the card supplies what it resolves.
-                            // Both are needed and neither side has both.
-                            // Returns whether the answer landed, so the card can
-                            // stop offering the choice — and keep offering it when
-                            // the send failed.
-                            onDecide = { row, answer ->
-                                val gateId = answer.subject
-                                if (gateId == null) {
-                                    // A permission request has no gate; route it
-                                    // to the permission sender (iOS
-                                    // `TimelineCollectionView.swift:1022-1031`).
-                                    session.answerPermission(optionId = answer.optionId, roomId = currentRoomId)
-                                } else session.answerGate(
-                                    eventId = row.item.eventId,
-                                    gateId = gateId,
-                                    optionId = answer.optionId,
-                                    comment = answer.comment,
-                                    prompt = answer.prompt,
-                                    roomId = currentRoomId,
-                                )
-                            },
-                            onRowLongPress = { row ->
-                                // Own + editable rewrites the
-                                // message; anything else a long
-                                // press has something to offer
-                                // for is a reply — see Timeline's
-                                // own class doc for why the
-                                // gesture only exists at all when
-                                // one of the two is true.
-                                if (row.item.isOwn && row.item.editable) {
-                                    session.edits.start(row, currentRoomId)
-                                } else if (row.canReplyOrReact) {
-                                    session.replies.start(row, currentRoomId)
-                                }
-                            },
-                            modifier = Modifier.weight(1f).fillMaxWidth(),
-                        )
-                    }
-
-                    Composer(
-                        text = text,
-                        onTextChange = { next ->
-                            text = next
-                            // Not while editing: the composer
-                            // is holding an existing message,
-                            // and writing that over the draft
-                            // would destroy whatever was
-                            // being written before the edit
-                            // began — the exact guard
-                            // `ComposerView.swift`'s own
-                            // `onChange(of: text)` carries.
-                            if (editing == null) {
-                                session.drafts.set(next, currentRoomId)
-                            }
-                            scope.launch { session.setTyping(next.isNotBlank(), currentRoomId) }
-                        },
-                        onSend = {
-                            scope.launch {
-                                sending = true
-                                try {
-                                    val currentEdit = editing
-                                    if (currentEdit != null) {
-                                        // The reader's text stays in the
-                                        // composer when this fails — an
-                                        // edit that vanished into an error
-                                        // would have silently discarded
-                                        // what they wrote.
-                                        val ok = session.edit(
-                                            eventId = currentEdit.eventId,
-                                            body = text,
-                                            roomId = currentRoomId,
-                                        )
-                                        if (ok) {
-                                            composerFailure = null
-                                            session.edits.cancel(currentRoomId)
-                                            text = session.drafts.draft(currentRoomId)
-                                        } else {
-                                            composerFailure = "Couldn't save that edit."
-                                        }
-                                    } else {
-                                        val refusal = session.send(text, currentRoomId)
-                                        if (refusal == null) {
-                                            composerFailure = null
-                                            text = ""
-                                            session.drafts.clear(currentRoomId)
-                                        } else {
-                                            composerFailure = refusal
-                                        }
-                                    }
-                                } finally {
-                                    sending = false
-                                }
-                            }
-                        },
-                        sending = sending,
-                        failure = composerFailure,
-                        replyTo = replyTargets[currentRoomId],
-                        onCancelReply = { session.replies.cancel(currentRoomId) },
-                        editing = editing,
-                        onCancelEdit = { session.edits.cancel(currentRoomId) },
-                        attachment = attachment,
-                        onAttach = { path ->
-                            scope.launch {
-                                val refusal = session.staged.stage(path, currentRoomId)
-                                if (refusal != null) composerFailure = refusal
-                            }
-                        },
-                        onDiscardAttachment = { scope.launch { session.staged.discard() } },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
+        detailPaneContent = { _, openInfo ->
+            RoomPane(
+                session = session,
+                rooms = rooms,
+                voice = voice,
+                now = now,
+                onOpenRoomInfo = { id ->
+                    extraPanel = ExtraPanel.RoomInfo(id)
+                    openInfo()
+                },
+            )
         },
         extraPaneContent = { _, closeInfo ->
             Box(Modifier.fillMaxSize().testTag("pane-info")) {
@@ -574,9 +309,9 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             onLeaveRoom = { session.leaveRoom(panel.roomId) },
                         )
 
-                    ExtraPanel.Search ->
+                    is ExtraPanel.Search ->
                         SearchPanel(
-                            scope = null,
+                            scope = panel.scope,
                             onOpen = { roomId ->
                                 session.rooms.select(roomId)
                                 scope.launch { session.open(roomId) }
@@ -589,9 +324,26 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             roomName = { roomId -> rooms.firstOrNull { it.room.id == roomId }?.room?.name },
                         )
 
-                    ExtraPanel.Account ->
+                    ExtraPanel.Account -> {
+                        val storedView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
+                        val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
                         AccountPanel(
                             loadAccount = session::account,
+                            rosterView = RosterChoice.offeredOrDefault(storedView),
+                            onRosterView = prefs::setView,
+                            showsState = showsState,
+                            onShowsState = prefs::setShowsState,
+                            appearance = {
+                                if (appearance != null) {
+                                    val choice by appearance.choice.collectAsStateWithLifecycle(initialValue = ThemeChoice())
+                                    AppearanceSettings(
+                                        choice = choice,
+                                        onMode = appearance::setMode,
+                                        onDarkStyle = appearance::setDarkStyle,
+                                        onAccent = appearance::setAccent,
+                                    )
+                                }
+                            },
                             onSignOut = session::signOut,
                             onClose = {
                                 extraPanel = null
@@ -602,6 +354,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
                             onRecoverWithKey = session::recoverWithKey,
                             onResetRecovery = session::resetRecovery,
                         )
+                    }
 
                     null -> {}
                 }
@@ -611,8 +364,11 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
             // The verb RoomsStore.deselect() exists for: on a
             // phone the roster is the previous screen, not a
             // column beside the room, so nothing should stay
-            // selected once system back has returned to it.
-            session.rooms.deselect()
+            // selected, subscribed or focused once system back has
+            // returned to it (the scaffold keeps the detail pane composed
+            // at zero size, so anything left pointing at the room would
+            // go on acting for it: Session.closeRoom).
+            session.closeRoom()
         },
         signedOutContent = {
             LoginScreen(
@@ -660,6 +416,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences) {
 internal sealed class ExtraPanel {
     object NewRoom : ExtraPanel()
     data class RoomInfo(val roomId: String) : ExtraPanel()
-    object Search : ExtraPanel()
+    /** [scope] is the room it was opened from, if any: search offers it, narrowed. */
+    data class Search(val scope: SearchPanelScope?) : ExtraPanel()
     object Account : ExtraPanel()
 }

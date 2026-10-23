@@ -26,7 +26,6 @@ class RosterPreferencesTest {
         val p = prefs(this)
         assertEquals("https://id.agentpod.dev", p.homeserver.first())
         assertEquals(RosterChoice.WAITING, p.view.first())
-        assertEquals(false, p.showsInvitations.first())
         assertEquals(true, p.showsState.first())
     }
 

@@ -20,9 +20,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlayableAudio
+import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_ffi.FfiEvent
@@ -281,27 +283,34 @@ class Session(
     }
 
     /**
-     * Send what is in the composer: the text, the attachment, or both.
+     * Send what is in the composer: the text, the attachment, or both, in the
+     * order `Outbox.send` fixes (`Outbox.swift:39-71`).
      *
-     * Returns a message when the core refuses, or `null`. Mentions are the
-     * core's — [collectMentions] produces the `m.mentions` an agent reads to
-     * decide a message in a room full of agents was addressed to it, and
-     * this app must not have a second opinion about that.
+     * The text rides with the file as its caption (one event, so the words
+     * never arrive without their picture). A reply is the exception: a caption
+     * cannot carry one. If the attachment fails, **the text does not go
+     * either** ([SendResult.AttachmentFailed]); the reason is on the chip.
+     *
+     * Mentions are the core's: [collectMentions] produces the `m.mentions` an
+     * agent reads, given who [mentioning] says could be addressed.
      */
-    suspend fun send(text: String, roomId: String): String? {
+    suspend fun send(
+        text: String,
+        roomId: String,
+        mentioning: List<Mentionable> = emptyList(),
+    ): SendResult {
         val body = text.trim()
-        // The text rides with the file as its caption — one event, so the
-        // words never arrive without their picture and an agent gets both as
-        // one turn. A reply is the exception: a caption cannot carry one.
-        val hasAttachment = staged.file.value != null
-        val caption = if (hasAttachment && body.isNotEmpty() && replies.pending(roomId) == null) body else null
+        val hasAttachment = staged.isPresent(roomId)
+        val replying = replies.pending(roomId) != null
+        val caption = if (hasAttachment && !replying && body.isNotEmpty()) body else null
 
         if (hasAttachment) {
             val failure = staged.send(roomId = roomId, caption = caption)
-            if (failure != null) return failure
+            if (failure != null) return SendResult.AttachmentFailed(failure)
         }
-        if (caption != null) return null
-        if (body.isEmpty()) return null
+        // The words went with the file.
+        if (caption != null) return SendResult.Sent
+        if (body.isEmpty()) return if (hasAttachment) SendResult.Sent else SendResult.NothingToSend
 
         return try {
             val reply = replies.pending(roomId)
@@ -309,17 +318,17 @@ class Session(
                 client.sendReply(roomId = roomId, body = body, inReplyTo = reply.eventId)
                 replies.cancel(roomId)
             } else {
-                val mentions = collectMentions(text = body, members = emptyList())
+                val mentions = collectMentions(text = body, members = mentioning)
                 client.sendMessage(roomId = roomId, body = body, mentions = mentions)
             }
             setTyping(false, roomId)
-            null
+            SendResult.Sent
         } catch (e: CancellationException) {
             throw e
         } catch (e: FfiException) {
-            ErrorPresenter.message(e)
+            SendResult.TextFailed(ErrorPresenter.message(e))
         } catch (e: Exception) {
-            "Couldn't send that."
+            SendResult.TextFailed("Couldn't send that.")
         }
     }
 
@@ -596,6 +605,19 @@ class Session(
     }
 
     /**
+     * Who is in [roomId], as the core joins it: the composer's people, its
+     * agents, and the names a message here can address. `null` when the core
+     * cannot answer (no session yet), which leaves the `@` picker empty.
+     */
+    suspend fun roomCast(roomId: String): RoomCast? = try {
+        client.roomCast(roomId)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
      * Open the conversation with [person], creating it only if there is not
      * one already.
      *
@@ -676,6 +698,22 @@ class Session(
         live.focus(roomId)
         typing.focus(roomId)
         timeline.subscribeTo(roomId)
+    }
+
+    /**
+     * Leave the open room, for a phone coming back to the roster.
+     *
+     * Deselecting alone leaves the timeline subscribed and the live and
+     * typing stores focused on the room, so everything still composed for it
+     * (the pane the scaffold keeps at zero size) goes on reading them. iOS
+     * pops the room's view; this is the same: nothing is focused afterwards,
+     * and [open] points everything at a room again.
+     */
+    fun closeRoom() {
+        rooms.deselect()
+        live.focus(null)
+        typing.focus(null)
+        timeline.clear()
     }
 
     /**

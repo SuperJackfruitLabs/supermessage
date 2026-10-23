@@ -6592,6 +6592,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "unicode-segmentation",
  "uniffi",
  "url",
  "wiremock",

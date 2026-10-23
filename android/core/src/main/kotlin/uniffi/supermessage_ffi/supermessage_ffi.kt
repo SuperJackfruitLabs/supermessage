@@ -1151,6 +1151,12 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1284,6 +1290,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_reply(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_set_hidden_events(`ptr`: Pointer,`eventIds`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_set_room_notifications(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`mode`: RustBufferNotificationMode.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_set_room_pinned(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`pinned`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -1342,6 +1350,10 @@ internal interface UniffiLib : Library {
     ): RustBufferFirstRunScript.ByValue
     fun uniffi_supermessage_ffi_fn_func_fold_turn(`roomId`: RustBuffer.ByValue,`inputs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_group_timeline_rows(`rows`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_long_read_graphemes(uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
     fun uniffi_supermessage_ffi_fn_func_next_notification_mode(`current`: RustBufferNotificationMode.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferNotificationMode.ByValue
     fun uniffi_supermessage_ffi_fn_func_notification_category_identifier(`category`: RustBufferNotificationCategory.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1554,6 +1566,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_fold_turn(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_group_timeline_rows(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_long_read_graphemes(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_next_notification_mode(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_notification_category_identifier(
@@ -1734,6 +1750,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_reply(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_set_hidden_events(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_set_room_notifications(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_set_room_pinned(
@@ -1828,6 +1846,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_fold_turn() != 3050.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_group_timeline_rows() != 27483.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_long_read_graphemes() != 62272.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_next_notification_mode() != 21345.toShort()) {
@@ -2098,6 +2122,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_reply() != 4056.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_set_hidden_events() != 44152.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_set_room_notifications() != 42292.toShort()) {
@@ -2979,6 +3006,13 @@ public interface CoreInterface {
      * Reply to `in_reply_to`, an event id in the focused room.
      */
     fun `sendReply`(`roomId`: kotlin.String, `body`: kotlin.String, `inReplyTo`: kotlin.String)
+    
+    /**
+     * The events the reader hid on this device. The focused timeline groups
+     * as if those rows were absent and marks them `hidden`; the host keeps
+     * the ids and pushes the full set at sign-in and whenever it changes.
+     */
+    fun `setHiddenEvents`(`eventIds`: List<kotlin.String>)
     
     /**
      * Set how loudly a room may interrupt. `Default` unsets the room's own
@@ -4091,6 +4125,22 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_reply(
         it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`body`),FfiConverterString.lower(`inReplyTo`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * The events the reader hid on this device. The focused timeline groups
+     * as if those rows were absent and marks them `hidden`; the host keeps
+     * the ids and pushes the full set at sign-in and whenever it changes.
+     */override fun `setHiddenEvents`(`eventIds`: List<kotlin.String>)
+        = 
+    callWithPointer {
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_set_hidden_events(
+        it, FfiConverterSequenceString.lower(`eventIds`),_status)
 }
     }
     
@@ -7674,6 +7724,35 @@ public object FfiConverterSequenceTypeWidgetLiveTurn: FfiConverterRustBuffer<Lis
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_fold_turn(
         FfiConverterString.lower(`roomId`),FfiConverterSequenceTypeTurnInput.lower(`inputs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Runs the timeline grouping pass over `rows` — see
+         * `core::timeline_grouping::group_rows`. For previews, fixtures and Kit tests
+         * that build rows by hand; the live timeline is grouped by the core before it
+         * reaches a host. UniFFI only: the desktop has no caller, so no Tauri command.
+         */ fun `groupTimelineRows`(`rows`: List<TimelineRow>): List<TimelineRow> {
+            return FfiConverterSequenceTypeTimelineRow.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_group_timeline_rows(
+        FfiConverterSequenceTypeTimelineRow.lower(`rows`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * How many graphemes a message may have before a row says `is_long_read`
+         * (`core::item_view::LONG_READ_GRAPHEMES`). For hosts that need the figure
+         * itself, such as fixtures and previews. UniFFI only: no Tauri command.
+         */ fun `longReadGraphemes`(): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_long_read_graphemes(
+        _status)
 }
     )
     }

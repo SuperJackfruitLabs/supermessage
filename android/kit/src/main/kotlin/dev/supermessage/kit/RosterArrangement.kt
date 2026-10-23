@@ -3,9 +3,11 @@ package dev.supermessage.kit
 import java.time.Instant
 import uniffi.supermessage_core.AgentState
 import uniffi.supermessage_core.RoomRow
+import uniffi.supermessage_core.RosterRow
 import uniffi.supermessage_core.RosterSection
 import uniffi.supermessage_core.RosterView
 import uniffi.supermessage_ffi.rosterHiddenInvitations
+import uniffi.supermessage_ffi.rosterRow
 import uniffi.supermessage_ffi.rosterSections
 import uniffi.supermessage_ffi.rosterState
 
@@ -29,6 +31,23 @@ enum class RosterChoice(val title: String) {
             WAITING -> RosterView.WAITING
             MACHINE -> RosterView.MACHINE
         }
+
+    companion object {
+        /**
+         * The arrangements the Account panel offers (`RosterChoice.offered`,
+         * iOS). Machine stays in the core and the enum, but nobody can pick it
+         * here.
+         */
+        val offered: List<RosterChoice> = listOf(RECENT, WAITING)
+
+        /**
+         * A stored arrangement that is no longer offered (Machine) reads as
+         * Waiting (`RoomListView.swift:46-52`), so the roster and the panel
+         * agree about what is in force.
+         */
+        fun offeredOrDefault(stored: RosterChoice): RosterChoice =
+            if (stored in offered) stored else WAITING
+    }
 }
 
 /**
@@ -76,6 +95,14 @@ object RosterArrangement {
     /** How many invitations are being withheld, for the picker to admit to. */
     fun hiddenInvitations(rows: List<RoomRow>, showsInvitations: Boolean): Int =
         rosterHiddenInvitations(rows, showsInvitations).toInt()
+
+    /**
+     * The roster's account of one room, found by id in [rows], or `null`
+     * when no such room is listed. The core's `roster_row`
+     * (`RosterViews.swift:115-120` on iOS); this only converts the clock.
+     */
+    fun rosterRow(roomId: String, rows: List<RoomRow>, now: Instant): RosterRow? =
+        rosterRow(rows, roomId, milliseconds(now))
 
     private fun milliseconds(now: Instant): ULong = maxOf(0L, now.toEpochMilli()).toULong()
 }

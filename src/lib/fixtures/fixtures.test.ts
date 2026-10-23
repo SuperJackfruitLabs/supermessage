@@ -8,7 +8,6 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { SENDER_RUN_WINDOW_MS } from "$lib/components/timelineGrouping";
 import { progressOf } from "$lib/components/audioPlayerView";
 import * as audio from "./audio";
 import {
@@ -28,6 +27,9 @@ import {
   senderRun,
 } from "./timeline";
 
+/** The core's run window (`RUN_WINDOW_MS` in `timeline_grouping.rs`): five minutes. */
+const RUN_WINDOW_MS = 5 * 60_000;
+
 describe("timeline scenarios", () => {
   it("senderRun is one sender, twice, inside the run window", () => {
     expect(senderRun).toHaveLength(2);
@@ -42,7 +44,7 @@ describe("timeline scenarios", () => {
     expect(first).not.toBeNull();
     expect(second).not.toBeNull();
 
-    expect(second! - first!).toBeLessThan(SENDER_RUN_WINDOW_MS);
+    expect(second! - first!).toBeLessThan(RUN_WINDOW_MS);
     expect(second!).toBeGreaterThan(first!);
   });
 

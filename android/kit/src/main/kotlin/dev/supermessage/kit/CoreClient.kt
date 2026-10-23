@@ -7,6 +7,7 @@ import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlayableAudio
+import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SpaceSummary
@@ -156,12 +157,23 @@ class CoreClient(
 
     suspend fun knownPeople(): List<PersonDto> = run { it.knownPeople() }
 
+    suspend fun roomCast(roomId: String): RoomCast = run { it.roomCast(roomId) }
+
     suspend fun directRoomWith(userId: String): String? = run { it.directRoomWith(userId) }
 
     suspend fun roomInfo(roomId: String): RoomInfoDto = run { it.roomInfo(roomId) }
 
     suspend fun markRoomRead(roomId: String) {
         run { it.markRoomRead(roomId) }
+    }
+
+    /**
+     * The events the reader hid on this device. The core groups the timeline as
+     * if they were absent and marks their rows `hidden`; push the full set at
+     * sign-in and whenever it changes.
+     */
+    suspend fun setHiddenEvents(eventIds: List<String>) {
+        run { it.setHiddenEvents(eventIds) }
     }
 
     // MARK: - Spaces

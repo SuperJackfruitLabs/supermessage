@@ -132,7 +132,7 @@ fun RootScaffold(
         { shellWidth, _, _ ->
             Pane("pane-roster", "Roster", shellWidth)
         },
-    detailPaneContent: @Composable (shellWidth: Dp) -> Unit = { shellWidth ->
+    detailPaneContent: @Composable (shellWidth: Dp, openInfo: () -> Unit) -> Unit = { shellWidth, _ ->
         Pane("pane-timeline", "Timeline", shellWidth)
     },
     extraPaneContent: @Composable (shellWidth: Dp, closeInfo: () -> Unit) -> Unit = { shellWidth, _ ->
@@ -193,7 +193,7 @@ private fun Starting(modifier: Modifier = Modifier) {
 private fun SignedIn(
     modifier: Modifier = Modifier,
     listPaneContent: @Composable (shellWidth: Dp, openDetail: () -> Unit, openInfo: () -> Unit) -> Unit,
-    detailPaneContent: @Composable (shellWidth: Dp) -> Unit,
+    detailPaneContent: @Composable (shellWidth: Dp, openInfo: () -> Unit) -> Unit,
     extraPaneContent: @Composable (shellWidth: Dp, closeInfo: () -> Unit) -> Unit,
     onBackFromDetail: () -> Unit = {},
 ) {
@@ -365,7 +365,12 @@ private fun SignedIn(
                     { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Extra) } },
                 )
             },
-            detailPane = { detailPaneContent(shellWidth) },
+            detailPane = {
+                detailPaneContent(
+                    shellWidth,
+                    { scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Extra) } },
+                )
+            },
             // panes == 3 only: at panes == 2 the value substitution above
             // already keeps Extra out of the partition layout, and the sheet
             // below is what shows info instead.

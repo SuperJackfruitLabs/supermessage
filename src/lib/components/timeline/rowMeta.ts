@@ -18,16 +18,6 @@ export function rowEdgeClass(index: number, count: number): string {
 
 export type ItemRow = Extract<TimelineDisplayRow, { type: "item" }>;
 
-/**
- * Whether the row at `index` is the last of its run: false only when the
- * next row is a message that continues it. A run's time is shown once, at
- * its end (iOS `TimelineRowView.swift:334-371`).
- */
-export function endsRun(rows: readonly TimelineDisplayRow[], index: number): boolean {
-  const next = rows[index + 1];
-  return !(next !== undefined && next.type === "item" && next.continuesRun);
-}
-
 export interface OwnMeta {
   state: "Sending…" | "Not sent" | null;
   edited: boolean;

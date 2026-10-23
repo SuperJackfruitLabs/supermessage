@@ -1084,6 +1084,18 @@ export type ItemView =
   | { render: "none" };
 
 /**
+ * Where a membership row sits (the core's grouping pass). The host draws the
+ * stretch line when `stretchId` is set and not opened, otherwise the run line;
+ * a text is present only on the first row of its run or stretch.
+ */
+export interface MembershipPlacement {
+  runId: string;
+  runText?: string;
+  stretchId?: string;
+  stretchText?: string;
+}
+
+/**
  * A timeline item together with every decision the core made about it.
  *
  * The set of fields beyond `item` is not decoration. Each was a synchronous
@@ -1142,6 +1154,22 @@ export interface TimelineRow {
    * it is carried so the core can re-settle the pairing after every batch.
    */
   voiceReply?: VoiceReplyLink;
+  /** An agent sent this row (the core's rule). Absent when false. */
+  isAgent?: boolean;
+  /** Long enough to be offered as a long read. Absent when false. */
+  isLongRead?: boolean;
+  /** This bubble continues the sender run above it: drop its header. Absent when false. */
+  continuesRun?: boolean;
+  /** The next drawn row does not continue this one: draw the tail. Absent when false. */
+  endsRun?: boolean;
+  /** This reply's quote only repeats the drawn row above it. Absent when false. */
+  hidesQuote?: boolean;
+  /** Show the bridge's runtime suffix on this row (several peers speak). Absent when false. */
+  showsRuntime?: boolean;
+  /** For a drawn membership row: its run and stretch. Absent on every other row. */
+  membership?: MembershipPlacement;
+  /** The reader hid this event on this device: leave the row undrawn. Absent when false. */
+  hidden?: boolean;
   /**
    * For a voice note's transcript notice: the note it transcribes. Absent on
    * every other row, and read by nothing here either — the core draws the
@@ -2150,6 +2178,15 @@ export async function typingView(
 /** Whether this account has sent in `roomId` since signing in. */
 export async function hasSent(roomId: string): Promise<boolean> {
   return invoke<boolean>("has_sent", { roomId });
+}
+
+/**
+ * Tell the core which events the reader hid on this device. The focused
+ * timeline groups as if they were absent and marks their rows `hidden`; the
+ * host leaves those undrawn. Push the full set at sign-in and on every change.
+ */
+export async function setHiddenEvents(eventIds: string[]): Promise<void> {
+  return invoke<void>("set_hidden_events", { eventIds });
 }
 
 /**

@@ -1,11 +1,18 @@
 package dev.supermessage
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -14,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -21,52 +29,82 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag as semanticsTestTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
 import dev.supermessage.kit.SendState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
-import uniffi.supermessage_ffi.peopleLabel
+import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.supermessage_core.ItemView
 import uniffi.supermessage_core.MediaFileLabel
+import uniffi.supermessage_core.PlaceholderKind
 import uniffi.supermessage_core.ReactionDto
 import uniffi.supermessage_core.ReplyQuoteView
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
 import uniffi.supermessage_core.VoiceReplyPlayer
+import uniffi.supermessage_ffi.peopleLabel
 
 /**
- * The reactions a long press on a message offers to add, verbatim from
+ * The reactions a message's menu and its "+" offer to add, verbatim from
  * `TimelineRowView.swift:22`'s `quickReactions` — not a set invented here.
  * That file's own comment is why this is not extended or reordered: "two
  * different quick reactions is two different apps."
  */
 val quickReactions = listOf("✅", "👍", "❌", "👀")
+
+/** Two points inside a run, twelve between turns (`TimelineRowView.swift:375`, T2). */
+private val RunGap = 2.dp
+private val TurnGap = 12.dp
 
 /**
  * One timeline row, drawn from the decision the core made about it.
@@ -89,16 +127,13 @@ val quickReactions = listOf("✅", "👍", "❌", "👀")
  * No `onReply` yet: unlike [onReact], nothing in this phase calls it, matching
  * `TimelineRowView.swift`'s own unused parameter of the same name.
  *
- * [onReact] toggles the affordance that already renders — an existing
- * reaction chip — and also fires from the "add reaction" affordance this row
- * draws beside them ([AddReactionAffordance]), whose long press opens exactly
- * [quickReactions] and nothing else. iOS reaches its own picker from a
- * context menu on the timeline (`TimelineCollectionView.swift`); this row has
- * no such menu surface (the timeline's own long press is already spoken for —
- * see `Timeline.kt`'s `onRowLongPress` — reply or edit, never both at once,
- * so extending it to a third, mutually-exclusive outcome does not fit), so
- * the picker lives on its own small affordance instead. `canReplyOrReact`
- * gates whether it renders at all, the same guard iOS's own menu entry reads.
+ * [onReact] toggles an existing reaction chip and also fires from the "add
+ * reaction" affordance this row draws beside them ([AddReactionAffordance]),
+ * whose tap opens exactly [quickReactions] and nothing else. The long-press
+ * menu that also carries that strip lives on the list ([Timeline]), as iOS's
+ * does on its collection view. `canReplyOrReact` gates whether the "+" renders
+ * at all, the same guard iOS's own menu entry reads. A long press on a chip
+ * says who reacted.
  *
  * [endsRun] is the other half of [continuesRun]: whether the row *below*
  * this one starts a new run. An own run shows its time once, under its last
@@ -110,12 +145,16 @@ fun TimelineRow(
     now: Instant,
     continuesRun: Boolean = false,
     endsRun: Boolean = true,
+    readers: List<ReaderFace> = emptyList(),
+    highlighted: Boolean = false,
+    onQuoteTap: (() -> Unit)? = null,
     attribution: String = "",
     imageUri: (eventId: String) -> String? = { null },
     faceUri: (mxcUri: String) -> String? = { null },
     loadFace: suspend (mxcUri: String) -> Unit = {},
     onReact: ((String) -> Unit)? = null,
     onDecide: (suspend (GateAnswer) -> Boolean)? = null,
+    decisionAnswers: DecisionAnswers? = null,
     modifier: Modifier = Modifier,
 ) {
     // "Who to name, already chosen ... Chosen by the list, which can see
@@ -135,6 +174,9 @@ fun TimelineRow(
                 spoken = view.voice,
                 continuesRun = continuesRun,
                 endsRun = endsRun,
+                readers = readers,
+                highlighted = highlighted,
+                onQuoteTap = onQuoteTap,
                 faceUri = faceUri,
                 loadFace = loadFace,
                 onReact = onReact,
@@ -153,7 +195,25 @@ fun TimelineRow(
 
         is ItemView.System -> SystemLine(view.text, modifier)
 
-        is ItemView.Placeholder -> SystemLine(view.text, modifier)
+        // A message this device holds no key for is still a message: someone
+        // sent it, at a time. A centred grey line read like "Krishna joined",
+        // an event about the room rather than a gap in it
+        // (`TimelineRowView.swift:153-158`). Every other placeholder stays a
+        // quiet line.
+        is ItemView.Placeholder ->
+            if (view.kind == PlaceholderKind.UnableToDecrypt) {
+                UndecryptableRow(
+                    row = row,
+                    named = named,
+                    text = view.text,
+                    continuesRun = continuesRun,
+                    faceUri = faceUri,
+                    loadFace = loadFace,
+                    modifier = modifier,
+                )
+            } else {
+                SystemLine(view.text, modifier)
+            }
 
         // Carries no text: formatted here, from the item's own timestamp,
         // because formatting reads a clock and a locale and both belong
@@ -161,17 +221,9 @@ fun TimelineRow(
         ItemView.DateDivider ->
             DateDividerLine(row.item.timestampMs, now, modifier)
 
-        // No label. The divider says it, and a caption repeated at every
-        // scroll position would be chrome pretending to be content.
-        ItemView.UnreadMarker ->
-            HorizontalDivider(
-                modifier = modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 10.dp)
-                    .testTag("unread-marker"),
-                color = MaterialTheme.colorScheme.primary,
-                thickness = 2.dp,
-            )
+        // A word at the trailing end names the line: bare, it read as a
+        // stray divider (`TimelineRowView.swift:136-151`). Accent, never amber.
+        ItemView.UnreadMarker -> UnreadLine(modifier)
 
         is ItemView.Image ->
             ImageRow(
@@ -219,6 +271,9 @@ fun TimelineRow(
                 view = view.view,
                 label = view.label,
                 eventType = view.eventType,
+                senderName = named,
+                answers = decisionAnswers,
+                answerKey = row.item.eventId ?: row.item.id,
                 modifier = modifier,
                 onDecide = onDecide,
             )
@@ -235,7 +290,7 @@ fun TimelineRow(
 
         // Deliberately nothing. A row for this would still occupy layout
         // space — "deliberately silent should mean absent, not empty" is
-        // `TimelineGrouping`'s reason for filtering `None` out upstream, and
+        // `displayRows`'s reason for filtering `None` out upstream, and
         // this composable honours the same rule for whatever the filter
         // still hands it.
         ItemView.None -> Unit
@@ -258,6 +313,40 @@ internal fun SystemLine(text: String, modifier: Modifier = Modifier) {
         textAlign = TextAlign.Center,
         modifier = modifier.fillMaxWidth().padding(vertical = 6.dp),
     )
+}
+
+/**
+ * A stretch of membership changes folded into one line the reader can open:
+ * the same quiet look as [SystemLine], with a chevron saying it opens.
+ *
+ * The text wraps rather than clips, so it holds at large font scales on a
+ * narrow screen; the row is at least a touch target tall.
+ */
+@Composable
+internal fun StretchLine(text: String, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.Button, onClick = onOpen)
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        Icon(
+            Icons.Filled.KeyboardArrowDown,
+            contentDescription = "Shows each change",
+            tint = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.size(16.dp),
+        )
+    }
 }
 
 /** A hairline with the day on it, formatted relative to [now]. */
@@ -299,7 +388,7 @@ private fun dayLabel(
     }
 }
 
-private fun clockLabel(timestampMs: ULong, zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String =
+internal fun clockLabel(timestampMs: ULong, zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String =
     DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
         .withLocale(locale)
         .format(Instant.ofEpochMilli(timestampMs.toLong()).atZone(zone))
@@ -314,6 +403,9 @@ private fun MessageBlock(
     spoken: VoiceReplyPlayer?,
     continuesRun: Boolean,
     endsRun: Boolean,
+    readers: List<ReaderFace>,
+    highlighted: Boolean,
+    onQuoteTap: (() -> Unit)?,
     faceUri: (mxcUri: String) -> String?,
     loadFace: suspend (mxcUri: String) -> Unit,
     onReact: ((String) -> Unit)? = null,
@@ -323,10 +415,10 @@ private fun MessageBlock(
     val sendState = SendState(row.item.sendState)
     val edited = row.item.edited
 
+    Box(modifier = modifier.fillMaxWidth().padding(top = if (continuesRun) RunGap else TurnGap)) {
+    RowHighlight(highlighted)
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = if (continuesRun) 2.dp else 8.dp, bottom = 2.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
     ) {
         if (!isOwn && !continuesRun) {
@@ -356,7 +448,7 @@ private fun MessageBlock(
             EditedMarker()
         }
 
-        row.replyQuote?.let { ReplyQuoteBlock(it) }
+        row.replyQuote?.let { ReplyQuoteBlock(it, onTap = onQuoteTap) }
 
         // Listen first, then read: the spoken answer above the words it says.
         spoken?.let { SpokenReply(spoken = it, isOwn = isOwn, modifier = Modifier.padding(bottom = 6.dp)) }
@@ -372,27 +464,54 @@ private fun MessageBlock(
         // why it takes the resolved face as a parameter rather than reading
         // `isOwn` on its own.
         val bodyFontFamily = if (isOwn) SupermessageTheme.typography.own else SupermessageTheme.typography.body
-        CompositionLocalProvider(LocalContentColor provides textColor) {
-            Box(
-                modifier = Modifier
-                    .testTag("bubble")
-                    // Bounded so wide content (a table, a code block) scrolls
-                    // inside itself rather than stretching this row — those
-                    // shapes already carry `horizontalScroll` in `RichText`,
-                    // but only a bounded container makes that scroll rather
-                    // than merely grow.
-                    .widthIn(max = 320.dp)
-                    .let {
-                        if (isOwn) {
-                            it.clip(RoundedCornerShape(12.dp))
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.13f))
-                                .padding(10.dp)
-                        } else {
-                            it
-                        }
-                    },
-            ) {
-                RichText(blocks = blocks, fontFamily = bodyFontFamily)
+        // The bubble, with its reactions pulled up over its bottom edge
+        // (`TimelineRowView.swift:319-323`). Negative spacing rather than an
+        // overlay, so the chips still take their height in the row and never
+        // overlap the next message.
+        val canAddReaction = onReact != null && row.canReplyOrReact
+        val hasChips = row.item.reactions.isNotEmpty() || canAddReaction
+        Column(
+            verticalArrangement = Arrangement.spacedBy((-8).dp),
+            horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
+        ) {
+            CompositionLocalProvider(LocalContentColor provides textColor) {
+                Box(
+                    modifier = Modifier
+                        .testTag("bubble")
+                        // Bounded so wide content (a table, a code block) scrolls
+                        // inside itself rather than stretching this row — those
+                        // shapes already carry `horizontalScroll` in `RichText`,
+                        // but only a bounded container makes that scroll rather
+                        // than merely grow.
+                        .widthIn(max = 320.dp)
+                        .let {
+                            if (isOwn) {
+                                it.clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.13f))
+                                    .padding(10.dp)
+                            } else if (hasChips) {
+                                // A peer's text has no surface to hang the chips
+                                // from, so make room for the part they overlap.
+                                it.padding(bottom = 8.dp)
+                            } else {
+                                it
+                            }
+                        },
+                ) {
+                    RichText(blocks = blocks, fontFamily = bodyFontFamily)
+                }
+            }
+            // The add-reaction affordance sits in the same row as any existing
+            // chips (never a row of its own) and needs `onReact` to have
+            // anywhere to send a tap, plus `canReplyOrReact` — the SDK's own
+            // guard for "there is an event to react to yet".
+            if (row.item.reactions.isNotEmpty() || canAddReaction) {
+                ReactionsRow(
+                    row.item.reactions,
+                    onReact = onReact,
+                    showAddAffordance = canAddReaction,
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                )
             }
         }
 
@@ -402,7 +521,7 @@ private fun MessageBlock(
         // hiding it mid-run would bury a failed send, so those always show.
         // So does "edited", for the same reason the peer side keeps it.
         val showsTime = endsRun && row.item.timestampMs != null
-        if (isOwn && (sendState.isWorthShowing || edited || showsTime)) {
+        if (isOwn && (sendState.isWorthShowing || edited || showsTime || readers.isNotEmpty())) {
             Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
                 val failed = sendState == SendState.FAILED
                 val color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
@@ -413,29 +532,45 @@ private fun MessageBlock(
                         Text(clockLabel(it), style = MaterialTheme.typography.labelSmall, color = color)
                     }
                 }
+                // Only under your own messages, and only where a receipt
+                // actually points; the faces sit on this line (D7, T3).
+                if (readers.isNotEmpty()) ReaderStack(readers, faceUri, loadFace)
             }
         }
+    }
+    }
+}
 
-        // Only under your own messages, and only where a receipt actually
-        // points: under someone else's message this would tell a reader
-        // what they already know.
-        if (isOwn && row.item.readBy.isNotEmpty()) {
-            Text(
-                "Read by ${peopleLabel(row.item.readBy)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline,
-            )
-        }
+/** How long a jumped-to message stays lit, `TimelineCollectionView.swift:921-935`. */
+const val QuoteHighlightMs = 1_400L
 
-        // The add-reaction affordance sits in the same row as any existing
-        // chips (never a row of its own) and needs `onReact` to have
-        // anywhere to send a tap, plus `canReplyOrReact` — the SDK's own
-        // guard for "there is an event to react to yet", the same one iOS
-        // reads before offering its context-menu entry.
-        val canAddReaction = onReact != null && row.canReplyOrReact
-        if (row.item.reactions.isNotEmpty() || canAddReaction) {
-            ReactionsRow(row.item.reactions, onReact = onReact, showAddAffordance = canAddReaction)
-        }
+/**
+ * The jumped-to message's wash: a radius-12 rounded rectangle in `accentSoft`,
+ * inset -8 horizontally, in over 0.15 s and out over 0.8 s
+ * (`TimelineRowView.swift:79-88`). Not in the tree once it has faded.
+ */
+@Composable
+private fun BoxScope.RowHighlight(highlighted: Boolean) {
+    val alpha by animateFloatAsState(
+        targetValue = if (highlighted) 1f else 0f,
+        animationSpec = motion(reducesMotion(), tween(if (highlighted) 150 else 800)),
+        label = "row-highlight",
+    )
+    if (alpha > 0f) {
+        val inset = with(LocalDensity.current) { 8.dp.roundToPx() }
+        Box(
+            Modifier
+                .matchParentSize()
+                .layout { measurable, constraints ->
+                    val wider = measurable.measure(
+                        Constraints.fixed(constraints.maxWidth + 2 * inset, constraints.maxHeight),
+                    )
+                    layout(constraints.maxWidth, constraints.maxHeight) { wider.place(-inset, 0) }
+                }
+                .graphicsLayer { this.alpha = alpha }
+                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp))
+                .testTag("row-highlight"),
+        )
     }
 }
 
@@ -462,9 +597,17 @@ private fun quoteRuleColor(quote: ReplyQuoteView): Color {
 }
 
 @Composable
-private fun ReplyQuoteBlock(quote: ReplyQuoteView, modifier: Modifier = Modifier) {
+private fun ReplyQuoteBlock(quote: ReplyQuoteView, onTap: (() -> Unit)?, modifier: Modifier = Modifier) {
     Row(
-        modifier = modifier.padding(vertical = 2.dp).height(IntrinsicSize.Min),
+        modifier = modifier
+            .testTag("reply-quote")
+            .let {
+                // Tappable only when its parent is loaded; the hint says what a
+                // tap does (`TimelineRowView.swift:538`).
+                if (onTap == null) it else it.quoteTap(onTap)
+            }
+            .padding(vertical = 2.dp)
+            .height(IntrinsicSize.Min),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
@@ -509,49 +652,66 @@ private fun ReactionsRow(
     showAddAffordance: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    Row(modifier = modifier.padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+    val haptics = LocalHapticFeedback.current
+    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         reactions.forEach { reaction ->
-            Row(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(
-                        if (reaction.byMe) {
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        },
-                    )
-                    // `key`, not `displayKey`: the wire value is what the
-                    // homeserver matches against what everyone else sent, and
-                    // reacting with the display form would land a *different*
-                    // reaction beside the one the reader meant to join.
-                    // `nil`/`null` `onReact` (no composer in context) leaves
-                    // the chip inert rather than clickable-but-a-no-op.
-                    .let {
-                        if (onReact != null) {
-                            it.clickable(onClickLabel = "React with ${reaction.displayKey}") {
-                                onReact(reaction.key)
-                            }
-                        } else {
-                            it
+            var asking by remember { mutableStateOf(false) }
+            // A ring of the page around each chip, so where it overlaps the
+            // bubble's corner the two stay separate shapes (`:612-614`).
+            Box(Modifier.background(SupermessageTheme.colors.surface, CircleShape).padding(2.dp)) {
+                Row(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(
+                            if (reaction.byMe) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                            } else {
+                                MaterialTheme.colorScheme.surfaceVariant
+                            },
+                        )
+                        // `key`, not `displayKey`: the wire value is what the
+                        // homeserver matches against what everyone else sent, and
+                        // reacting with the display form would land a *different*
+                        // reaction beside the one the reader meant to join.
+                        // A `null` `onReact` (no composer in context) leaves a tap
+                        // inert; a long press still says who reacted.
+                        .combinedClickable(
+                            onClickLabel = onReact?.let { "React with ${reaction.displayKey}" },
+                            onLongClickLabel = "Who reacted",
+                            onClick = {
+                                if (onReact != null) {
+                                    haptics.play(Haptic.Selection)
+                                    onReact(reaction.key)
+                                }
+                            },
+                            onLongClick = { asking = true },
+                        )
+                        .semantics {
+                            contentDescription = "${reaction.displayKey}, ${reaction.count}" +
+                                if (reaction.byMe) ", including yours" else ""
                         }
+                        .testTag("reaction-${reaction.key}")
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
+                    // `displayKey`, never `key`: `key` is wire data compared
+                    // byte-for-byte against what other clients sent; this one is
+                    // bounded for display.
+                    Text(reaction.displayKey, style = MaterialTheme.typography.labelSmall)
+                    // One reaction is already fully described by its key;
+                    // printing "1" beside it counts nothing anyone wondered about.
+                    if (reaction.count > 1u) {
+                        Text(
+                            "${reaction.count}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (reaction.byMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                        )
                     }
-                    .testTag("reaction-${reaction.key}")
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                // `displayKey`, never `key`: `key` is wire data compared
-                // byte-for-byte against what other clients sent; this one is
-                // bounded for display.
-                Text(reaction.displayKey, style = MaterialTheme.typography.labelSmall)
-                // One reaction is already fully described by its key;
-                // printing "1" beside it counts nothing anyone wondered about.
-                if (reaction.count > 1u) {
-                    Text(
-                        "${reaction.count}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (reaction.byMe) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                    )
+                }
+                if (asking) {
+                    // Who reacted, as iOS's popover does
+                    // (`TimelineRowView.swift:575-593`): the key and the names.
+                    Popup(onDismissRequest = { asking = false }) { ReactionWhoCard(reaction) }
                 }
             }
         }
@@ -561,20 +721,30 @@ private fun ReactionsRow(
     }
 }
 
+/** The key and the people behind it: what the who-reacted popup shows. */
+@Composable
+internal fun ReactionWhoCard(reaction: ReactionDto, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .widthIn(max = 240.dp)
+            .testTag("reaction-who"),
+    ) {
+        Text(reaction.displayKey, style = MaterialTheme.typography.titleMedium)
+        Text(peopleLabel(reaction.senders), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
 /**
  * The affordance Phase B left out: existing reaction chips toggle
  * ([ReactionsRow]), but nothing added a reaction that was not already on the
- * message. A long press here opens exactly [quickReactions] — the same set
+ * message. A tap here opens exactly [quickReactions] — the same set
  * `TimelineRowView.swift` and the desktop client already offer, chosen once
  * for the reason that file's own comment gives, not reinvented per host.
- *
- * A dedicated small target, not a second long press over the row iOS reaches
- * its picker from a context menu on — Android's row already spends its own
- * long press on reply/edit ([Timeline]'s `onRowLongPress`), one or the other,
- * never both from the same gesture. Nesting this affordance's own long press
- * inside that row does not compete with it: Compose delivers a touch
- * sequence to the innermost handler that claims it, so a press-and-hold that
- * starts on this chip is consumed here and never reaches the row's.
+ * It was a long press until the message menu took that gesture's place on the
+ * row; a tap is what a visible "+" promises.
  */
 @Composable
 private fun AddReactionAffordance(onReact: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -584,11 +754,7 @@ private fun AddReactionAffordance(onReact: (String) -> Unit, modifier: Modifier 
             modifier = Modifier
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
-                .combinedClickable(
-                    onClickLabel = "Add a reaction",
-                    onClick = {},
-                    onLongClick = { pickerOpen = true },
-                )
+                .clickable(onClickLabel = "Add a reaction") { pickerOpen = !pickerOpen }
                 .testTag("add-reaction")
                 .padding(horizontal = 6.dp, vertical = 2.dp),
         ) {
@@ -626,17 +792,18 @@ private fun AddReactionAffordance(onReact: (String) -> Unit, modifier: Modifier 
  * cache for it and [loadFace] asks the core to fetch it when it is missing.
  */
 @Composable
-private fun SenderFace(
+internal fun SenderFace(
     mxcUri: String?,
-    initial: String,
+    initial: String?,
     faceUri: (mxcUri: String) -> String?,
     loadFace: suspend (mxcUri: String) -> Unit,
+    size: Dp = SenderFaceSize,
 ) {
     LaunchedEffect(mxcUri) { mxcUri?.let { loadFace(it) } }
     val uri = mxcUri?.let(faceUri)
     val bitmap = remember(uri) { uri?.decodeDataUri() }
     Box(
-        modifier = Modifier.size(18.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
+        modifier = Modifier.size(size).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         if (bitmap != null) {
@@ -645,6 +812,15 @@ private fun SenderFace(
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize().testTag("sender-face-image"),
                 contentScale = ContentScale.Crop,
+            )
+        } else if (initial == null) {
+            // Someone this room has not shown a message from yet, so there is
+            // no initial to hand: a person, not a guess made from their id.
+            Icon(
+                Icons.Filled.Person,
+                contentDescription = null,
+                tint = SupermessageTheme.colors.contentFaint,
+                modifier = Modifier.size(size * 0.6f),
             )
         } else {
             // Rendered whole, not `firstOrNull()`. A Kotlin `Char` is a
@@ -656,10 +832,166 @@ private fun SenderFace(
             // Nothing needs trimming here: `sender_initial` arrives from the
             // core as one glyph or one uppercased letter, and uppercasing it
             // again would be this host re-deciding something already decided.
+            val style = MaterialTheme.typography.labelSmall
             Text(
                 initial.ifEmpty { "?" },
-                style = MaterialTheme.typography.labelSmall,
+                // The default disc keeps the type role; a smaller one scales
+                // the initial with it (iOS: `size * 0.56`).
+                style = if (size == SenderFaceSize) style else style.copy(fontSize = with(LocalDensity.current) { (size * 0.56f).toSp() }),
             )
+        }
+    }
+}
+
+private val SenderFaceSize = 18.dp
+
+/**
+ * Someone whose read receipt points at a message, with whatever face the room
+ * has already shown for them. [initial] is `null` when they have sent nothing
+ * this device has seen, so the core has never handed over an initial for them.
+ */
+data class ReaderFace(val userId: String, val mxcUri: String?, val initial: String?)
+
+/**
+ * The face of each person who has sent a message in [rows], keyed by sender:
+ * the first `senderAvatar` and `senderInitial` seen for them. Only
+ * `kind == "message"` rows count (`TimelineCollectionView.swift:747-779`); a
+ * reader with no such row is absent, and is drawn as a person glyph.
+ */
+internal fun readerFaces(rows: List<TimelineRowDto>): Map<String, ReaderFace> {
+    val faces = HashMap<String, ReaderFace>()
+    for (row in rows) {
+        val sender = row.item.sender ?: continue
+        if (sender in faces || row.item.kind != "message") continue
+        faces[sender] = ReaderFace(sender, row.item.senderAvatar, row.senderInitial)
+    }
+    return faces
+}
+
+/**
+ * "Read by …" as a few small faces rather than a sentence (D7, T3): up to
+ * three of 14dp overlapping by 4, each ringed 1.5 in the page colour, then
+ * "+n" for the rest. The sentence is the accessibility label, named by the
+ * core so it reads the same everywhere (`TimelineChrome.swift:142-175`).
+ */
+@Composable
+internal fun ReaderStack(
+    readers: List<ReaderFace>,
+    faceUri: (String) -> String?,
+    loadFace: suspend (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val label = "Read by ${peopleLabel(readers.map { it.userId })}"
+    Row(
+        modifier = modifier.clearAndSetSemantics {
+            semanticsTestTag = "reader-stack"
+            contentDescription = label
+        },
+        horizontalArrangement = Arrangement.spacedBy((-4).dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        readers.take(ReaderFacesShown).forEach { reader ->
+            Box(
+                Modifier
+                    .testTag("reader-face")
+                    .background(SupermessageTheme.colors.surface, CircleShape)
+                    .padding(1.5.dp),
+            ) {
+                SenderFace(reader.mxcUri, reader.initial, faceUri, loadFace, size = 14.dp)
+            }
+        }
+        if (readers.size > ReaderFacesShown) {
+            Text(
+                "+${readers.size - ReaderFacesShown}",
+                style = MaterialTheme.typography.labelSmall,
+                color = SupermessageTheme.colors.contentFaint,
+                modifier = Modifier.padding(start = 10.dp),
+            )
+        }
+    }
+}
+
+private const val ReaderFacesShown = 3
+
+/** The line before the first unread message, named so it is not a stray divider. */
+@Composable
+private fun UnreadLine(modifier: Modifier = Modifier) {
+    val accent = SupermessageTheme.colors.accent
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp)
+            .clearAndSetSemantics {
+                semanticsTestTag = "unread-marker"
+                contentDescription = "New messages"
+            },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        HorizontalDivider(modifier = Modifier.weight(1f), color = accent, thickness = 2.dp)
+        Text("New", style = MaterialTheme.typography.labelMedium, color = accent)
+    }
+}
+
+/**
+ * A message this device holds no key for (`TimelineRowView.swift:637-680`):
+ * the sender header when it is someone else's and starts a turn, then a lock
+ * with the core's text, and the one thing a reader can do about it.
+ */
+@Composable
+private fun UndecryptableRow(
+    row: TimelineRowDto,
+    named: String,
+    text: String,
+    continuesRun: Boolean,
+    faceUri: (mxcUri: String) -> String?,
+    loadFace: suspend (mxcUri: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val isOwn = row.item.isOwn
+    val colors = SupermessageTheme.colors
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = if (continuesRun) RunGap else TurnGap)
+            .semantics(mergeDescendants = true) {},
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = if (isOwn) Alignment.End else Alignment.Start,
+    ) {
+        if (!isOwn && !continuesRun) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                SenderFace(row.item.senderAvatar, row.senderInitial, faceUri, loadFace, size = 22.dp)
+                Text(
+                    named,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = row.item.sender?.let { SupermessageTheme.peer(it) } ?: Color.Unspecified,
+                )
+                row.item.timestampMs?.let {
+                    Text(clockLabel(it), style = MaterialTheme.typography.labelSmall, color = colors.contentFaint)
+                }
+            }
+        }
+        Row(
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(colors.surfaceRaised)
+                .padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Filled.Lock, contentDescription = null, tint = colors.contentMuted, modifier = Modifier.size(16.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic),
+                    color = colors.contentMuted,
+                )
+                Text(
+                    "Encryption recovery in your account can restore older messages.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.contentFaint,
+                )
+            }
         }
     }
 }
@@ -751,4 +1083,39 @@ private fun formatBytes(size: ULong): String {
         unitIndex++
     }
     return if (unitIndex == 0) "${value.toInt()} ${units[unitIndex]}" else "%.1f %s".format(value, units[unitIndex])
+}
+
+/**
+ * A tap that leaves the touch alone. A `clickable` here would take the whole
+ * gesture and the row's long press (the menu) and swipes would die on the
+ * quote; this watches the down and up without consuming either, and gives up
+ * once the touch is held as long as a long press or another handler takes it.
+ */
+private fun Modifier.quoteTap(onTap: () -> Unit): Modifier = composed {
+    val latest by rememberUpdatedState(onTap)
+    this
+        .pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { waitForUpOrCancellation() }
+                if (up != null) latest()
+            }
+        }
+        // Keyboard and D-pad reach the quote, and Enter / centre activates it.
+        .onKeyEvent { event ->
+            val activates = event.key == Key.Enter || event.key == Key.NumPadEnter || event.key == Key.DirectionCenter
+            if (activates && event.type == KeyEventType.KeyUp) {
+                latest()
+                true
+            } else {
+                activates
+            }
+        }
+        .focusable()
+        .semantics(mergeDescendants = false) {
+            onClick(label = "Shows the original message") {
+                latest()
+                true
+            }
+        }
 }

@@ -196,9 +196,10 @@ function bubble(text: string, muted = false) {
  * Two messages from one sender inside the run window, so the second
  * continues the first rather than repeating the attribution.
  *
- * The window is `SENDER_RUN_WINDOW_MS` (five minutes) in
- * `timelineGrouping.ts`, and these timestamps are stated relative to it
- * rather than as magic numbers.
+ * The window is `RUN_WINDOW_MS` (five minutes) in the core's
+ * `timeline_grouping.rs`. The grouping is the core's, so the second row
+ * carries `continuesRun` the way the core would send it; nothing on the
+ * desktop works it out.
  */
 export const senderRun: TimelineRow[] = [
   {
@@ -208,6 +209,8 @@ export const senderRun: TimelineRow[] = [
   {
     ...message({ id: "run-2", sender: "@atlas:example.org", senderDisplayName: "Atlas", timestampMs: 1_700_000_060_000, body: "Ready to promote." }),
     view: bubble("Ready to promote."),
+    continuesRun: true,
+    endsRun: true,
   },
 ];
 

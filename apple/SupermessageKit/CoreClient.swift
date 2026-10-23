@@ -211,6 +211,10 @@ public actor CoreClient {
         await run { $0.hasSent(roomId: roomId) }
     }
 
+    public func setHiddenEvents(eventIds: [String]) async {
+        await run { $0.setHiddenEvents(eventIds: eventIds) }
+    }
+
     /// A room's agent turn, whole — the core's record, kept for every room.
     public func turn(roomId: String) async -> TurnSnapshot? {
         await run { $0.turn(roomId: roomId) }
