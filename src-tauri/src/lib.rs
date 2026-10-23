@@ -387,7 +387,7 @@ fn spawn_action_consumer(app: tauri::AppHandle) {
                     notify_actions::info_map(&taken.user_info),
                     &*app.state::<Session>(),
                     &notify_actions::WindowOpener(app.clone()),
-                    poster.as_ref(),
+                    poster,
                 )
                 .await;
             });

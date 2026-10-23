@@ -805,10 +805,7 @@
   /** A notification was clicked: the window is forward; show its room (the collapsed layout too). */
   async function openFromNotification(roomId: string): Promise<void> {
     await openRoomFromNotification(roomId, {
-      rooms: roomsStore.rooms,
       selectedRoomId: roomsStore.selectedId,
-      spaceSelected: spacesStore.selectedId !== null,
-      selectSpace: (spaceId) => spacesStore.select(spaceId),
       selectRoom: (id) => roomsStore.select(id),
     });
     roomPaneOpen = true;

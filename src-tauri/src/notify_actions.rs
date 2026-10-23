@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -102,7 +103,7 @@ pub async fn handle(
     user_info: HashMap<String, String>,
     answerer: &impl Answerer,
     opener: &impl Opener,
-    poster: &dyn Poster,
+    poster: Arc<dyn Poster>,
 ) {
     handle_within(
         ANSWER_BUDGET,
@@ -121,7 +122,7 @@ async fn handle_within(
     user_info: HashMap<String, String>,
     answerer: &impl Answerer,
     opener: &impl Opener,
-    poster: &dyn Poster,
+    poster: Arc<dyn Poster>,
 ) {
     // The XDG protocol calls a click on the notification itself "default"; it is the core's Open.
     let action_id = if action_id == XDG_DEFAULT_ACTION {
@@ -137,7 +138,11 @@ async fn handle_within(
             let sent = tokio::time::timeout(budget, send(&answer, answerer)).await;
             // A refusal and a send that outlives the budget are the same to the reader.
             if !matches!(sent, Ok(Ok(()))) {
-                let _ = post_planned(poster, &notification_policy::answer_failed(&room_id));
+                // The server round trip blocks; keep it off the async workers.
+                let failure = notification_policy::answer_failed(&room_id);
+                let _ =
+                    tokio::task::spawn_blocking(move || post_planned(poster.as_ref(), &failure))
+                        .await;
             }
         }
     }
@@ -187,6 +192,7 @@ mod tests {
         sent: Mutex<Vec<String>>,
         opened: Mutex<Vec<String>>,
         posted: Mutex<Vec<PostedNote>>,
+        posted_on: Mutex<Vec<std::thread::ThreadId>>,
         refuse: bool,
         hang: bool,
     }
@@ -234,6 +240,10 @@ mod tests {
     impl Poster for Recording {
         fn post(&self, note: &PostedNote) -> Result<(), String> {
             self.posted.lock().unwrap().push(note.clone());
+            self.posted_on
+                .lock()
+                .unwrap()
+                .push(std::thread::current().id());
             Ok(())
         }
         fn withdraw_all(&self) {}
@@ -274,20 +284,20 @@ mod tests {
         }
     }
 
-    async fn press(rec: &Recording, action: &str, note: &PlannedNotification) {
+    async fn press(rec: &Arc<Recording>, action: &str, note: &PlannedNotification) {
         handle(
             action.to_owned(),
             notification_policy::user_info(note),
-            rec,
-            rec,
-            rec,
+            &**rec,
+            &**rec,
+            rec.clone(),
         )
         .await;
     }
 
     #[tokio::test]
     async fn allow_once_sends_the_permission_option_to_its_room() {
-        let rec = Recording::default();
+        let rec = Arc::new(Recording::default());
         press(&rec, ACTION_ALLOW_ONCE, &permission_note()).await;
         assert_eq!(*rec.sent.lock().unwrap(), ["permission !r:x allow_once"]);
         assert!(rec.opened.lock().unwrap().is_empty());
@@ -296,14 +306,14 @@ mod tests {
 
     #[tokio::test]
     async fn reject_sends_the_permission_reject_option() {
-        let rec = Recording::default();
+        let rec = Arc::new(Recording::default());
         press(&rec, ACTION_REJECT, &permission_note()).await;
         assert_eq!(*rec.sent.lock().unwrap(), ["permission !r:x reject"]);
     }
 
     #[tokio::test]
     async fn approve_sends_the_gate_decision_referencing_the_gate_event() {
-        let rec = Recording::default();
+        let rec = Arc::new(Recording::default());
         press(
             &rec,
             ACTION_APPROVE_GATE,
@@ -318,7 +328,7 @@ mod tests {
 
     #[tokio::test]
     async fn reject_sends_the_gate_reject_option() {
-        let rec = Recording::default();
+        let rec = Arc::new(Recording::default());
         press(
             &rec,
             ACTION_REJECT_GATE,
@@ -333,7 +343,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_option_the_gate_does_not_offer_sends_nothing_and_opens() {
-        let rec = Recording::default();
+        let rec = Arc::new(Recording::default());
         press(&rec, ACTION_APPROVE_GATE, &gate_note(&["reject"])).await;
         assert!(rec.sent.lock().unwrap().is_empty());
         assert_eq!(*rec.opened.lock().unwrap(), ["!g:x"]);
@@ -341,7 +351,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_body_click_opens_the_room() {
-        let rec = Recording::default();
+        let rec = Arc::new(Recording::default());
         press(&rec, "default", &permission_note()).await;
         assert_eq!(*rec.opened.lock().unwrap(), ["!r:x"]);
         assert!(rec.sent.lock().unwrap().is_empty());
@@ -349,10 +359,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_refused_answer_posts_your_answer_wasnt_sent() {
-        let rec = Recording {
+        let rec = Arc::new(Recording {
             refuse: true,
             ..Default::default()
-        };
+        });
         press(&rec, ACTION_ALLOW_ONCE, &permission_note()).await;
         let posted = rec.posted.lock().unwrap();
         assert_eq!(posted.len(), 1, "nothing else is posted: {posted:?}");
@@ -364,19 +374,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_blocking_post_runs_off_the_async_worker() {
+        let rec = Arc::new(Recording {
+            refuse: true,
+            ..Default::default()
+        });
+        press(&rec, ACTION_ALLOW_ONCE, &permission_note()).await;
+        let on = rec.posted_on.lock().unwrap();
+        assert_eq!(on.len(), 1);
+        assert_ne!(on[0], std::thread::current().id());
+    }
+
+    #[tokio::test]
     async fn a_send_that_hangs_is_given_up_on_within_the_budget() {
-        let rec = Recording {
+        let rec = Arc::new(Recording {
             hang: true,
             ..Default::default()
-        };
+        });
         let note = permission_note();
         handle_within(
             Duration::from_millis(100),
             ACTION_ALLOW_ONCE.to_owned(),
             notification_policy::user_info(&note),
-            &rec,
-            &rec,
-            &rec,
+            &*rec,
+            &*rec,
+            rec.clone(),
         )
         .await;
         let posted = rec.posted.lock().unwrap();
@@ -386,7 +408,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_dismissal_does_nothing() {
-        let rec = Recording::default();
+        let rec = Arc::new(Recording::default());
         press(&rec, "sm.dismiss", &permission_note()).await;
         assert!(rec.sent.lock().unwrap().is_empty());
         assert!(rec.opened.lock().unwrap().is_empty());

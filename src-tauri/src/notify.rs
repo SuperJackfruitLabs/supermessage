@@ -111,7 +111,9 @@ mod xdg {
     use std::sync::{Arc, Mutex, MutexGuard};
 
     /// How many threads may wait on a button at once. Past it a note is posted
-    /// without buttons (the reader still opens it by clicking). It counts live
+    /// without buttons, and so without a click that opens its room: reporting a
+    /// click takes a thread waiting on that notification, and the cap is what
+    /// bounds those threads. It counts live
     /// *threads*, not entries: a waiter whose close never arrives (a server that
     /// restarted) still holds its slot, so the cap bounds threads and bus
     /// connections whatever the server does.
