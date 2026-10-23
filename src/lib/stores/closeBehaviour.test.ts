@@ -89,6 +89,39 @@ describe("closeBehaviour", () => {
     expect(without.available).toBe(false);
   });
 
+  it("showing the setting asks Rust again and takes its new answer", async () => {
+    // A tray watcher that goes away (or comes back) between start and opening Account.
+    let shown = true;
+    const sent: boolean[] = [];
+    const setting = createCloseBehaviour({
+      storage: () => fakeStorage({ [KEEP_RUNNING_KEY]: "true" }),
+      send: async (keepRunning) => {
+        sent.push(keepRunning);
+        return shown;
+      },
+    });
+    await setting.install();
+    expect(setting.available).toBe(true);
+    shown = false;
+    await setting.refresh();
+    expect(sent).toEqual([true, true]);
+    expect(setting.available).toBe(false);
+  });
+
+  it("only the newest answer lands", async () => {
+    const answers: Array<(v: boolean) => void> = [];
+    const setting = createCloseBehaviour({
+      storage: () => fakeStorage(),
+      send: () => new Promise<boolean>((resolve) => answers.push(resolve)),
+    });
+    const first = setting.install();
+    const second = setting.refresh();
+    answers[1]!(false);
+    answers[0]!(true);
+    await Promise.all([first, second]);
+    expect(setting.available).toBe(false);
+  });
+
   it("outside Tauri (a rejected call) the setting stays unavailable", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const setting = createCloseBehaviour({

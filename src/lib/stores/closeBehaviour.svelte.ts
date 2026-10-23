@@ -1,7 +1,9 @@
 // "Keep running in the tray when the window is closed" (parity M7, Q6): off by default, kept on
 // this device in `localStorage` like the appearance preferences (it belongs to the device, not the
-// account, so sign-out leaves it alone), and handed to Rust at start and on every change. Rust
-// answers whether a tray exists; with none the setting is unavailable there and closing quits.
+// account, so sign-out leaves it alone), and handed to Rust at start, on every change and each
+// time Account opens. Rust answers whether a tray can be seen (it exists and, on Linux, the session
+// bus has a StatusNotifier watcher to show it); with none the setting is unavailable there and
+// closing quits.
 
 import { windowCloseBehaviour } from "$lib/ipc";
 
@@ -38,13 +40,17 @@ export function createCloseBehaviour(overrides: Partial<CloseBehaviourDeps> = {}
   let keepRunning = $state(read());
   // Unknown until Rust answers, and unknown means unavailable.
   let available = $state(false);
+  // Only the newest ask's answer lands: the tray's state may have changed between two.
+  let asked = 0;
 
   async function send(): Promise<void> {
+    const mine = ++asked;
     try {
-      available = await deps.send(keepRunning);
+      const answer = await deps.send(keepRunning);
+      if (mine === asked) available = answer;
     } catch (e) {
       // Storybook or a plain browser: no host to tell.
-      available = false;
+      if (mine === asked) available = false;
       console.error("window close behaviour failed", e);
     }
   }
@@ -68,6 +74,10 @@ export function createCloseBehaviour(overrides: Partial<CloseBehaviourDeps> = {}
     /** Reads the stored choice and tells Rust, once, at start. */
     install(): Promise<void> {
       keepRunning = read();
+      return send();
+    },
+    /** The setting is being shown: ask Rust again whether the tray can be seen. */
+    refresh(): Promise<void> {
       return send();
     },
   };

@@ -1002,6 +1002,8 @@
   async function openAccount(): Promise<void> {
     accountOpen = true;
     blockedList = null;
+    // Whether the tray can be seen may have changed since start (a panel extension turned on).
+    void closeBehaviour.refresh();
     // Only the newest opening's answer may land; a failed first load is tried again here.
     const mine = ++accountOpening;
     blockedUsers().then(

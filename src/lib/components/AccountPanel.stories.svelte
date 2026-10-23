@@ -8,6 +8,7 @@
   import { DEFAULT_PREFS } from "$lib/appearance";
 
   import AccountPanel from "./AccountPanel.svelte";
+  import { KEEP_RUNNING_UNAVAILABLE_FOOTER } from "./accountView";
 
   // Plain DOM, as LeaveRoomConfirm.stories does: no `storybook/test` in the bundle.
   const settled = async (find: () => Element | null | undefined, ms = 2000) => {
@@ -160,7 +161,9 @@
   {/snippet}
 </Story>
 
-<!-- No tray here: the switch is disabled and the footnote says closing quits. -->
+<!-- No tray to be seen here: none could be created, or (Linux) no StatusNotifier watcher shows it,
+     as on GNOME without the AppIndicator extension. The switch is disabled and the footnote says
+     closing quits. -->
 <Story
   name="Keep running without a tray"
   args={{ keepRunning: true, trayAvailable: false }}
@@ -169,5 +172,8 @@
     const toggle = (await settled(() => root.querySelector("[role='switch']"))) as HTMLButtonElement;
     if (!toggle.disabled) throw new Error("the switch is not disabled");
     if (toggle.getAttribute("aria-checked") !== "false") throw new Error("a disabled switch must not read on");
+    const section = toggle.closest("section") as HTMLElement;
+    const footnote = section.querySelector("p")?.textContent?.trim();
+    if (footnote !== KEEP_RUNNING_UNAVAILABLE_FOOTER) throw new Error(`the footnote is not the unavailable one: ${footnote}`);
   }}
 />

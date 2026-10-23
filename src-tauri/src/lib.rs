@@ -331,10 +331,12 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             {
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                let poster: Arc<dyn notify::Poster> = Arc::new(notify::XdgPoster::new(
-                    Arc::new(notify::SessionBusBackend::new()),
-                    tx,
-                ));
+                // One session-bus connection: the notifier's, also asked by the tray whether
+                // anything shows it (`tray::refresh_tray_host`).
+                let bus = Arc::new(notify::SessionBusBackend::new());
+                let poster: Arc<dyn notify::Poster> =
+                    Arc::new(notify::XdgPoster::new(Arc::clone(&bus) as _, tx));
+                app.manage(bus);
                 app.manage(poster);
                 app.manage(notify::ActionInbox::new(rx));
                 spawn_action_consumer(app.handle().clone());
@@ -350,7 +352,15 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 app.manage(tray::CloseBehaviour::default());
+                app.manage(tray::TrayHost::default());
                 tray::install(app.handle());
+                // Whether anything shows the tray (Linux): asked once now, off the main thread,
+                // and again whenever the page sends the setting.
+                #[cfg(target_os = "linux")]
+                {
+                    let handle = app.handle().clone();
+                    std::thread::spawn(move || tray::refresh_tray_host(&handle));
+                }
             }
             Ok(())
         })

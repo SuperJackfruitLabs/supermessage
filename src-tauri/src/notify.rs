@@ -475,6 +475,20 @@ mod xdg {
             connection.call_method(Some(destination), path, Some(interface), method, body)
         }
 
+        /// Whether anyone owns the well-known `name` on the session bus now (the bus's own
+        /// `NameHasOwner`), on this backend's connection and bounded by its timeout. Blocks for
+        /// one round trip: never call it on the main thread.
+        pub fn name_has_owner(&self, name: &str) -> zbus::Result<bool> {
+            let connection = self
+                .connection()
+                .ok_or_else(|| zbus::Error::Failure("no session bus".into()))?;
+            let (bus, path) = DBUS;
+            connection
+                .call_method(Some(bus), path, Some(bus), "NameHasOwner", &(name,))?
+                .body()
+                .deserialize::<bool>()
+        }
+
         /// The unique name that owns the server's well-known name now: `Ok(None)` when
         /// the bus says nobody does (the server starts on the first note), an error for
         /// any other failure (a timeout, a refusal), which says nothing about an owner.
@@ -1521,10 +1535,17 @@ mod tests {
             struct Bus {
                 /// Answers taken in turn; once spent, the server is owned by [`OWNER`].
                 script: Arc<Mutex<VecDeque<OwnerReply>>>,
+                /// What `NameHasOwner` answers: whether the name is owned, or `None` to fail.
+                has_owner: Arc<Mutex<Option<bool>>>,
             }
 
             #[zbus::interface(name = "org.freedesktop.DBus")]
             impl Bus {
+                fn name_has_owner(&self, _name: String) -> zbus::fdo::Result<bool> {
+                    (*self.has_owner.lock().unwrap())
+                        .ok_or_else(|| zbus::fdo::Error::Failed("no".into()))
+                }
+
                 fn get_name_owner(&self, _name: String) -> zbus::fdo::Result<String> {
                     match self.script.lock().unwrap().pop_front() {
                         None => Ok(OWNER.into()),
@@ -1543,6 +1564,8 @@ mod tests {
                 pub held: Arc<AtomicU32>,
                 /// What `GetNameOwner` answers next; set before the first call.
                 pub owner_script: Arc<Mutex<VecDeque<OwnerReply>>>,
+                /// What `NameHasOwner` answers; `None` fails the call.
+                pub has_owner: Arc<Mutex<Option<bool>>>,
                 server: std::thread::JoinHandle<zbus::blocking::Connection>,
             }
 
@@ -1558,8 +1581,10 @@ mod tests {
                     next: AtomicU32::new(0),
                 };
                 let owner_script = Arc::new(Mutex::new(VecDeque::new()));
+                let has_owner = Arc::new(Mutex::new(Some(true)));
                 let bus = Bus {
                     script: Arc::clone(&owner_script),
+                    has_owner: Arc::clone(&has_owner),
                 };
                 let server = std::thread::spawn(move || {
                     zbus::blocking::connection::Builder::async_io_unix_stream(server)
@@ -1590,6 +1615,7 @@ mod tests {
                         hung,
                         held,
                         owner_script,
+                        has_owner,
                         server,
                     },
                 )
@@ -1693,6 +1719,27 @@ mod tests {
                 "after one timeout, not one per note (five would take five): {:?}",
                 started.elapsed()
             );
+        }
+
+        /// The tray's watcher probe over the real backend and a fake bus: an owner means the
+        /// tray can be seen, no owner means it cannot, and a failed call keeps it available.
+        #[test]
+        fn the_status_notifier_watcher_probe_reads_the_bus() {
+            use crate::tray::{probe_watcher, WatcherProbe};
+            for (answer, expected) in [
+                (Some(true), WatcherProbe::Owned),
+                (Some(false), WatcherProbe::NoOwner),
+                (None, WatcherProbe::Failed),
+            ] {
+                let (backend, peer) = peer::start(Duration::from_secs(5));
+                *peer.has_owner.lock().unwrap() = answer;
+                assert_eq!(
+                    probe_watcher(&backend),
+                    expected,
+                    "the bus answered {answer:?}"
+                );
+                drop(peer.connected());
+            }
         }
 
         /// A poster over the fake bus whose `GetNameOwner` answers follow `script`.

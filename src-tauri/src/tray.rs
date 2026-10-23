@@ -13,8 +13,12 @@
 //!   never a second hand-drawn image, in the **dark** theme's `signal`: a panel's theme is
 //!   unknown, and the brighter amber reads on a light and a dark panel alike.
 //! - **The tray can fail to exist.** On Linux it needs libayatana-appindicator (or
-//!   libappindicator) at runtime, which may not be installed, and GNOME shows nothing
-//!   without its AppIndicator extension. [`install`] logs and carries on without one.
+//!   libappindicator) at runtime, which may not be installed. [`install`] logs and carries
+//!   on without one.
+//! - **A tray can exist and show nothing.** GNOME without its AppIndicator extension runs no
+//!   `org.kde.StatusNotifierWatcher`, so the item is created and nobody displays it. On Linux
+//!   the tray counts as available only when the session bus has an owner for that name
+//!   ([`probe_watcher`]); where it has none, "keep running" is unavailable, as with no tray.
 //!
 //! It is built from Rust only and the webview is granted no tray permission.
 
@@ -283,6 +287,110 @@ impl CloseBehaviour {
     }
 }
 
+/// The well-known name of the StatusNotifier watcher, which a panel that shows tray items
+/// (KDE, GNOME's AppIndicator extension) owns.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub const STATUS_NOTIFIER_WATCHER: &str = "org.kde.StatusNotifierWatcher";
+
+/// What the session bus said about [`STATUS_NOTIFIER_WATCHER`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub enum WatcherProbe {
+    /// Someone owns it: a panel can show the tray.
+    Owned,
+    /// Nobody owns it: the tray item exists and nothing shows it.
+    NoOwner,
+    /// The bus did not answer (no bus, a timeout, a refusal). Says nothing either way.
+    Failed,
+}
+
+/// Asks a session bus whether a well-known name has an owner.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub trait NameOwners {
+    fn name_has_owner(&self, name: &str) -> Result<bool, String>;
+}
+
+#[cfg(target_os = "linux")]
+impl NameOwners for crate::notify::SessionBusBackend {
+    fn name_has_owner(&self, name: &str) -> Result<bool, String> {
+        crate::notify::SessionBusBackend::name_has_owner(self, name).map_err(|e| e.to_string())
+    }
+}
+
+/// Asks `bus` whether a StatusNotifier watcher runs. Blocks for one bus round trip.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn probe_watcher(bus: &impl NameOwners) -> WatcherProbe {
+    match bus.name_has_owner(STATUS_NOTIFIER_WATCHER) {
+        Ok(true) => WatcherProbe::Owned,
+        Ok(false) => WatcherProbe::NoOwner,
+        Err(error) => {
+            tracing::warn!(%error, "could not ask the session bus for a tray watcher; assuming the tray shows");
+            WatcherProbe::Failed
+        }
+    }
+}
+
+/// Whether the tray can be seen: it was created, and (Linux) the bus did not say that nothing
+/// shows it. A failed probe keeps the tray available, which is how the app behaved before it
+/// asked.
+pub fn tray_shown(tray_exists: bool, watcher: WatcherProbe) -> bool {
+    tray_exists && watcher != WatcherProbe::NoOwner
+}
+
+/// The last watcher probe's answer, for the close handler. Until a probe answers, the tray
+/// counts as shown.
+pub struct TrayHost {
+    watcher: std::sync::Mutex<WatcherProbe>,
+}
+
+impl Default for TrayHost {
+    fn default() -> Self {
+        Self {
+            watcher: std::sync::Mutex::new(WatcherProbe::Failed),
+        }
+    }
+}
+
+impl TrayHost {
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub fn record(&self, probe: WatcherProbe) {
+        *self.watcher.lock().unwrap_or_else(|e| e.into_inner()) = probe;
+    }
+
+    pub fn watcher(&self) -> WatcherProbe {
+        *self.watcher.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Whether this app's tray can be seen now, by the last probe ([`tray_shown`]).
+pub fn tray_available<R: Runtime>(app: &AppHandle<R>) -> bool {
+    let watcher = app
+        .try_state::<TrayHost>()
+        .map_or(WatcherProbe::Failed, |host| host.watcher());
+    tray_shown(app.try_state::<TauriTray<R>>().is_some(), watcher)
+}
+
+/// Asks the session bus again whether a watcher runs, and records the answer (Linux, with a
+/// tray). One bus round trip on the notifier's connection, bounded by its timeout: call it off
+/// the main thread. Elsewhere it does nothing, and the tray counts as shown when it exists.
+pub fn refresh_tray_host<R: Runtime>(app: &AppHandle<R>) {
+    #[cfg(target_os = "linux")]
+    {
+        if app.try_state::<TauriTray<R>>().is_none() {
+            return;
+        }
+        let (Some(host), Some(bus)) = (
+            app.try_state::<TrayHost>(),
+            app.try_state::<std::sync::Arc<crate::notify::SessionBusBackend>>(),
+        ) else {
+            return;
+        };
+        host.record(probe_watcher(&**bus));
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = app;
+}
+
 /// What the app says the first time its window hides to the tray. Short and plain, no iOS
 /// counterpart and none in the core *(desktop-only copy)*.
 /// The body names no place the app "stays": on GNOME without the AppIndicator extension the tray
@@ -354,10 +462,9 @@ pub fn handle_close_requested<R: Runtime>(window: &tauri::Window<R>, api: &tauri
     let Some(behaviour) = app.try_state::<CloseBehaviour>() else {
         return;
     };
-    let tray_exists = app.try_state::<TauriTray<R>>().is_some();
     on_close_request(
         behaviour.keep_running(),
-        tray_exists,
+        tray_available(app),
         &behaviour,
         &Target(window, api),
         || {
@@ -378,14 +485,17 @@ pub fn effective_close(chosen: bool, tray_exists: bool) -> CloseAction {
 }
 
 /// The page tells Rust whether the reader wants the app to keep running when the window is
-/// closed. Returns whether it can: false where the tray could not be created, and then closing
-/// still quits.
+/// closed, at start, on every change and each time the setting is shown. Returns whether it
+/// can: false where the tray could not be created or (Linux) nothing shows it, and then closing
+/// still quits. Async, so the watcher probe's bus round trip runs off the main thread.
 #[tauri::command]
-pub fn window_close_behaviour<R: Runtime>(keep_running: bool, app: AppHandle<R>) -> bool {
+pub async fn window_close_behaviour<R: Runtime>(keep_running: bool, app: AppHandle<R>) -> bool {
     if let Some(setting) = app.try_state::<CloseBehaviour>() {
         setting.set(keep_running);
     }
-    app.try_state::<TauriTray<R>>().is_some()
+    let probing = app.clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || refresh_tray_host(&probing)).await;
+    tray_available(&app)
 }
 
 /// What a menu choice does to the app.
@@ -584,13 +694,72 @@ mod tests {
     fn with_no_tray_the_setting_is_ignored_and_closing_quits() {
         let app = tauri::test::mock_app();
         app.manage(CloseBehaviour::default());
-        let can = window_close_behaviour(true, app.handle().clone());
+        let can =
+            tauri::async_runtime::block_on(window_close_behaviour(true, app.handle().clone()));
         assert!(!can, "the page is told it cannot keep running");
         assert!(
             app.state::<CloseBehaviour>().keep_running(),
             "the choice is remembered"
         );
         assert_eq!(effective_close(true, false), CloseAction::Close);
+    }
+
+    #[test]
+    fn the_tray_is_shown_when_it_exists_unless_the_bus_says_nobody_shows_it() {
+        assert!(tray_shown(true, WatcherProbe::Owned), "an owner: available");
+        assert!(
+            !tray_shown(true, WatcherProbe::NoOwner),
+            "no owner: unavailable"
+        );
+        assert!(
+            tray_shown(true, WatcherProbe::Failed),
+            "a failed probe: available"
+        );
+        for probe in [
+            WatcherProbe::Owned,
+            WatcherProbe::NoOwner,
+            WatcherProbe::Failed,
+        ] {
+            assert!(!tray_shown(false, probe), "no tray at all: unavailable");
+        }
+    }
+
+    struct Bus(Result<bool, String>);
+    impl NameOwners for Bus {
+        fn name_has_owner(&self, name: &str) -> Result<bool, String> {
+            assert_eq!(name, STATUS_NOTIFIER_WATCHER);
+            self.0.clone()
+        }
+    }
+
+    #[test]
+    fn the_probe_maps_the_buss_answer() {
+        assert_eq!(probe_watcher(&Bus(Ok(true))), WatcherProbe::Owned);
+        assert_eq!(probe_watcher(&Bus(Ok(false))), WatcherProbe::NoOwner);
+        assert_eq!(
+            probe_watcher(&Bus(Err("timeout".into()))),
+            WatcherProbe::Failed
+        );
+    }
+
+    #[test]
+    fn with_no_watcher_recorded_the_setting_is_ignored() {
+        let host = TrayHost::default();
+        assert_eq!(
+            host.watcher(),
+            WatcherProbe::Failed,
+            "until a probe answers, available"
+        );
+        host.record(WatcherProbe::NoOwner);
+        assert_eq!(
+            effective_close(true, tray_shown(true, host.watcher())),
+            CloseAction::Close
+        );
+        host.record(WatcherProbe::Owned);
+        assert_eq!(
+            effective_close(true, tray_shown(true, host.watcher())),
+            CloseAction::Hide
+        );
     }
 
     #[derive(Default)]
