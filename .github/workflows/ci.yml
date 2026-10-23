@@ -954,20 +954,25 @@ jobs:
     steps:
       - name: Every Android job succeeded
         env:
-          RESULTS: ${{ toJson(needs.*.result) }}
+          LIBS: ${{ needs.android-libs.result }}
+          AVD: ${{ needs.android-avd.result }}
+          UNIT: ${{ needs.android-unit.result }}
+          SHARDS: ${{ needs.android-instrumented.result }}
+          APKS: ${{ needs.android-apks.result }}
         run: |
-          echo "$RESULTS"
-          # android-apks is legitimately skipped on pull requests; every other
-          # job must have succeeded.
-          if echo "$RESULTS" | grep -Eq 'failure|cancelled'; then
-            echo "::error::an Android job did not succeed"
+          echo "libs=$LIBS avd=$AVD unit=$UNIT shards=$SHARDS apks=$APKS"
+          # These four always run when Android paths changed: success only.
+          for r in "$LIBS" "$AVD" "$UNIT" "$SHARDS"; do
+            if [ "$r" != success ]; then
+              echo "::error::an Android job did not succeed ($r)"
+              exit 1
+            fi
+          done
+          # android-apks is skipped on pull requests by design.
+          if [ "$APKS" != success ] && [ "$APKS" != skipped ]; then
+            echo "::error::android-apks $APKS"
             exit 1
           fi
-          if [ "$(echo "$RESULTS" | grep -c success)" -lt 6 ]; then
-            echo "::error::an Android job was skipped"
-            exit 1
-          fi
-
 
   licences:
     name: Dependency licences
