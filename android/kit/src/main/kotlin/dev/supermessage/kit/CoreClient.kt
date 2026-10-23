@@ -94,11 +94,29 @@ import uniffi.supermessage_ffi.TimelineSnapshot
 class CoreClient(
     private val core: CoreInterface,
     internal val dispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /**
+     * Where the caller resumes once the call returns or throws; `null` is wherever its own
+     * dispatcher puts it. The app passes nothing: its callers run on the main thread
+     * (`viewModelScope`, Compose's own dispatcher), so they come back there anyway.
+     *
+     * A Compose UI test is the exception. Its effects run on an unconfined test dispatcher, so a
+     * caller resumes on the thread that finished the call — an IO worker — and that worker goes on
+     * to apply the state it writes and draw a whole frame. The first `LazyColumn` composed there
+     * asks for the worker's `Choreographer`, which it does not have ("The current thread must have
+     * a looper!", `RosterReachabilityTest` on CI, 2026-10-23). A test over a real thread pool
+     * passes `Dispatchers.Main.immediate` here, so its callers come back to the main thread as the
+     * app's do.
+     */
+    private val resumeOn: CoroutineDispatcher? = null,
 ) {
 
-    /** Run one blocking call on [dispatcher]. */
-    private suspend fun <T> run(body: (CoreInterface) -> T): T =
-        withContext(dispatcher) { body(core) }
+    /** Run one blocking call on [dispatcher], and come back on [resumeOn] when one is given. */
+    private suspend fun <T> run(body: (CoreInterface) -> T): T {
+        val resume = resumeOn ?: return withContext(dispatcher) { body(core) }
+        // The outer switch is what the inner one returns to: the result, or the exception, reaches
+        // the caller from `resume`'s thread rather than from the worker's.
+        return withContext(resume) { withContext(dispatcher) { body(core) } }
+    }
 
     // MARK: - Session
 

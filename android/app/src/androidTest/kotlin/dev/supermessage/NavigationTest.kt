@@ -157,7 +157,7 @@ class NavigationTest {
     }
 
     private fun sessionOf(core: Core, dispatcher: CoroutineDispatcher = Dispatchers.Unconfined) =
-        Session(client = CoreClient(core = core, dispatcher = dispatcher), scope = CoroutineScope(Dispatchers.Unconfined))
+        Session(client = CoreClient(core = core, dispatcher = dispatcher, resumeOn = resumeOnMainFor(dispatcher)), scope = CoroutineScope(Dispatchers.Unconfined))
 
     private fun preferences(): RosterPreferences {
         val file = File.createTempFile("navigation", ".preferences_pb")

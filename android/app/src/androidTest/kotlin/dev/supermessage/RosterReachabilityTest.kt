@@ -39,6 +39,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import androidx.compose.runtime.LaunchedEffect
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -86,7 +87,7 @@ class RosterReachabilityTest {
     @get:Rule val compose = createComposeRule()
 
     private fun sessionOf(core: CoreInterface, dispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Unconfined): Session =
-        Session(client = CoreClient(core = core, dispatcher = dispatcher), scope = CoroutineScope(Dispatchers.Unconfined))
+        Session(client = CoreClient(core = core, dispatcher = dispatcher, resumeOn = resumeOnMainFor(dispatcher)), scope = CoroutineScope(Dispatchers.Unconfined))
 
     /** A `RosterPreferences` over a real, throwaway `DataStore` — no `Context` needed. */
     private fun preferences(): RosterPreferences {
@@ -749,8 +750,20 @@ class RosterReachabilityTest {
         )
         val session = sessionOf(fake, Dispatchers.IO)
         val prefs = preferences()
+        // The session's state reaching the composition off the main thread is what failed this test
+        // on CI: the IO worker that wrote it went on to draw a frame, and the roster's LazyColumn
+        // asked it for a Choreographer it does not have. Counted, so a regression fails here every
+        // time rather than when the worker happens to win the race for the frame.
+        val offMain = java.util.concurrent.atomic.AtomicInteger(0)
+        val mainLooper = android.os.Looper.getMainLooper()
 
         compose.setContent {
+            LaunchedEffect(Unit) {
+                session.phase.collect { if (android.os.Looper.myLooper() != mainLooper) offMain.incrementAndGet() }
+            }
+            LaunchedEffect(Unit) {
+                session.rooms.rooms.collect { if (android.os.Looper.myLooper() != mainLooper) offMain.incrementAndGet() }
+            }
             // Two panes: the roster stays beside the room, so the pane is
             // reused across the switch and only the room id changes. On a
             // phone the pane leaves composition and forgets anything.
@@ -777,6 +790,7 @@ class RosterReachabilityTest {
         }
         compose.waitForIdle()
         compose.onAllNodesWithText("4 members").assertCountEquals(0)
+        assertEquals("the session's state reached the composition off the main thread", 0, offMain.get())
         stalled.countDown()
     }
 

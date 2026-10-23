@@ -103,7 +103,7 @@ class DeepLinkTest {
 
     private fun show(core: Core, shell: Modifier = phone()) {
         val session = Session(
-            client = CoreClient(core = core, dispatcher = Dispatchers.IO),
+            client = CoreClient(core = core, dispatcher = Dispatchers.IO, resumeOn = Dispatchers.Main.immediate),
             scope = CoroutineScope(Dispatchers.Unconfined),
         )
         val file = File.createTempFile("deeplink", ".preferences_pb")

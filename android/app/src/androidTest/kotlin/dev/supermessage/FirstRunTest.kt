@@ -114,7 +114,7 @@ class FirstRunTest {
         } as CoreInterface
 
     private fun sessionOf(core: Core) = Session(
-        client = CoreClient(core = recording(core), dispatcher = Dispatchers.IO),
+        client = CoreClient(core = recording(core), dispatcher = Dispatchers.IO, resumeOn = Dispatchers.Main.immediate),
         scope = CoroutineScope(Dispatchers.Unconfined),
     )
 
