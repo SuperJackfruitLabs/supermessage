@@ -48,8 +48,9 @@ const ICON_PNG: &[u8] = include_bytes!("../icons/32x32.png");
 
 /// macOS's menu bar recolours a template image by its alpha alone, and the app icon is an
 /// opaque rounded square, which would show as a blob. This is the mark itself, black on
-/// transparent at 64 px (two points per pixel), with the top-right corner left free for the
-/// dot. Made by `assets/build-tray-template.py`.
+/// transparent at 64 px (`tray-icon` scales it to the bar's 18 pt height, about 3.6 px a
+/// point), with the top-right corner left free for the dot. Made by
+/// `assets/build-tray-template.py`.
 #[cfg(target_os = "macos")]
 const ICON_PNG: &[u8] = include_bytes!("../tray/template@2x.png");
 
@@ -215,7 +216,16 @@ impl<R: Runtime> TrayView for TauriTray<R> {
 
     fn set_dot(&self, on: bool) {
         let icon = if on { &self.dotted } else { &self.plain };
-        if let Err(error) = self.icon.set_icon(Some(icon.clone())) {
+        // On macOS `set_icon` drops the template flag (`tray-icon` 0.24 passes
+        // `icon_is_template: false`), and the glyph would be drawn black on a dark menu bar.
+        // This sets the image and the flag together, so the bar never shows it untinted.
+        #[cfg(target_os = "macos")]
+        let set = self
+            .icon
+            .set_icon_with_as_template(Some(icon.clone()), true);
+        #[cfg(not(target_os = "macos"))]
+        let set = self.icon.set_icon(Some(icon.clone()));
+        if let Err(error) = set {
             tracing::warn!(%error, "could not update the tray icon");
         }
     }
