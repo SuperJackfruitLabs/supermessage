@@ -4,9 +4,11 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -59,6 +61,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.supermessage.kit.AppLink
+import dev.supermessage.kit.NavigationRequests
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.RosterChoice
 import dev.supermessage.kit.Session
@@ -85,8 +89,13 @@ private val Context.rosterDataStore: DataStore<Preferences> by preferencesDataSt
 private val Context.appearanceDataStore: DataStore<Preferences> by preferencesDataStore(name = "appearance")
 
 class MainActivity : ComponentActivity() {
+    private val model: SessionViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A recreated Activity is handed the Intent it was first started with: that link was
+        // already taken (or is still held by the view model), so it is not asked for again.
+        if (savedInstanceState == null) takeLink(intent)
         val appearance = AppearancePreferences(applicationContext.appearanceDataStore)
         // Read before `setContent`, so the first frame is drawn in the stored
         // choice rather than in the house palette and then repainted (iOS:
@@ -128,10 +137,29 @@ class MainActivity : ComponentActivity() {
                         LaunchedEffect(Unit) { applyDebugLaunch(intent, firstRun) }
                     }
 
-                    AppRoot(session = vm.session, prefs = prefs, appearance = appearance, firstRun = firstRun)
+                    AppRoot(
+                        session = vm.session,
+                        prefs = prefs,
+                        appearance = appearance,
+                        firstRun = firstRun,
+                        requests = vm.requests,
+                    )
                 }
             }
         }
+    }
+
+    /** A link opened while the app is running (the manifest's singleTop delivers it here). */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        takeLink(intent)
+    }
+
+    /** `supermessage://open?room=` becomes a request for that room; anything else does nothing. */
+    private fun takeLink(intent: Intent?) {
+        val room = intent?.data?.toString()?.let(AppLink::roomId) ?: return
+        model.requests.request(room)
     }
 }
 
@@ -165,7 +193,10 @@ internal fun AppRoot(
     appearance: AppearancePreferences? = null,
     /** The welcome and the first-run demo; `null` is no onboarding at all (a test not about it). */
     firstRun: FirstRunPreferences? = null,
+    /** Rooms asked for from outside; `null` is none (a test not about links). */
+    requests: NavigationRequests? = null,
 ) {
+    val requests = requests ?: remember { NavigationRequests() }
     val phase by session.phase.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         if (phase == Session.Phase.STARTING) session.start()
@@ -238,6 +269,18 @@ internal fun AppRoot(
     // Which of the four places the list pane shows. Per session, saved across a
     // rotation, and back to Chats on sign-out so the next account never opens on
     // the last one's Needs you.
+    // A link made before sign-in waits for it; one still pending when the account signs out was the
+    // last account's and is dropped (Review Focus 1).
+    var wasSignedIn by remember { mutableStateOf(false) }
+    LaunchedEffect(phase) {
+        if (phase == Session.Phase.SIGNED_IN) {
+            wasSignedIn = true
+        } else if (phase == Session.Phase.SIGNED_OUT && wasSignedIn) {
+            wasSignedIn = false
+            requests.clear()
+        }
+    }
+
     var destination by rememberSaveable(session) { mutableStateOf(Destination.CHATS) }
     // The search term lives here, not in the panel: the list pane is recomposed on
     // the way back from a result, and the term has to be there when it is.
@@ -349,6 +392,24 @@ internal fun AppRoot(
                 session.rooms.select(roomId)
                 scope.launch { session.open(roomId) }
                 openDetail()
+            }
+            // A room asked for from outside, honoured once the roster is there: always in Chats, so
+            // Back lands somewhere that lists it (PhoneShell.swift:72-80). The core is asked even when
+            // the roster has no row for it; the detail pane opens only for a room the roster shows.
+            val asked by requests.pending.collectAsStateWithLifecycle()
+            LaunchedEffect(asked, phase, loaded) {
+                if (asked == null || phase != Session.Phase.SIGNED_IN || !loaded) return@LaunchedEffect
+                val roomId = requests.consume() ?: return@LaunchedEffect
+                destination = Destination.CHATS
+                if (rooms.any { it.room.id == roomId }) {
+                    openRoom(roomId)
+                } else {
+                    // Not in this effect: consuming changes `asked`, which restarts (cancels) it.
+                    scope.launch {
+                        session.open(roomId)
+                        session.closeRoom()
+                    }
+                }
             }
             val railed = LocalNavigationRail.current
             Column(Modifier.fillMaxSize()) {

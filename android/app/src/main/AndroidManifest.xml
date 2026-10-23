@@ -54,10 +54,22 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!--
+              supermessage://open?room=<id>: the link iOS registers (Info.plist) and
+              its widgets build. singleTop, so a link opened while the app runs reaches
+              onNewIntent instead of stacking a second Activity over the session.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="supermessage" android:host="open" />
             </intent-filter>
         </activity>
     </application>

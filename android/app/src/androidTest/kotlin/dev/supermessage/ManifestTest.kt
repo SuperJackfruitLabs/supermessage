@@ -43,4 +43,19 @@ class ManifestTest {
             declared.contains(android.Manifest.permission.INTERNET),
         )
     }
+
+    /**
+     * `supermessage://open?room=` is the link iOS registers and its widgets build. Without the
+     * filter the system finds no app for it and a tap on one does nothing.
+     */
+    @Test
+    fun theLinkResolvesToTheApp() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val link = android.content.Intent(
+            android.content.Intent.ACTION_VIEW,
+            android.net.Uri.parse("supermessage://open?room=%21a%3Ax"),
+        ).addCategory(android.content.Intent.CATEGORY_BROWSABLE).setPackage(context.packageName)
+        val found = context.packageManager.queryIntentActivities(link, 0).map { it.activityInfo.name }
+        assertTrue("MainActivity is not offered the link: $found", found.contains("dev.supermessage.MainActivity"))
+    }
 }

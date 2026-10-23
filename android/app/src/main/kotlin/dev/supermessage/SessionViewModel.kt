@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.supermessage.kit.CoreClient
+import dev.supermessage.kit.NavigationRequests
 import dev.supermessage.kit.Session
 import dev.supermessage.kit.stores.HiddenEventStorage
 import dev.supermessage.kit.stores.InMemoryHiddenEvents
@@ -63,6 +64,12 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
      * once a test-only teardown ran — it passed by exercising the test
      * harness, not this method, and it was removed once that was noticed.
      */
+    /**
+     * Rooms asked for from outside (a `supermessage://` link). Held here, not in the Activity, so
+     * a link that has not been shown yet survives the Activity being recreated.
+     */
+    val requests = NavigationRequests()
+
     override fun onCleared() {
         super.onCleared()
     }
