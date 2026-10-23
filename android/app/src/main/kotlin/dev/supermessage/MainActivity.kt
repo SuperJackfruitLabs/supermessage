@@ -1,5 +1,6 @@
 package dev.supermessage
 
+import android.Manifest
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
@@ -8,7 +9,14 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import dev.supermessage.notify.PlatformCoordinator
+import dev.supermessage.notify.PushStatus
+import dev.supermessage.notify.askForPush
+import androidx.core.app.NotificationManagerCompat
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -90,13 +98,40 @@ private val Context.rosterDataStore: DataStore<Preferences> by preferencesDataSt
 private val Context.appearanceDataStore: DataStore<Preferences> by preferencesDataStore(name = "appearance")
 
 class MainActivity : ComponentActivity() {
+    /**
+     * Registered before the Activity is STARTED, as the contract requires. The
+     * answer is not acted on: a refusal is the reader's to make, and the
+     * system remembers it.
+     */
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            coordinator?.permissionAnswered(granted)
+        }
+
+    private var coordinator: PlatformCoordinator? = null
+
     private val model: SessionViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // A recreated Activity is handed the Intent it was first started with: that link was
-        // already taken (or is still held by the view model), so it is not asked for again.
+        // A recreated Activity is handed the Intent it was first started with: that link (or
+        // notification tap) was already taken, or is still held by the view model, so it is not
+        // asked for again.
         if (savedInstanceState == null) takeLink(intent)
+        model.startNotifications()
+        // Start and stop of the Activity are the app coming forward and going
+        // away (iOS `scenePhase`); the notification lifecycle follows them.
+        lifecycle.addObserver(ScenePhaseObserver { active -> model.notifications.activeChanged(active) })
+        val registrar = AppCore.registrar(this)
+        val coordinator = PlatformCoordinator(
+            context = this,
+            session = model.session,
+            permissionLauncher = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
+            askForPush = { askForPush(this, registrar) },
+        ).also { coordinator = it }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) { coordinator.run() }
+        }
         val appearance = AppearancePreferences(applicationContext.appearanceDataStore)
         // Read before `setContent`, so the first frame is drawn in the stored
         // choice rather than in the house palette and then repainted (iOS:
@@ -150,14 +185,20 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** A link opened while the app is running (the manifest's singleTask delivers it here). */
+    /**
+     * A link, or a notification tap, while the app is running: the manifest's singleTask delivers
+     * both here. A tap is the same `supermessage://open?room=` link (`AndroidPoster.openRoomUri`).
+     */
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         takeLink(intent)
     }
 
-    /** `supermessage://open?room=` becomes a request for that room; anything else does nothing. */
+    /**
+     * `supermessage://open?room=` (a link, or a notification's tap) becomes a request for that
+     * room; anything else does nothing. A room the roster does not list is AppRoot's to refuse.
+     */
     private fun takeLink(intent: Intent?) {
         val room = linkedRoom(intent) ?: return
         model.requests.request(room)
@@ -589,6 +630,7 @@ internal fun AppRoot(
                     }
 
                     ExtraPanel.Account -> {
+                        val notifications = rememberPushStatus()
                         val blockedNow by session.safety.blocked.collectAsStateWithLifecycle()
                         val storedView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
                         val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
@@ -621,6 +663,7 @@ internal fun AppRoot(
                             blockedNow = blockedNow,
                             loadBlocked = session::loadBlockedUsers,
                             onUnblock = session::unblock,
+                            notifications = notifications,
                         )
                     }
 
@@ -728,3 +771,20 @@ internal fun Modifier.shownOnlyIf(shown: Boolean): Modifier =
                 layout(0, 0) {}
             }
     }
+
+/**
+ * What Account → Notifications says: "turned off" when the app may not
+ * notify at all (looked at again on each resume, since the reader changes it
+ * in Settings), otherwise the push registrar's state.
+ */
+@Composable
+private fun rememberPushStatus(): PushStatus? {
+    val context = LocalContext.current
+    val registrar = remember { AppCore.registrar(context) }
+    val push by registrar.status.collectAsStateWithLifecycle()
+    var enabled by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        enabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+    return if (!enabled) PushStatus.NotificationsOff else push
+}

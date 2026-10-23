@@ -13,6 +13,20 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!--
+      M6 Android Task 1. Notifications need a runtime grant from API 33; on 31
+      and 32 they are allowed without one. The ask happens after a fresh
+      sign-in, never at launch (PlatformCoordinator, shouldAskForNotifications).
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!--
+      M6 Android Task 5. Voice messages record from the microphone. A runtime
+      permission, asked for the first time the reader taps or holds the mic,
+      never at launch.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!--
       Theme.Material3.DayNight.NoActionBar lives in com.google.android.material,
       not a declared dependency here, so AAPT fails to resolve it — and that
       dependency stays undeclared: this project has been bitten twice by an
@@ -79,5 +93,28 @@
                 <data android:scheme="supermessage" android:host="open" />
             </intent-filter>
         </activity>
+
+        <!--
+          M6 Android Task 3. Answers from a notification's buttons. Not
+          exported: only this app's own PendingIntents reach it.
+        -->
+        <receiver
+            android:name=".notify.NotificationActionReceiver"
+            android:exported="false" />
+
+        <!--
+          M6 Android Task 4. Background push over UnifiedPush: the connector's
+          own exported receiver takes the distributor's broadcasts and binds
+          this service in-app, so it is not exported. No android:process,
+          deliberately: a second process would load a second native library
+          and open a second core over the same store (ManifestTest).
+        -->
+        <service
+            android:name=".notify.SupermessagePushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>

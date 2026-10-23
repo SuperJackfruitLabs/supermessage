@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The test APK only. A stand-in UnifiedPush distributor for FakeDistributorTest:
+  it answers REGISTER per the UnifiedPush Android spec
+  (unifiedpush.org/developers/spec/android) with NEW_ENDPOINT, then MESSAGE.
+  Its endpoint's host is .invalid, which never resolves, so nothing it hands
+  the app can become a real pusher.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="dev.supermessage" />
+    </queries>
+
+    <application>
+        <receiver
+            android:name="dev.supermessage.FakeDistributor"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.distributor.REGISTER" />
+                <action android:name="org.unifiedpush.android.distributor.UNREGISTER" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

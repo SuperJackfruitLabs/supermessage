@@ -41,6 +41,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import dev.supermessage.notify.PushStatus
+import dev.supermessage.notify.words
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.RoomMemberDto
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -121,6 +123,11 @@ fun AccountPanel(
     blockedNow: Set<String>? = null,
     /** Only for a preview of the refused state. */
     initialUnblockFailure: String? = null,
+    /**
+     * Whether background push is on, and if not why (Q1/Q2) *(no iOS copy)*.
+     * `null` (not yet known) shows no Notifications section.
+     */
+    notifications: PushStatus? = null,
 ) {
     var account by remember { mutableStateOf<AccountDto?>(null) }
     var confirmingSignOut by remember { mutableStateOf(false) }
@@ -221,6 +228,8 @@ fun AccountPanel(
             }
 
             appearance()
+
+            notifications?.let { NotificationsRow(it) }
 
             AccountSectionHeader("Chats")
             Column(Modifier.selectableGroup()) {
@@ -440,6 +449,25 @@ private fun accountName(account: AccountDto?): String {
 private const val SupportUrl = "https://supermessage.dev/support/"
 private const val TermsUrl = "https://supermessage.dev/terms/"
 private const val PrivacyUrl = "https://supermessage.dev/privacy/"
+
+/**
+ * Account → Notifications: one line saying whether notifications reach this
+ * phone while supermessage is closed (owner decisions Q1/Q2) *(no iOS copy:
+ * iOS has no distributor to be missing)*. Never a prompt. It wraps rather
+ * than truncates: at font scale 2 the "Off" reasons run to several lines.
+ */
+@Composable
+internal fun NotificationsRow(status: PushStatus) {
+    AccountSectionHeader("Notifications")
+    Text(
+        status.words(),
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .testTag("account-notifications"),
+    )
+}
 
 /** A section's title: `labelMedium` in `contentMuted`. */
 @Composable

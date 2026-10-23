@@ -1,13 +1,16 @@
 package dev.supermessage.kit
 
+import dev.supermessage.kit.notify.NotificationAnswering
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.supermessage_core.Acknowledgement
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_core.NotificationDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlayableAudio
+import uniffi.supermessage_core.PushRegistration
 import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.RoomInfoDto
 import uniffi.supermessage_core.RoomMemberDto
@@ -108,7 +111,7 @@ class CoreClient(
      * app's do.
      */
     private val resumeOn: CoroutineDispatcher? = null,
-) {
+) : NotificationAnswering {
 
     /** Run one blocking call on [dispatcher], and come back on [resumeOn] when one is given. */
     private suspend fun <T> run(body: (CoreInterface) -> T): T {
@@ -253,6 +256,37 @@ class CoreClient(
         run { it.setRoomPinned(roomId, pinned) }
     }
 
+    // MARK: - Notifications and push
+
+    /**
+     * Restores the stored session without starting the sync or touching the
+     * UI sink: what a background process (a notification action, a push) may
+     * safely do. Returns whether a session was restored.
+     */
+    override suspend fun restoreSessionQuietly(): Boolean = run { it.restoreSessionQuietly() }
+
+    suspend fun notificationFor(roomId: String, eventId: String): NotificationDto =
+        run { it.notificationFor(roomId, eventId) }
+
+    suspend fun registerPusher(registration: PushRegistration) {
+        run { it.registerPusher(registration) }
+    }
+
+    suspend fun unregisterPusher() {
+        run { it.unregisterPusher() }
+    }
+
+    override suspend fun sendGateDecisionTo(
+        roomId: String,
+        gateId: String,
+        optionId: String,
+        comment: String?,
+        inReplyTo: String,
+        prompt: String,
+    ) {
+        run { it.sendGateDecisionTo(roomId, gateId, optionId, comment, inReplyTo, prompt) }
+    }
+
     // MARK: - Block and report
 
     suspend fun ignoreUser(userId: String) {
@@ -312,7 +346,7 @@ class CoreClient(
      * Answer an agent's permission request with one of its option ids. A
      * permission request has no gate; the core resolves it from the room.
      */
-    suspend fun sendPermissionAnswer(roomId: String, optionId: String) {
+    override suspend fun sendPermissionAnswer(roomId: String, optionId: String) {
         run { it.sendPermissionAnswer(roomId, optionId) }
     }
 
@@ -337,6 +371,10 @@ class CoreClient(
 
     suspend fun attachmentStagePath(roomId: String, path: String): StagedFile =
         run { it.attachmentStagePath(roomId, path) }
+
+    suspend fun attachmentMarkVoice(roomId: String, token: String, durationMs: ULong, waveform: List<Float>) {
+        run { it.attachmentMarkVoice(roomId, token, durationMs, waveform) }
+    }
 
     suspend fun attachmentSend(roomId: String, token: String, caption: String?): AttachmentSendOutcome =
         run { it.attachmentSend(roomId, token, caption) }

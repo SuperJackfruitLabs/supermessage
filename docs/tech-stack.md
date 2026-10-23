@@ -106,7 +106,7 @@ Rules:
 - **Sync:** Simplified Sliding Sync (MSC4186) via the SDK's SyncService (native in Synapse ≥1.114; `org.matrix.simplified_msc3575` advertised on `id.agentpod.dev`); `/sync` v3 fallback for older servers.
 - **E2EE:** SDK crypto (vodozemac). Cross-signing, SSSS key backup, emoji/SAS device verification. Never hand-roll crypto.
 - **Media:** authenticated media endpoints (spec ≥1.11; available on `id.agentpod.dev`).
-- **Push:** `event_id_only` pushes via own Sygnal → FCM/APNs; app fetches and decrypts content itself. iOS phase 2: Notification Service Extension in Swift linking the Rust SDK (Element X NSE as reference).
+- **Push:** `event_id_only` pushes; the app fetches and decrypts content itself through `Core::notification_for`. iOS: the AgentPod hub's own gateway → APNs, into the Notification Service Extension (operator decision of 2026-09-28; no Sygnal). Android: UnifiedPush, through the distributor's own Matrix gateway with no third-party fallback, because the hub's gateway is APNs-only (G3, 2026-10-22).
 
 ## Corrected 19 Aug 2026 — iOS is native, not a webview skin
 

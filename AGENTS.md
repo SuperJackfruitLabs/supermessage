@@ -36,8 +36,11 @@ builds and device checks remain separate from Linux frontend/core checks.
 Background push on iOS goes through the AgentPod hub's own push gateway
 (`https://hub.agentpod.dev/_matrix/push/v1/notify`, operator decision of
 2026-09-28) to the Notification Service Extension, which decrypts through
-`Core::notification_for`; it is not yet verified on a device, and Android and
-desktop have no background push. Keep dated verification reports in their
+`Core::notification_for`; it is not yet verified on a device. Android has
+background push through UnifiedPush (the distributor's own Matrix gateway, no
+fallback), covered by unit tests and a fake-distributor instrumented test; a
+live push through ntfy, a push in Doze and a real lock-screen answer are
+pending the owner. Desktop has no background push. Keep dated verification reports in their
 original context rather than presenting them as current evidence.
 
 Remaining follow-ups:
