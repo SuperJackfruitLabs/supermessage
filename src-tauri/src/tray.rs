@@ -285,9 +285,29 @@ impl CloseBehaviour {
 
 /// What the app says the first time its window hides to the tray. Short and plain, no iOS
 /// counterpart and none in the core *(desktop-only copy)*.
+/// The body names no place the app "stays": on GNOME without the AppIndicator extension the tray
+/// is invisible, and on macOS it is the menu bar.
 pub const STILL_RUNNING_TITLE: &str = "supermessage is still running";
+#[cfg(not(target_os = "macos"))]
 pub const STILL_RUNNING_BODY: &str =
-    "It stays in the tray. Choose Quit from the tray menu to close it.";
+    "Open it again to bring the window back. To close it, choose Quit from the tray menu.";
+#[cfg(target_os = "macos")]
+pub const STILL_RUNNING_BODY: &str =
+    "Open it again to bring the window back. To close it, choose Quit from its menu bar icon.";
+
+/// The first-hide notice: about the app, for no account and no room. Where the server offers
+/// a click (Linux), the click brings the window back (`notify_actions::KEY_REVEAL`).
+pub fn still_running_note() -> crate::notify::PostedNote {
+    crate::notify::PostedNote {
+        id: "tray:still-running".into(),
+        room_id: String::new(),
+        title: STILL_RUNNING_TITLE.into(),
+        body: STILL_RUNNING_BODY.into(),
+        actions: Vec::new(),
+        user_info: crate::notify_actions::reveal_user_info(),
+        account: None,
+    }
+}
 
 /// A window the close handler can keep open and out of sight.
 pub trait CloseTarget {
@@ -346,15 +366,7 @@ pub fn handle_close_requested<R: Runtime>(window: &tauri::Window<R>, api: &tauri
             };
             let poster = std::sync::Arc::clone(&poster);
             std::thread::spawn(move || {
-                let _ = poster.post(&crate::notify::PostedNote {
-                    id: "tray:still-running".into(),
-                    room_id: String::new(),
-                    title: STILL_RUNNING_TITLE.into(),
-                    body: STILL_RUNNING_BODY.into(),
-                    actions: Vec::new(),
-                    user_info: Default::default(),
-                    account: None,
-                });
+                let _ = poster.post(&still_running_note());
             });
         },
     );

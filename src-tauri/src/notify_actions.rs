@@ -20,6 +20,16 @@ pub const OPEN_EVENT: &str = "sm://notification/open";
 /// What a click on the notification body reports.
 const XDG_DEFAULT_ACTION: &str = "default";
 
+/// Marks an app-level note's info (the tray's first-hide notice): a note about the app, not a
+/// room or an account, whose click only brings the window back. The desktop's own key, beside
+/// the core's `sm.*` keys; the core never writes it.
+pub const KEY_REVEAL: &str = "sm.desktop.reveal";
+
+/// The info an app-level note carries ([`KEY_REVEAL`]).
+pub fn reveal_user_info() -> std::collections::HashMap<String, String> {
+    std::collections::HashMap::from([(KEY_REVEAL.to_owned(), "1".to_owned())])
+}
+
 /// How long an answer may take before the reader is told to look
 /// (`NotificationAnswerer.swift:22`). A desktop has no system limit; this is iOS's number.
 pub const ANSWER_BUDGET: Duration = Duration::from_secs(15);
@@ -69,9 +79,11 @@ impl Answerer for Session {
     }
 }
 
-/// Brings the window forward on a room.
+/// Brings the window forward, on a room or as it was.
 pub trait Opener: Send + Sync {
     fn open_room(&self, room_id: &str);
+    /// Only brings the window back (a click on an app-level note).
+    fn reveal(&self);
 }
 
 /// The main window: unminimized, shown and focused, then told which room.
@@ -79,17 +91,30 @@ pub struct WindowOpener<R: Runtime>(pub AppHandle<R>);
 
 impl<R: Runtime> Opener for WindowOpener<R> {
     fn open_room(&self, room_id: &str) {
+        self.reveal();
+        if let Some(window) = self.0.get_webview_window("main") {
+            let _ = window.emit(OPEN_EVENT, serde_json::json!({ "roomId": room_id }));
+        }
+    }
+
+    fn reveal(&self) {
         let Some(window) = self.0.get_webview_window("main") else {
             return;
         };
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-        // A note about no room (the tray notice) only brings the window back.
-        if !room_id.is_empty() {
-            let _ = window.emit(OPEN_EVENT, serde_json::json!({ "roomId": room_id }));
-        }
     }
+}
+
+/// An app-level note: marked by [`KEY_REVEAL`], posted for no account and about no room.
+/// Anything that names a room or an account is a room note, and the account check holds for it.
+fn is_app_note(taken: &ActionTaken) -> bool {
+    taken.account.is_none()
+        && taken.user_info.contains_key(KEY_REVEAL)
+        && !taken
+            .user_info
+            .contains_key(notification_policy::KEY_ROOM_ID)
 }
 
 /// Carries out what the core says a press means, if the note's account is still the one
@@ -110,6 +135,17 @@ async fn handle_within(
     opener: &impl Opener,
     poster: Arc<dyn Poster>,
 ) {
+    // A press on an app-level note acts on no account's data: the click brings the window back,
+    // and nothing else does anything.
+    if is_app_note(&taken) {
+        if matches!(
+            taken.action_id.as_str(),
+            XDG_DEFAULT_ACTION | notification_policy::ACTION_OPEN
+        ) {
+            opener.reveal();
+        }
+        return;
+    }
     let ActionTaken {
         action_id,
         user_info,
@@ -192,6 +228,7 @@ mod tests {
         account: Option<String>,
         sent: Mutex<Vec<String>>,
         opened: Mutex<Vec<String>>,
+        revealed: Mutex<u32>,
         posted: Mutex<Vec<PostedNote>>,
         posted_on: Mutex<Vec<std::thread::ThreadId>>,
         refuse: bool,
@@ -204,6 +241,7 @@ mod tests {
                 account: Some(ME.into()),
                 sent: Default::default(),
                 opened: Default::default(),
+                revealed: Default::default(),
                 posted: Default::default(),
                 posted_on: Default::default(),
                 refuse: false,
@@ -252,6 +290,9 @@ mod tests {
     impl Opener for Recording {
         fn open_room(&self, room_id: &str) {
             self.opened.lock().unwrap().push(room_id.to_owned());
+        }
+        fn reveal(&self) {
+            *self.revealed.lock().unwrap() += 1;
         }
     }
 
@@ -449,7 +490,6 @@ mod tests {
         handle(taken, &**rec, &**rec, rec.clone()).await;
     }
 
-    #[cfg(target_os = "linux")]
     fn message_note() -> PlannedNotification {
         PlannedNotification {
             id: "!m:x#1700".into(),
@@ -503,6 +543,72 @@ mod tests {
         press_through_the_poster(&rec, &permission_note(), ACTION_ALLOW_ONCE).await;
         assert_eq!(*rec.sent.lock().unwrap(), ["permission !r:x allow_once"]);
         assert!(rec.opened.lock().unwrap().is_empty());
+    }
+
+    /// The tray's first-hide notice, posted through `XdgPoster` to a fake server and clicked
+    /// there: the window comes back, and nothing else happens.
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn clicking_the_first_hide_notice_reveals_the_window() {
+        for signed_in in [Some(ME), None] {
+            let rec = Arc::new(Recording {
+                account: signed_in.map(Into::into),
+                ..Default::default()
+            });
+            let (poster, server, mut rx) = crate::notify::fake::poster(true);
+            poster.post(&crate::tray::still_running_note()).unwrap();
+            server.press(server.last_id(), "default");
+            let taken = rx.try_recv().expect("the press is reported");
+            handle(taken, &*rec, &*rec, rec.clone()).await;
+            assert_eq!(
+                *rec.revealed.lock().unwrap(),
+                1,
+                "signed in as {signed_in:?}"
+            );
+            assert!(rec.opened.lock().unwrap().is_empty());
+            assert!(rec.sent.lock().unwrap().is_empty());
+            assert!(rec.posted.lock().unwrap().is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn an_app_notes_other_actions_do_nothing() {
+        let rec = Arc::new(Recording::default());
+        let app_note = |action: &str| ActionTaken {
+            action_id: action.to_owned(),
+            user_info: reveal_user_info(),
+            account: None,
+        };
+        for action in [ACTION_ALLOW_ONCE, ACTION_APPROVE_GATE, "dismissed"] {
+            handle(app_note(action), &*rec, &*rec, rec.clone()).await;
+        }
+        assert_eq!(*rec.revealed.lock().unwrap(), 0);
+        assert!(rec.sent.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_room_note_from_another_account_is_still_dropped_with_the_reveal_key() {
+        // Signed in as B. A room note for A, a room note for A that also carries the reveal
+        // key, and a room note for no account that carries it: none is an app-level note.
+        let rec = Arc::new(Recording {
+            account: Some("@b:x".into()),
+            ..Default::default()
+        });
+        let with_reveal = |account: Option<&str>| {
+            let mut t = taken("default", &message_note(), account);
+            t.user_info.extend(reveal_user_info());
+            t
+        };
+        for t in [
+            taken("default", &message_note(), Some("@a:x")),
+            with_reveal(Some("@a:x")),
+            with_reveal(None),
+        ] {
+            handle(t, &*rec, &*rec, rec.clone()).await;
+        }
+        assert!(rec.opened.lock().unwrap().is_empty(), "no room opened");
+        assert_eq!(*rec.revealed.lock().unwrap(), 0, "the window is not raised");
+        assert!(rec.sent.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
