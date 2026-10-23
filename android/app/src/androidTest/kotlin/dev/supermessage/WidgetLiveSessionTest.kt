@@ -48,34 +48,52 @@ class WidgetLiveSessionTest {
         ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand(command))
             .use { String(it.readBytes()) }
 
+    /** Set by [place] as each step completes, so a failed setup names the step it died in. */
+    private var step = "not started"
+
     @Before
     fun place() {
-        AppCore.installWidgetsForTest(null)
-        runBlocking { AppCore.widgets(context).signedOut() }
-        // What a launcher has: the right to bind this app's widgets. (`--user current` is
-        // refused on the API 36 image, so the user is named.)
-        shell("appwidget grantbind --package ${context.packageName} --user $user")
-        instrumentation.runOnMainSync {
-            host = AppWidgetHost(context, HOST_ID)
-            host.startListening()
-            widgetId = host.allocateAppWidgetId()
-        }
-        val provider = ComponentName(context, NeedsYouWidgetReceiver::class.java)
-        check(manager.bindAppWidgetIdIfAllowed(widgetId, provider)) { "the widget could not be bound" }
-        instrumentation.runOnMainSync {
-            hostView = host.createView(context, widgetId, manager.getAppWidgetInfo(widgetId))
+        try {
+            step = "installing the widget test hooks"
+            AppCore.installWidgetsForTest(null)
+            step = "resetting the widget snapshot"
+            runBlocking { AppCore.widgets(context).signedOut() }
+            // What a launcher has: the right to bind this app's widgets. (`--user current` is
+            // refused on the API 36 image, so the user is named.)
+            step = "granting bind permission"
+            val granted = shell("appwidget grantbind --package ${context.packageName} --user $user")
+            step = "starting the host (grantbind said: ${granted.trim().ifEmpty { "nothing" }})"
+            instrumentation.runOnMainSync {
+                host = AppWidgetHost(context, HOST_ID)
+                host.startListening()
+                widgetId = host.allocateAppWidgetId()
+            }
+            val provider = ComponentName(context, NeedsYouWidgetReceiver::class.java)
+            step = "binding widget $widgetId (grantbind said: ${granted.trim().ifEmpty { "nothing" }})"
+            check(manager.bindAppWidgetIdIfAllowed(widgetId, provider)) { "the widget could not be bound" }
+            step = "creating the host view"
+            instrumentation.runOnMainSync {
+                hostView = host.createView(context, widgetId, manager.getAppWidgetInfo(widgetId))
+            }
+            step = "placed"
+        } catch (e: Throwable) {
+            // Say which step, here, so the cleanup below can never be the loudest thing.
+            throw AssertionError("the widget test's setup failed while $step", e)
         }
     }
 
+    // Cleanup that is safe after any partial setup: it must never replace the real failure.
     @After
     fun remove() {
         instrumentation.runOnMainSync {
-            host.deleteAppWidgetId(widgetId)
-            host.stopListening()
-            host.deleteHost()
+            if (::host.isInitialized) {
+                runCatching { host.deleteAppWidgetId(widgetId) }
+                runCatching { host.stopListening() }
+                runCatching { host.deleteHost() }
+            }
         }
-        runBlocking { AppCore.widgets(context).signedOut() }
-        shell("appwidget revokebind --package ${context.packageName} --user $user")
+        runCatching { runBlocking { AppCore.widgets(context).signedOut() } }
+        runCatching { shell("appwidget revokebind --package ${context.packageName} --user $user") }
     }
 
     private fun drawn(): List<String> {
