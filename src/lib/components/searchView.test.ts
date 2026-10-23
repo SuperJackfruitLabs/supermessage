@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createLatestOnly,
+  escapeOutcome,
   projectSearchResults,
   rerunsOnScopeChange,
   roomLabel,
@@ -138,5 +139,14 @@ describe("rerunsOnScopeChange", () => {
     expect(rerunsOnScopeChange({ ...base, searched: false })).toBe(false);
     expect(rerunsOnScopeChange({ ...base, changed: false })).toBe(false);
     expect(rerunsOnScopeChange({ ...base, term: "  " })).toBe(false);
+  });
+});
+
+describe("escapeOutcome", () => {
+  it("embedded, Escape clears the term and keeps the panel", () => {
+    expect(escapeOutcome(true)).toBe("clear");
+  });
+  it("the overlay still closes on Escape", () => {
+    expect(escapeOutcome(false)).toBe("close");
   });
 });

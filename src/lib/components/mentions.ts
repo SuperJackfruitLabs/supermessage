@@ -7,9 +7,11 @@
 // agent's own Matrix client decides a message was meant for it.
 //
 // The parts here are pure so they can be tested without a DOM or a homeserver:
-// where a mention begins, what it matches, and what the composer's text
+// where a mention begins, and what the composer's text
 // becomes when one is chosen. The component owns the list, the keyboard and
 // the send.
+
+import type { PersonDto, PersonRuntime } from "$lib/ipc";
 
 export interface Mentionable {
   userId: string;
@@ -57,32 +59,31 @@ export function findMentionQuery(text: string, caret: number): MentionQuery | nu
   return { start: at, query };
 }
 
+/** A person the `@` menu offers: what is inserted, plus what the row shows. */
+export interface MentionCandidate extends Mentionable {
+  /** The glyph the person's face carries. */
+  initial: string;
+  /** For an agent, where it runs; `null` for a person. */
+  runtime: PersonRuntime | null;
+}
+
 /**
- * The members `query` matches, best first.
- *
- * Prefix matches on the display name come first, then anything containing the
- * query in either the name or the id. An empty query is everyone — typing `@`
- * alone is how you browse a room you do not know the membership of.
+ * The candidate for a person of the room's cast. Matching is the core's
+ * (`people::matching`, over the cast the core ordered agents-first); nothing here ranks.
  */
-export function matchMentions(
-  query: string,
-  members: readonly Mentionable[],
-  limit = 8
-): Mentionable[] {
-  const q = query.trim().toLowerCase();
-  if (q === "") return members.slice(0, limit);
+export function candidateFromPerson(person: PersonDto): MentionCandidate {
+  return {
+    userId: person.userId,
+    displayName: person.name,
+    isAgent: person.runtime !== null,
+    initial: person.initial,
+    runtime: person.runtime,
+  };
+}
 
-  const prefix: Mentionable[] = [];
-  const rest: Mentionable[] = [];
-
-  for (const member of members) {
-    const label = mentionLabel(member).toLowerCase();
-    const id = member.userId.toLowerCase();
-    if (label.startsWith(q) || id.startsWith(`@${q}`)) prefix.push(member);
-    else if (label.includes(q) || id.includes(q)) rest.push(member);
-  }
-
-  return [...prefix, ...rest].slice(0, limit);
+/** "{harness} on {host}", the line under an agent's name. */
+export function runtimeLine(runtime: PersonRuntime): string {
+  return `${runtime.harness} on ${runtime.host}`;
 }
 
 export interface MentionInsertion {

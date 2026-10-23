@@ -299,6 +299,13 @@
   import ReportSheet from "./safety/ReportSheet.svelte";
 
   import { groupTimelineItems, shouldShift, type TimelineDisplayRow } from "./timelineGrouping";
+  import { liveStore as appLiveStore, type LiveStore } from "$lib/stores/live.svelte";
+  import LiveCard from "./live/LiveCard.svelte";
+  import WhatIDid from "./live/WhatIDid.svelte";
+  import type { LiveCardServices } from "./live/liveCardServices";
+  import { writerName } from "./live/liveCardView";
+  import { recordAnchorKey } from "./timeline/recordAnchor";
+  import { glide, glideDistance, shouldGlide } from "./timeline/glide";
   import {
     isReaderScroll,
     nextFollowBottom,
@@ -307,6 +314,7 @@
     shouldRequestOlder,
     shouldSettleAtBottom,
     shouldShiftNow,
+    TAIL_THRESHOLD,
   } from "./timelineFollow";
   import { LOADING_AFTER_MS, paneState } from "./timelinePane";
   import RichText from "./RichText.svelte";
@@ -327,12 +335,16 @@
   import ReactionsRow from "./timeline/ReactionsRow.svelte";
   import ReplyQuote from "./timeline/ReplyQuote.svelte";
   import ReaderFaces from "./timeline/ReaderFaces.svelte";
+  import SenderHeader from "./timeline/SenderHeader.svelte";
+  import LongReadDialog from "./timeline/LongReadDialog.svelte";
+  import { attributionFor, isLongRead, quoteFor, showsAgentLabel } from "./timeline/messageView";
+  import { createReaderLabels } from "./timeline/readerLabel";
   import { createMemberAvatarCache } from "$lib/stores/memberAvatarCache.svelte";
   import { ownMeta, readerFaces, readersFor, revealsTime, type ItemRow } from "./timeline/rowMeta";
   import { handleMessageBodyAuxClick, handleMessageBodyClick } from "./messageLinks";
   import { createMediaCache } from "$lib/stores/mediaCache.svelte";
   import { shouldMarkRead } from "./readTracking";
-  import type { ReplyQuoteView, TimelineItem } from "$lib/ipc";
+  import { peopleLabel, type RichBlock, type ReplyQuoteView, type TimelineItem } from "$lib/ipc";
 
   /**
    * The room this pane shows — needed only to scope `replyTargetStore`'s
@@ -346,13 +358,37 @@
     roomId,
     onOpenRecovery,
     store,
+    live,
+    liveServices,
+    overlay,
   }: {
     roomId: string;
     onOpenRecovery?: () => void;
     /** The store to read. Only stories pass one; the app uses its own. */
     store?: TimelineStore;
+    /** The turn mirror to read. Only stories pass one; the app uses its own. */
+    live?: LiveStore;
+    /** The live card's core calls. Only stories pass them. */
+    liveServices?: LiveCardServices;
+    /**
+     * Floating capsules over the bottom of the list (the dock and the typing pill; iOS
+     * `safeAreaInset`, `TimelineView.swift:118-138`). They are drawn over the list, never in
+     * its flow, and the list keeps a constant reserve below its last row while this is set, so
+     * a capsule coming or going moves nothing.
+     */
+    overlay?: Snippet;
   } = $props();
   const timelineStore = $derived(store ?? appTimelineStore);
+  const liveTurn = $derived(live ?? appLiveStore);
+
+  /**
+   * Whether the live card is a row. A boolean on purpose: the mirror's state
+   * object is replaced on every streamed delta, and a derivation that read it
+   * directly would hand `VList` a new `data` array each time.
+   */
+  const liveShown = $derived(liveTurn.isLive && !liveTurn.finished);
+  /** A finished turn's record is drawn in its answer's row. */
+  const recordShown = $derived(liveTurn.finished && liveTurn.summary?.recordLabel != null);
 
   /** Page size for `timelineStore.paginateBack`, per the task brief. */
   const PAGE_SIZE = 20;
@@ -422,6 +458,11 @@
     noteReaderInput();
     followBottom = false;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // virtua's first correction scroll lands inside the tail band of a short
+    // list and would switch following back on, after which the resize observer
+    // re-pins the jump. Until the glide ends, none of its scroll events may
+    // resume following or re-pin (see `endJump`).
+    if (!reducedMotion) beginJump();
     vlist?.scrollToIndex(i, { align: "center", smooth: !reducedMotion });
     highlightedKey = displayRows[i]!.key;
     clearTimeout(highlightTimer);
@@ -504,7 +545,7 @@
    * re-runs this derivation; nothing here filters after grouping.
    */
   let view = $derived.by(() => {
-    const rows = groupTimelineItems(timelineStore.items, expanded);
+    const rows = groupTimelineItems(timelineStore.items, expanded, { liveTurn: liveShown });
     const keys = rows.map((row) => row.key);
     const dividers = new Set(
       rows.filter((row) => row.type === "item" && row.item.kind === "dateDivider").map((row) => row.key),
@@ -528,6 +569,9 @@
   });
 
   let displayRows = $derived(view.rows);
+
+  /** The row that carries the finished turn's record (`recordAnchor.ts`). */
+  const anchorKey = $derived(recordShown ? recordAnchorKey(displayRows) : null);
 
   function riseEnded(id: string) {
     risingKeys.delete(id);
@@ -593,6 +637,32 @@
   /** One face per sender, for the readers under an own message. */
   let faces = $derived(readerFaces(displayRows));
   const memberAvatars = createMemberAvatarCache();
+
+  /** "Read by …" per set of readers; the tick re-renders when one is named. */
+  let readerTick = $state(0);
+  const readerLabels = createReaderLabels(peopleLabel, () => readerTick++);
+  function readerLabelFor(readers: { userId: string }[]): string | null {
+    void readerTick;
+    return readerLabels.label(readers.map((r) => r.userId));
+  }
+
+  // `aria-description` (ARIA 1.3) is not in Svelte's attribute types yet.
+  const READ_HINT = { "aria-description": "Opens the whole message in a reading view" };
+
+  /** The long read open in the reading view, if any. */
+  let reading = $state<{ title: string; blocks: RichBlock[] } | null>(null);
+  let readingOpener: HTMLElement | null = null;
+  function openReading(opener: HTMLElement, title: string, blocks: RichBlock[]): void {
+    readingOpener = opener;
+    reading = { title, blocks };
+  }
+  async function closeReading(): Promise<void> {
+    reading = null;
+    await tick();
+    // After the modal is gone: while it is open the page behind is inert.
+    if (readingOpener?.isConnected) readingOpener.focus();
+    readingOpener = null;
+  }
 
   // Tracked outside `$state` on purpose: bookkeeping for the effect below,
   // not a value the template reads.
@@ -784,6 +854,38 @@
     lastReaderInputAt = performance.now();
   }
 
+  /** A smooth jump is gliding: its scroll events are not the reader's, nor layout's. */
+  let jumping = false;
+  let jumpTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Longest a smooth jump is trusted to run before the guard lets go. */
+  const JUMP_GUARD_MS = 1500;
+  function beginJump(): void {
+    jumping = true;
+    clearTimeout(jumpTimer);
+    jumpTimer = setTimeout(endJump, JUMP_GUARD_MS);
+  }
+  /**
+   * The glide is over: the timeout, a timer rather than `scrollend` because
+   * virtua's first, instant correction scroll fires `scrollend` before the
+   * smooth one has started.
+   */
+  function endJump(): void {
+    if (!jumping) return;
+    jumping = false;
+    clearTimeout(jumpTimer);
+    const scroller = scrollBox?.firstElementChild as HTMLElement | null | undefined;
+    // Landing back inside the tail band resumes following, as any scroll there does.
+    if (scroller && scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop < TAIL_THRESHOLD)
+      followBottom = true;
+  }
+  onDestroy(() => clearTimeout(jumpTimer));
+  /** The reader's own input: also ends a jump they interrupt. */
+  function onReaderInput(): void {
+    jumping = false;
+    clearTimeout(jumpTimer);
+    noteReaderInput();
+  }
+
   /** Puts a following reader back on the newest row; the browser clamps it. */
   function repinToTail(): void {
     const scroller = scrollBox?.firstElementChild as HTMLElement | null | undefined;
@@ -826,8 +928,8 @@
     if (!vlist) return;
     const distanceFromBottom = vlist.getScrollSize() - vlist.getViewportSize() - offset;
     const readerDriven = isReaderScroll(lastReaderInputAt, performance.now());
-    followBottom = nextFollowBottom(followBottom, distanceFromBottom, readerDriven);
-    if (shouldRepinAfterScroll(followBottom, distanceFromBottom, readerDriven)) repinToTail();
+    followBottom = nextFollowBottom(followBottom, distanceFromBottom, readerDriven, jumping);
+    if (shouldRepinAfterScroll(followBottom, distanceFromBottom, readerDriven, jumping)) repinToTail();
     maybeRequestOlder(offset, readerDriven);
   }
 
@@ -892,6 +994,12 @@
 
     const react = () => {
       const next = measure();
+      // The card appearing is not the card growing: iOS glides only a cell that
+      // was already there (`before` is nil on the first layout), so the card
+      // simply arrives and the history makes room at once.
+      const cardHeight = liveEl?.offsetHeight ?? 0;
+      const existed = lastCardHeight > 0;
+      lastCardHeight = cardHeight;
       if (shouldSettleAtBottom(previous, next, settled)) {
         // The rows a room opens with have just landed. Same assignment as the
         // repin below, for the same reason: the bottom is exact.
@@ -901,12 +1009,20 @@
         return;
       }
       if (shouldRepin(previous, next, followBottom)) {
+        const before = scroller.scrollTop;
         // Assigning `scrollTop` rather than `scrollToIndex`: the bottom of the
         // scroller is exact and needs no index, no measurement and no guess
         // about which row is last, and the browser clamps it for us. It fires
         // an ordinary scroll event, so `handleScroll` recomputes
         // `followBottom` from the corrected position and agrees.
         scroller.scrollTop = scroller.scrollHeight;
+        // The re-pin moved the history up at once; while an answer streams it is
+        // drawn back and eased up (iOS's 0.32 s glide, `glide.ts`).
+        const distance = existed ? glideDistance(before, scroller.scrollTop) : 0;
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        if (shouldGlide({ streaming: liveShown, following: followBottom, reducedMotion }, distance)) {
+          glide(scroller.querySelectorAll<HTMLElement>("[data-testid='timeline-row']"), distance);
+        }
       }
       previous = next;
       // A pane the history does not fill cannot be scrolled, so no scroll
@@ -923,7 +1039,9 @@
     };
 
     const inputs = ["wheel", "touchstart", "touchmove", "keydown", "pointerdown"] as const;
-    for (const type of inputs) scroller.addEventListener(type, noteReaderInput, { passive: true });
+    for (const type of inputs) scroller.addEventListener(type, onReaderInput, { passive: true });
+
+    reactToResize = react;
 
     // The pane's own height, and the scrolled content's — the two things
     // `shouldRepin` compares. One observer watches both boxes; which one moved
@@ -934,8 +1052,35 @@
     if (content) observer.observe(content);
 
     return () => {
+      reactToResize = null;
       observer.disconnect();
-      for (const type of inputs) scroller.removeEventListener(type, noteReaderInput);
+      for (const type of inputs) scroller.removeEventListener(type, onReaderInput);
+    };
+  });
+
+  /**
+   * The live card's own size, watched directly.
+   *
+   * The observer above sees the *content* grow only once virtua has measured the
+   * card and re-rendered its total height, two frames after the card grew. For
+   * those frames the tail is off the bottom by the growth, and the newest line of
+   * the answer is cut off. The card overflows its row meanwhile, and the
+   * scroller already counts that overflow, so re-pinning from the card's own
+   * resize lands the tail in the same frame the text grew. Same predicate, same
+   * assignment, same glide — only the trigger is earlier.
+   */
+  let reactToResize: (() => void) | null = null;
+  /** The card's height at the last resize observation; 0 while there is no card. */
+  let lastCardHeight = 0;
+  let liveEl = $state<HTMLElement | null>(null);
+  $effect(() => {
+    const el = liveEl;
+    if (!el) return;
+    const observer = new ResizeObserver(() => reactToResize?.());
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      lastCardHeight = 0;
     };
   });
 
@@ -1174,6 +1319,7 @@
   {@const item = row.item}
   {@const continuesRun = row.continuesRun}
   {@const ends = runEnds.has(row.key)}
+  {@const mv = row}
   <!--
     The single wrapper every message-shaped render kind
     (`bubble`/`image`/`mediaFile`) shares — see this file's top-of-script
@@ -1258,7 +1404,8 @@
       <div
         class="flex min-w-0 flex-col text-content {item.isOwn
           ? 'max-w-[52ch] rounded-control bg-accent-soft px-3 py-2 font-sans text-body-own'
-          : 'max-w-[68ch] font-sans text-body'}"
+          : 'max-w-[min(68ch,600px)] rounded-control bg-surface-raised px-3 py-2 font-sans text-body'}"
+        data-testid={item.isOwn ? undefined : "message-card"}
       >
         {#if !item.isOwn && !continuesRun}
           <!--
@@ -1275,25 +1422,27 @@
             A collapsed continuation drops this line entirely; its "edited"
             marker goes under the text instead.
           -->
-          <p class="mb-1 flex items-baseline gap-2 font-sans text-meta tabular-nums text-content-muted">
-            <!-- The sender's own colour (`--color-peer-*`, chosen by
-                 user id), so two agents with one name read as two. -->
-            <span
-              class="min-w-0 truncate text-label"
-              style:color={item.sender ? peerColorVar(item.sender) : undefined}
-              title={row.senderName}
-            >
-              <!-- The core's name for the sender, as iOS shows it; the
-                   runtime suffix stays in the tooltip (`senderName`). -->
-              {row.senderShort}
-            </span>
-            <span class="shrink-0">{formatTime(item.timestampMs)}</span>
-            <!-- A meta rank, so no italic. -->
-            {#if item.edited}<span class="shrink-0 text-content-faint">edited</span>{/if}
-          </p>
+          <!-- The same header heads a message, an audio row and a failed turn:
+               all three render through this snippet. The core's name for the
+               sender, as iOS shows it; the runtime joins it only where the core
+               says it must (`showsRuntime`), and stays in the tooltip. -->
+          <SenderHeader
+            name={attributionFor(mv)}
+            title={row.senderName}
+            initial={row.senderInitial}
+            face={item.senderAvatar ? memberAvatars.get(item.senderAvatar) : null}
+            color={item.sender ? peerColorVar(item.sender) : undefined}
+            isAgent={showsAgentLabel(mv)}
+            time={formatTime(item.timestampMs)}
+            edited={item.edited}
+          />
+        {/if}
+        {#if row.key === anchorKey && liveTurn.summary?.recordLabel}
+          <!-- Between the sender's line and the text (iOS `TimelineCollectionView.swift:612-614`). -->
+          <WhatIDid label={liveTurn.summary.recordLabel} thought={liveTurn.thought} steps={liveTurn.steps} />
         {/if}
         <ReplyQuote
-          quote={row.replyQuote}
+          quote={quoteFor(mv)}
           isOwn={item.isOwn}
           onJump={parentIndex(displayRows, item.replyTo?.eventId ?? null) >= 0
             ? () => jumpToParent(item.replyTo?.eventId ?? null)
@@ -1327,7 +1476,7 @@
           {#if meta.state}<span>{meta.state}</span>{/if}
           {#if meta.edited}<span>edited</span>{/if}
           {#if meta.showTime}<span>{formatTime(item.timestampMs)}</span>{/if}
-          <ReaderFaces {readers} faceFor={(mxc) => memberAvatars.get(mxc)} />
+          <ReaderFaces {readers} label={readerLabelFor(readers)} faceFor={(mxc) => memberAvatars.get(mxc)} />
         </p>
       {/if}
     {/if}
@@ -1336,6 +1485,17 @@
 {/snippet}
 
 <div class="relative min-h-0 flex-1">
+  {#if overlay}
+    <!-- Over the list, on the 72ch reading column; only the capsules take the pointer. -->
+    <div class="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-3 pb-1" data-testid="timeline-overlay">
+      <div class="flex w-full max-w-[72ch] flex-col items-start gap-1">
+        {@render overlay()}
+      </div>
+    </div>
+  {/if}
+  {#if reading !== null}
+    <LongReadDialog title={reading.title} blocks={reading.blocks} onClose={() => void closeReading()} />
+  {/if}
   {#if deleting !== null}
     <DeleteConfirm onConfirm={confirmDelete} onCancel={() => (deleting = null)} />
   {/if}
@@ -1420,7 +1580,7 @@
       This wrapper contains exactly one thing, and `h-full` keeps the list's
       `height: 100%` resolving against the same box it did before.
     -->
-    <div bind:this={scrollBox} class="fade-in h-full">
+    <div bind:this={scrollBox} class="fade-in h-full {overlay ? 'bg-surface-sunken pb-[4.5rem]' : ''}" data-testid="timeline-scrollbox">
     <VList
       bind:this={vlist}
       data={displayRows}
@@ -1516,7 +1676,9 @@
           }}
           class="mx-auto w-full max-w-[calc(72ch+2rem)] min-w-0 px-4 font-sans {washKeys.has(row.key) ? 'transition-colors motion-reduce:transition-none ' + (row.key === highlightedKey ? 'duration-150' : 'duration-[800ms]') : ''} {row.key === highlightedKey ? 'bg-accent-soft' : 'bg-surface'} {row.type === "item" && view.rising.has(row.item.id) && !arrivedDone.has(row.item.id) ? 'row-arrive' : ''} text-body lg:max-w-[calc(72ch+4rem)] lg:px-8 {rowEdgeClass(
             index,
-            displayRows.length,
+            // The live card is not a message row: the last message keeps its
+            // reserve (and its height) while the card comes and goes under it.
+            row.type === "liveTurn" ? displayRows.length : displayRows.length - (liveShown ? 1 : 0),
           )}"
         >
           {#if row.type === "membershipGroup"}
@@ -1536,6 +1698,22 @@
             <MembershipStretch text={row.text} onOpen={() => (expanded = new Set(expanded).add(row.key))} />
           {:else if row.type === "undecryptableGroup"}
             <UndecryptableGroup count={row.count} {onOpenRecovery} />
+          {:else if row.type === "liveTurn"}
+            <!--
+              The turn in progress: one card at the newest end, inside the
+              same column as the messages. Outer vertical padding 6 (iOS
+              `LiveTurnView.swift:121`).
+            -->
+            <div class="py-1.5" bind:this={liveEl}>
+              <LiveCard
+                summary={liveTurn.summary}
+                steps={liveTurn.steps}
+                thought={liveTurn.thought}
+                answer={liveTurn.answer}
+                name={writerName(liveTurn.agentName(roomId), displayRows)}
+                services={liveServices}
+              />
+            </div>
           {:else}
             {@const item = row.item}
             {@const continuesRun = row.continuesRun}
@@ -1623,7 +1801,7 @@
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
-                      class="message-html selectable {view.muted ? 'text-content-muted' : ''}"
+                      class="message-html selectable {view.muted ? 'text-content-muted' : ''} {isLongRead(row) ? 'long-read-cut' : ''}"
                       onclick={(e: MouseEvent) =>
                         handleMessageBodyClick(e, undefined, selectKnownRoom, knownRoomIds)}
                       onauxclick={(e: MouseEvent) =>
@@ -1631,6 +1809,20 @@
                     >
                       <RichText blocks={view.blocks} />
                     </div>
+                    {#if isLongRead(row)}
+                      <!-- The rest opens in the reading view (iOS `TimelineRowView.swift:423-457`). -->
+                      <button
+                        type="button"
+                        class="mt-1 inline-flex items-center gap-1 self-start rounded-control py-1 font-sans text-ui font-semibold text-accent focus-visible:outline-2 focus-visible:outline-accent"
+                        {...READ_HINT}
+                        onclick={(e) => openReading(e.currentTarget, attributionFor(row), view.blocks)}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+                          <path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM6 4h5v8l-2.5-1.5L6 12V4Z" />
+                        </svg>
+                        Read
+                      </button>
+                    {/if}
                   {/if}
                 {/snippet}
                 {@render messageBlock(row, bubbleContent)}
@@ -2091,6 +2283,14 @@
    * `ul`/`ol`/`blockquote` below can compound in the first place, rather
    * than trying to cap already-rendered CSS padding after the fact.
    */
+  /* A long read is cut at 320px with a fade (iOS `TimelineRowView.swift:423-457`).
+     Static: a height change inside the virtual list must not animate. */
+  .long-read-cut {
+    max-height: 320px;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, black 72%, transparent);
+    mask-image: linear-gradient(to bottom, black 72%, transparent);
+  }
   .message-html {
     overflow-wrap: anywhere;
     overflow-x: auto;

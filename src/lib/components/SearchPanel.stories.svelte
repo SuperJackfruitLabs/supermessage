@@ -163,3 +163,70 @@
     (document.activeElement as HTMLElement | null)?.blur();
   }}
 />
+
+<!--
+  The sidebar's Search destination: no backdrop and no dialog role, no Close, the field focused
+  when it appears. Scoped to the open room, as the overlay is.
+-->
+<Story
+  name="Embedded, scoped to a room"
+  args={{
+    embedded: true,
+    scope: { roomId: "!ashram:id.agentpod.dev", name: "Ashram" },
+    onSearch: async (_term: string, roomId?: string) => (roomId ? searchHits.slice(0, 2) : searchNoHits),
+  }}
+  play={async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.queryByRole("dialog")).toBeNull();
+    await expect(canvas.queryByRole("button", { name: /Close/ })).toBeNull();
+    await expect(canvas.getByPlaceholderText(/Search messages/)).toHaveFocus();
+    await expect(canvas.getByRole("radio", { name: "Ashram" })).toHaveAttribute("aria-checked", "true");
+    await userEvent.type(canvas.getByPlaceholderText(/Search messages/), "build");
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByText(/Ready to promote build 214/)).toBeInTheDocument();
+    (document.activeElement as HTMLElement | null)?.blur();
+  }}
+/>
+
+<Story
+  name="Embedded, everywhere"
+  args={{ embedded: true, onSearch: async () => searchHits }}
+  play={async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText("Find a message across your rooms.")).toBeInTheDocument();
+    await expect(canvas.queryByRole("radiogroup")).toBeNull();
+    await userEvent.type(canvas.getByPlaceholderText(/Search messages/), "build");
+    await userEvent.keyboard("{Enter}");
+    await expect(await canvas.findByText(/Ready to promote build 214/)).toBeInTheDocument();
+    (document.activeElement as HTMLElement | null)?.blur();
+  }}
+/>
+
+<!-- Embedded, Escape clears the term and keeps the panel — and the event is consumed. -->
+<Story
+  name="Embedded, Escape clears"
+  args={{ embedded: true, onSearch: async () => searchHits }}
+  play={async ({ canvasElement }) => {
+    let prevented: boolean | null = null;
+    const probe = (e: KeyboardEvent) => {
+      if (e.key === "Escape") prevented = e.defaultPrevented;
+    };
+    window.addEventListener("keydown", probe);
+    try {
+      const canvas = within(canvasElement);
+      const field = canvas.getByPlaceholderText(/Search messages/) as HTMLInputElement;
+      await userEvent.type(field, "build");
+      await userEvent.keyboard("{Enter}");
+      await expect(await canvas.findByText(/Ready to promote build 214/)).toBeInTheDocument();
+      await userEvent.keyboard("{Escape}");
+      await expect(field.value).toBe("");
+      await expect(prevented).toBe(true);
+      await expect(canvas.queryByText(/Ready to promote build 214/)).toBeNull();
+      await expect(canvas.getByText("Find a message across your rooms.")).toBeInTheDocument();
+      await expect(canvas.getByPlaceholderText(/Search messages/)).toBeInTheDocument();
+    } finally {
+      window.removeEventListener("keydown", probe);
+    }
+    (document.activeElement as HTMLElement | null)?.blur();
+  }}
+/>

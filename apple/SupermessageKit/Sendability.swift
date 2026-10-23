@@ -102,3 +102,4 @@ extension TurnStepChange: @retroactive @unchecked Sendable {}
 extension TurnSummary: @retroactive @unchecked Sendable {}
 extension TurnUpdate: @retroactive @unchecked Sendable {}
 extension VoiceNoteTranscript: @retroactive @unchecked Sendable {}
+extension VoiceRecordingSpec: @retroactive @unchecked Sendable {}

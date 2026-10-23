@@ -169,6 +169,9 @@ public protocol RoomMembership: Sendable {
 public protocol RoomAdministering: Sendable {
     func setRoomNotifications(roomId: String, mode: NotificationMode) async throws
     func setRoomPinned(roomId: String, pinned: Bool) async throws
+    /// Mark a room read without opening it (the roster's swipe). Whether a
+    /// receipt was sent.
+    func markRoomReadFromList(roomId: String) async throws -> Bool
     func roomInfo(roomId: String) async throws -> RoomInfoDto
     func roomAvatarFull(roomId: String) async throws -> String?
 }
@@ -179,9 +182,13 @@ public protocol AccountDirectory: Sendable {
     func knownPeople() async throws -> [PersonDto]
     /// Who is in `roomId`, as the composer, typing line and dock need it.
     func roomCast(roomId: String) async throws -> RoomCast
-    /// Whether this account has sent into `roomId` since signing in. The core
-    /// owns it, so signing out clears it.
-    func hasSent(roomId: String) async -> Bool
+    /// What the dock above the composer says, from the core's own focused
+    /// timeline and its record of what this account sent. The host sends no
+    /// rows. `nil` when the focused room is not `roomId`.
+    func acknowledgement(
+        roomId: String, addressee: String?, agentIds: [String],
+        typingAgents: [String], turnInProgress: Bool
+    ) async throws -> Acknowledgement?
     /// The events the reader hid on this device. The core groups the focused
     /// timeline as if they were absent and marks their rows `hidden`. The full
     /// set, pushed at sign-in and whenever it changes.

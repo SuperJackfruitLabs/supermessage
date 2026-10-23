@@ -47,21 +47,35 @@ public enum ReportSubject: Identifiable, Equatable, Sendable {
 /// before the homeserver echoes the new list back. The echo then overwrites
 /// it either way.
 ///
-/// ## Hidden messages are this device's
+/// ## Hidden messages are this device's, and one account's
 ///
 /// Reporting a message hides it here at once. There is no Matrix protocol for
 /// "hide this one event for me", so the set is local — kept in `UserDefaults`
-/// so a reported message does not return on the next launch, and cleared on
-/// sign-out with everything else the account left behind. The core does the
-/// hiding: the session pushes the set to it (`hiddenEventsDidChange`, and at
-/// every sign-in), and rows come back marked `hidden`.
+/// so a reported message does not return on the next launch. The core does
+/// the hiding: the session pushes the set to it (`hiddenEventsDidChange`, and
+/// at every sign-in), and rows come back marked `hidden`.
+///
+/// The set is stored under the account that reported, in `safety.hiddenEvents.<userId>`,
+/// and read back only for that account (`bind`). An account that ends without a
+/// sign-out — the app deleted and reinstalled over a restored keychain, a
+/// session the homeserver revoked — therefore leaves its ids where the next
+/// account cannot see them. Older builds kept one device-wide set under
+/// `safety.hiddenEvents`; `bind` hands it to the restored account once.
+/// Mirrors Android's `SafetyStore` / `HiddenEventStorage`.
 @MainActor
 @Observable
 public final class SafetyStore {
     /// User ids this account has blocked (`m.ignored_user_list`).
     public private(set) var blocked: Set<String> = []
     /// Event ids reported from this device, hidden from the timeline.
-    public private(set) var hiddenEvents: Set<String>
+    public private(set) var hiddenEvents: Set<String> = []
+    /// The account `hiddenEvents` belongs to; `nil` until one signs in.
+    public private(set) var owner: String?
+    /// Bumped by `bind` and `clear`. A write takes the value its caller saw
+    /// before it started waiting and does nothing when that is no longer
+    /// current: a report that finishes after a sign-out must not put its
+    /// message id into the next account's set.
+    public private(set) var generation = 0
     /// The report sheet to show, when one has been asked for. Set by the
     /// message menu (UIKit), read by `TimelineView` (SwiftUI) — this store is
     /// the one place both can reach.
@@ -72,12 +86,37 @@ public final class SafetyStore {
     @ObservationIgnored public var hiddenEventsDidChange: (@MainActor (Set<String>) -> Void)?
 
     @ObservationIgnored private let defaults: UserDefaults?
-    static let hiddenKey = "safety.hiddenEvents"
+    /// The device-wide key older builds used. Also the prefix of every
+    /// account's own key.
+    static let legacyKey = "safety.hiddenEvents"
+
+    static func key(for owner: String) -> String { "\(legacyKey).\(owner)" }
 
     /// `defaults: nil` keeps everything in memory, for tests and previews.
     public init(defaults: UserDefaults? = nil) {
         self.defaults = defaults
-        hiddenEvents = Set(defaults?.stringArray(forKey: Self.hiddenKey) ?? [])
+    }
+
+    /// Load the hidden set of the account that just reached signed-in, and
+    /// only that one's. `adoptLegacy` says the account was restored from the
+    /// device: the old device-wide set is then assigned to it, once. After a
+    /// fresh sign-in the old set belongs to nobody known and is dropped.
+    /// With no `owner` (the account could not be read) nothing is hidden and
+    /// nothing is saved, rather than guessing whose set this is.
+    /// Bumps `generation`.
+    public func bind(owner: String?, adoptLegacy: Bool) {
+        generation += 1
+        self.owner = owner
+        let legacy = Set(defaults?.stringArray(forKey: Self.legacyKey) ?? [])
+        defaults?.removeObject(forKey: Self.legacyKey)
+        guard let owner else {
+            hiddenEvents = []
+            return
+        }
+        let stored = Set(defaults?.stringArray(forKey: Self.key(for: owner)) ?? [])
+        let ids = adoptLegacy ? stored.union(legacy) : stored
+        if ids != stored { defaults?.set(Array(ids), forKey: Self.key(for: owner)) }
+        hiddenEvents = ids
     }
 
     /// The core's list, replacing whatever was here.
@@ -94,17 +133,34 @@ public final class SafetyStore {
     public func noteUnblocked(_ userId: String) { blocked.remove(userId) }
 
     /// Hide a message this device has reported.
-    public func hide(eventId: String) {
+    ///
+    /// `generation` is the value read before the report began; a write for an
+    /// account that has since signed out is dropped.
+    public func hide(eventId: String, generation: Int? = nil) {
+        if let generation, generation != self.generation { return }
         hiddenEvents.insert(eventId)
-        defaults?.set(Array(hiddenEvents), forKey: Self.hiddenKey)
+        if let owner { defaults?.set(Array(hiddenEvents), forKey: Self.key(for: owner)) }
         hiddenEventsDidChange?(hiddenEvents)
     }
 
-    /// Forget everything — sign-out.
+    /// Forget everything — sign-out, including the signed-in account's stored set.
     public func clear() {
+        generation += 1
         blocked = []
         hiddenEvents = []
         pendingReport = nil
-        defaults?.removeObject(forKey: Self.hiddenKey)
+        if let owner { defaults?.removeObject(forKey: Self.key(for: owner)) }
+        owner = nil
+    }
+
+    /// Nothing is stored to restore: no account's set, nor the legacy one,
+    /// outlives that.
+    public func clearAll() {
+        clear()
+        guard let defaults else { return }
+        for key in defaults.dictionaryRepresentation().keys
+        where key == Self.legacyKey || key.hasPrefix(Self.legacyKey + ".") {
+            defaults.removeObject(forKey: key)
+        }
     }
 }

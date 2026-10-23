@@ -49,6 +49,27 @@ function fiveChanges(): TimelineRow[] {
 }
 
 
+describe("the live row", () => {
+  it("the live row is the last row only while in progress", () => {
+    const items = [message("a"), message("b")];
+    const going = groupTimelineItems(items, new Set(), { liveTurn: true });
+    expect(going.at(-1)).toEqual({ type: "liveTurn", key: "live-turn" });
+    expect(going.filter((r) => r.type === "liveTurn")).toHaveLength(1);
+    expect(groupTimelineItems(items, new Set(), { liveTurn: false }).some((r) => r.type === "liveTurn")).toBe(false);
+    expect(groupTimelineItems(items).some((r) => r.type === "liveTurn")).toBe(false);
+  });
+
+  it("an empty room still shows the card", () => {
+    expect(groupTimelineItems([], new Set(), { liveTurn: true })).toEqual([{ type: "liveTurn", key: "live-turn" }]);
+  });
+
+  it("its arrival or departure at the end never shifts the list", () => {
+    const keys = ["a:0", "b:0"];
+    expect(shouldShift(keys, [...keys, "live-turn"])).toBe(false);
+    expect(shouldShift([...keys, "live-turn"], keys)).toBe(false);
+  });
+});
+
 describe("groupTimelineItems", () => {
   it("never mutates or reorders the source array", () => {
     const items = [membership("m1", "joined", "Alice"), message("msg1")];
@@ -57,6 +78,13 @@ describe("groupTimelineItems", () => {
     expect(items).toEqual(copy);
     expect(items[0]).toBe(copy[0]);
     expect(items[1]).toBe(copy[1]);
+  });
+
+  it("carries the core's four row facts into the display row, false when the row has none", () => {
+    const facts = { isAgent: true, isLongRead: true, hidesQuote: true, showsRuntime: true };
+    const rows = groupTimelineItems([{ ...message("a"), ...facts } as never, message("b")]);
+    expect(rows[0]).toMatchObject(facts);
+    expect(rows[1]).toMatchObject({ isAgent: false, isLongRead: false, hidesQuote: false, showsRuntime: false });
   });
 
   it("passes non-membership items through unchanged, keyed on their own id and shape", () => {
@@ -236,9 +264,9 @@ describe("groupTimelineItems", () => {
     const items = [message("msg1"), dateDivider("d1"), message("msg2")];
     const rows = groupTimelineItems(items);
     expect(rows).toEqual([
-      { type: "item", key: "msg1:0", item: items[0]!.item, view: items[0]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false, endsRun: false },
-      { type: "item", key: "d1:0", item: items[1]!.item, view: items[1]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false, endsRun: false },
-      { type: "item", key: "msg2:0", item: items[2]!.item, view: items[2]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false, endsRun: false },
+      { type: "item", key: "msg1:0", item: items[0]!.item, view: items[0]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false, endsRun: false, isAgent: false, isLongRead: false, hidesQuote: false, showsRuntime: false },
+      { type: "item", key: "d1:0", item: items[1]!.item, view: items[1]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false, endsRun: false, isAgent: false, isLongRead: false, hidesQuote: false, showsRuntime: false },
+      { type: "item", key: "msg2:0", item: items[2]!.item, view: items[2]!.view, canReplyOrReact: true, replyQuote: null, senderName: "@someone:example.org", senderShort: "@someone:example.org", senderInitial: "?", replyPreview: null, continuesRun: false, endsRun: false, isAgent: false, isLongRead: false, hidesQuote: false, showsRuntime: false },
     ]);
   });
 });

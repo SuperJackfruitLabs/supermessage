@@ -4,9 +4,14 @@
   import { message, type ItemOverrides } from "$lib/fixtures";
   import { createTimelineStore, type TimelineStoreDeps } from "$lib/stores/timeline.svelte";
   import type { DiffEnvelope } from "$lib/stores/diff";
-  import type { TimelineRow } from "$lib/ipc";
+  import type { LivePayload, TimelineRow, TurnSnapshot, TurnUpdate } from "$lib/ipc";
+  import { createLiveStore } from "$lib/stores/live.svelte";
+  import { turnStep, turnSummary } from "$lib/fixtures";
+  import { storyServices } from "./live/liveCardStoryServices";
 
   import Timeline from "./Timeline.svelte";
+  import AcknowledgementDock from "./composer/AcknowledgementDock.svelte";
+  import TypingIndicator from "./TypingIndicator.svelte";
 
   const ROOM = "!story:example.org";
   const T0 = 1_700_000_000_000;
@@ -116,7 +121,7 @@
   const quoted = atlas("q0", 0, "Parent: the plan for the release.");
   const jumpRows: TimelineRow[] = [
     quoted,
-    ...Array.from({ length: 30 }, (_, i) => i === 29
+    ...Array.from({ length: 14 }, (_, i) => i === 13
         ? ends(continued(atlas(`f${i}`, 10_000 + i * 1_000, `Filler message number ${i}.`)))
         : continued(atlas(`f${i}`, 10_000 + i * 1_000, `Filler message number ${i}.`))),
     {
@@ -128,8 +133,238 @@
     },
   ];
 
+  /**
+   * A turn mirror the story drives by hand: the channels the real one reads
+   * are handlers it can call, and `turn()` answers with the snapshot given.
+   */
+  function liveHarness(snapshot: TurnSnapshot | null = null) {
+    let onTurn: (u: TurnUpdate) => void = () => {};
+    let onLive: (p: LivePayload) => void = () => {};
+    const quiet = async () => () => {};
+    const store = createLiveStore({
+      onTurn: async (h) => {
+        onTurn = h;
+        return () => {};
+      },
+      onLive: async (h) => {
+        onLive = h;
+        return () => {};
+      },
+      onThought: quiet,
+      turn: async () => snapshot,
+    });
+    void store.focus(ROOM);
+    let seq = 0;
+    return {
+      store,
+      turn: (u: TurnUpdate) => onTurn(u),
+      answer: (text: string, done = false) => onLive({ roomId: ROOM, seq: ++seq, text, done }),
+    };
+  }
+
+  const finishedSnapshot = (over: Partial<ReturnType<typeof turnSummary>> = {}): TurnSnapshot => ({
+    summary: turnSummary({
+      turnId: 7,
+      revision: 5,
+      inProgress: false,
+      endedBy: "done",
+      lastActivityMs: 1_700_000_012_000,
+      hasThought: true,
+      totalSteps: 2,
+      completedSteps: 2,
+      recordLabel: "Thought for 12s · 2 steps",
+      ...over,
+    }),
+    steps: [
+      turnStep({ id: "a", title: "read the release notes", seq: 1 }),
+      turnStep({ id: "b", title: "run the 16KB check", seq: 2, kind: "execute" }),
+    ],
+    thought: "The notes name the 16KB device as the open risk.",
+  });
+
+  const finishedHarness = liveHarness(finishedSnapshot());
+  const bridgeHarness = liveHarness(null);
+  const replyHarness = liveHarness(null);
+  const probeHarness = liveHarness(null);
+  const awayHarness = liveHarness(null);
+  const floatHarness = liveHarness(null);
+
   let arrivePush: (row: TimelineRow) => void = () => {};
   let awayPush: (row: TimelineRow) => void = () => {};
+
+  const rowEls = (root: Element) =>
+    [...root.querySelectorAll("[data-testid='timeline-row']")] as HTMLElement[];
+  const liveCard = (root: Element) => root.querySelector("[data-testid='live-card']") as HTMLElement | null;
+  const recordEls = (root: Element) => [...root.querySelectorAll("[data-testid='what-i-did']")] as HTMLElement[];
+  const motionAllowed = () => !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /** The properties an animation inside the timeline may touch. */
+  const ALLOWED_PROPS = new Set(["opacity", "transform", "offset", "easing", "composite", "computedOffset"]);
+
+  interface Frame {
+    t: number;
+    /** Top of the live row and bottom of the history row just above it. */
+    liveTop: number | null;
+    historyBottom: number | null;
+    historyTop: number | null;
+    /** Distance of the scroller from its tail. */
+    fromTail: number;
+    firstVisibleTop: number | null;
+    badProps: string[];
+    glides: number;
+  }
+
+  /** Records one entry per animation frame until `stop()`. */
+  function sampleFrames(root: HTMLElement) {
+    const frames: Frame[] = [];
+    let running = true;
+    const scroller = root.querySelector(".timeline-scroller") as HTMLElement;
+    // Measured in a task right after the frame is painted, not inside the
+    // `requestAnimationFrame` callback: that runs before the frame's layout and
+    // its resize observers, so it would read a state no frame ever shows.
+    const record = (t: number) => {
+      const rows = rowEls(root);
+      const card = liveCard(root);
+      const liveRow = card?.closest("[data-testid='timeline-row']") as HTMLElement | null;
+      const i = liveRow ? rows.indexOf(liveRow) : -1;
+      const history = i > 0 ? rows[i - 1]! : null;
+      const view = scroller.getBoundingClientRect();
+      const firstVisible = rows.find((r) => r.getBoundingClientRect().bottom > view.top + 1);
+      const badProps: string[] = [];
+      let glides = 0;
+      for (const a of document.getAnimations()) {
+        const effect = a.effect as KeyframeEffect | null;
+        const target = effect?.target;
+        if (!effect || !target || !scroller.contains(target)) continue;
+        // Reduced motion zeroes every duration to 0.01ms (app.css): such a transition
+        // of height or visibility is a style change, not an animation anyone sees.
+        if (Number(effect.getComputedTiming().duration) <= 1) continue;
+        if (effect.composite === "add") glides += 1;
+        for (const frame of effect.getKeyframes())
+          for (const prop of Object.keys(frame))
+            if (!ALLOWED_PROPS.has(prop))
+              badProps.push(`${prop} on <${target.tagName.toLowerCase()} class="${(target as HTMLElement).className}">`);
+      }
+      frames.push({
+        t,
+        liveTop: liveRow ? liveRow.getBoundingClientRect().top : null,
+        historyBottom: history ? history.getBoundingClientRect().bottom : null,
+        historyTop: history ? history.getBoundingClientRect().top : null,
+        fromTail: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight,
+        firstVisibleTop: firstVisible ? firstVisible.getBoundingClientRect().top : null,
+        badProps,
+        glides,
+      });
+    };
+    const loop = (t: number) => {
+      setTimeout(() => record(t), 0);
+      if (running) requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+    return {
+      frames,
+      stop: () => {
+        running = false;
+      },
+    };
+  }
+
+  const SENTENCES = [
+    "Staging is green across all four ABIs, and the promotion window opens at nine.",
+    "The 16KB device is the one left to check before anything ships to the store.",
+    "I compared the release notes with the build manifest and found one stale entry.",
+    "That entry names a build number that was superseded on Tuesday afternoon.",
+    "Correcting it is a one-line change, and I have already prepared the patch.",
+    "After that the only open item is the rollout percentage for the first day.",
+    "I would start at five percent and widen it once the crash-free rate holds.",
+  ];
+
+  /** Grows the answer every 450 ms, like iOS `-fixtureStreaming`'s pace. */
+  async function streamAnswer(h: ReturnType<typeof liveHarness>, startedAt = 1_700_000_000_000) {
+    h.turn({
+      summary: turnSummary({ turnId: 3, revision: 1, startedAtMs: startedAt, lastActivityMs: startedAt, answering: true, currentStepTitle: "Writing the answer" }),
+      step: null,
+    });
+    let text = "";
+    for (let i = 0; i < SENTENCES.length; i++) {
+      text += (i > 0 ? "\n\n" : "") + SENTENCES[i];
+      h.answer(text);
+      await new Promise((r) => setTimeout(r, 450));
+    }
+  }
+
+
+  // --- Agent cards, the long read, the quote under its parent (M4 Task 3) ---
+
+  /** The core's facts, written by hand: this row's sender is an agent. */
+  const agent = (r: TimelineRow, facts: Partial<TimelineRow> = {}): TimelineRow => ({ ...r, isAgent: true, ...facts });
+  const ATLAS = "@atlas:example.org";
+  const BEA = "@bea:example.org";
+  const MIRA = "@mira:example.org";
+  const mira = (id: string, at: number, body: string, extra: Partial<ItemOverrides> = {}) =>
+    row({ id, sender: MIRA, senderDisplayName: "Mira", timestampMs: T0 + at, body, ...extra }, "M");
+
+  const cardRows: TimelineRow[] = [
+    ends(agent(atlas("c1", 0, "Staging is green across all four ABIs."))),
+    ends(mira("c2", 10 * 60_000, "Thanks, promoting now.")),
+    ends(mine("c3", 20 * 60_000, "Hold the promotion until Mira confirms.")),
+  ];
+
+  const PARAGRAPHS = Array.from(
+    { length: 6 },
+    (_, i) => `Paragraph ${i + 1}: the migration touched every table the importer reads, and each step was checked against the staging copy before it was allowed to run on anything real.`,
+  );
+  PARAGRAPHS[5] = "The very last paragraph of the report.";
+  const longRow: TimelineRow = {
+    ...agent(atlas("l1", 0, PARAGRAPHS.join("\n\n")), { isLongRead: true, endsRun: true }),
+    view: {
+      render: "bubble",
+      muted: false,
+      blocks: PARAGRAPHS.map((text) => ({ block: "paragraph", inlines: [{ inline: "text", text }] })),
+    },
+  } as TimelineRow;
+  const longRows: TimelineRow[] = [ends(mine("l0", -60_000, "Write up the migration.")), longRow];
+
+  const underParent: TimelineRow[] = [
+    agent(atlas("u1", 0, "Ship it.")),
+    {
+      ...mira("u2", 60_000, "Agreed, going ahead.", {
+        replyTo: { eventId: "$u1", available: true, sender: ATLAS, senderDisplayName: "Atlas", body: null } as never,
+      }),
+      hidesQuote: true,
+      replyQuote: { state: "available", sender: "Atlas", excerpt: "Quoted: Ship it.", label: null },
+    },
+    agent(atlas("u3", 20 * 60_000, "Something else came up.")),
+    {
+      ...mira("u4", 30 * 60_000, "Back to the first point.", {
+        replyTo: { eventId: "$u1", available: true, sender: ATLAS, senderDisplayName: "Atlas", body: null } as never,
+      }),
+      replyQuote: { state: "available", sender: "Atlas", excerpt: "Quoted: Ship it.", label: null },
+    },
+  ];
+
+  const twoAgents: TimelineRow[] = [
+    { ...atlas("t1", 0, "I will take the Android build."), isAgent: true, showsRuntime: true, senderName: "Atlas (claude on mac)", senderShort: "Atlas" },
+    {
+      ...row({ id: "t2", sender: BEA, senderDisplayName: "Bea", timestampMs: T0 + 20 * 60_000, body: "And I the iOS one." }, "B"),
+      isAgent: true,
+      showsRuntime: true,
+      senderName: "Bea (codex on linux)",
+      senderShort: "Bea",
+    },
+  ];
+
+  const longName = "Atlas, the assistant with an extraordinarily long working title";
+  const longNameRows: TimelineRow[] = [
+    { ...atlas("n1", 0, "Staging is green."), isAgent: true, senderName: longName, senderShort: longName },
+  ];
+
+  const cardEls = (root: HTMLElement) =>
+    [...root.querySelectorAll("[data-testid='timeline-row']")] as HTMLElement[];
+  const buttonNamed = (root: ParentNode, name: string) =>
+    [...root.querySelectorAll("button")].find((b) => b.textContent?.trim() === name) as HTMLElement | undefined;
+  /** What the floating-capsule story shows; the play function flips these. */
+  const floaters = $state({ dock: false, typing: false });
 
   const { Story } = defineMeta({ title: "Timeline/Rhythm and quiet meta", component: Timeline });
 </script>
@@ -315,6 +550,390 @@
   {#snippet template()}
     <div class="flex h-[560px] w-[760px] flex-col bg-surface">
       <Timeline roomId={ROOM} store={seededStore(jumpRows, (push) => (awayPush = push))} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  A finished turn has no row: its record is drawn inside the answer's own row,
+  between the sender's line and the text, collapsed.
+-->
+<Story
+  name="A finished turn's record in its answer"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (recordEls(root).length > 0 ? root : null), 4000, "the record");
+    if (liveCard(root)) throw new Error("a finished turn has no card");
+    const records = recordEls(root);
+    if (records.length !== 1) throw new Error(`${records.length} records, want one`);
+    const row = records[0]!.closest("[data-testid='timeline-row']")!;
+    if (!row.textContent?.includes("Corrected the build number.")) throw new Error("the record is not in the newest peer row");
+    if (rowEls(root).filter((r) => r !== row && r.querySelector("[data-testid='what-i-did']")).length) throw new Error("another row carries it");
+    if (records[0]!.querySelector("summary")?.textContent?.trim() !== "Thought for 12s · 2 steps") throw new Error("the core's label");
+    if ((records[0] as HTMLDetailsElement).open) throw new Error("collapsed");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore()} live={finishedHarness.store} liveServices={storyServices} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  RF1: a bridge that never sends deltas, only edits its progress message. The
+  core has no turn for it: no card, no record. The edited row is just a message.
+-->
+<Story
+  name="A bridge that only edits its progress message"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (rowEls(root).some((r) => r.textContent?.includes("Searching files")) ? root : null), 3000, "the edited message");
+    await new Promise((r) => setTimeout(r, 300));
+    if (liveCard(root)) throw new Error("no turn, no card");
+    if (recordEls(root).length) throw new Error("no turn, no record");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline
+        roomId={ROOM}
+        store={seededStore([
+          ends(mine("b0", 0, "Find where the tokens are generated.")),
+          ends(atlas("b1", 20_000, "🔎 Searching files…", { edited: true })),
+        ])}
+        live={bridgeHarness.store}
+        liveServices={storyServices}
+      />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  RF1: a turn the core ended by the agent's reply. The card goes at that moment
+  and the record appears in the answer's row.
+-->
+<Story
+  name="A turn the core ended by a reply"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (rowEls(root).length >= 2 ? root : null), 3000, "the rows");
+    replyHarness.turn({ summary: turnSummary({ turnId: 9, revision: 1, currentStepTitle: "Starting" }), step: null });
+    await settled(() => liveCard(root), 2000, "the live card");
+    if (recordEls(root).length) throw new Error("no record while the turn is going");
+    replyHarness.turn({
+      summary: turnSummary({
+        turnId: 9,
+        revision: 2,
+        inProgress: false,
+        endedBy: "reply",
+        hasThought: false,
+        totalSteps: 1,
+        completedSteps: 1,
+        recordLabel: "1 step · 12s",
+      }),
+      step: { index: 0, step: turnStep({ id: "r1", title: "read the release notes" }) },
+    });
+    await settled(() => (!liveCard(root) && recordEls(root).length === 1 ? root : null), 2000, "the card to go and the record to show");
+    const row = recordEls(root)[0]!.closest("[data-testid='timeline-row']")!;
+    if (!row.textContent?.includes("design/tokens.toml")) throw new Error("the record is not in the newest peer row");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline
+        roomId={ROOM}
+        store={seededStore([
+          ends(mine("c0", 0, "Find where the tokens are generated.")),
+          ends(atlas("c1", 20_000, "They come from design/tokens.toml through the generator.")),
+        ])}
+        live={replyHarness.store}
+        liveServices={storyServices}
+      />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  The probe (Review Focus 5): the live card is a row of the virtual list. As the
+  answer grows every 450 ms for 3 s, on every animation frame the newest history
+  row meets the card's row with no gap and no overlap, nothing but opacity and
+  transform animates, and a reader at the tail stays at the tail. With motion
+  allowed (`SNAPSHOT_MOTION=allow`) the history also glides (0.32 s, `glide.ts`):
+  no long frame and no jump larger than a glide step.
+-->
+<Story
+  name="Timeline — a streaming turn"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (rowEls(root).length >= jumpRows.length ? root : null), 4000, "the history");
+    await new Promise((r) => setTimeout(r, 400));
+    const sampler = sampleFrames(root);
+    await streamAnswer(probeHarness);
+    await new Promise((r) => setTimeout(r, 500));
+    sampler.stop();
+    const frames = sampler.frames.filter((f) => f.liveTop !== null);
+    if (frames.length < 20) throw new Error(`only ${frames.length} frames with the card`);
+
+    // (a) no gap, no overlap between the newest history row and the card's row.
+    for (const f of frames) {
+      if (f.historyBottom === null || Math.abs(f.historyBottom - f.liveTop!) > 1)
+        throw new Error(`history bottom ${f.historyBottom} vs card top ${f.liveTop}`);
+    }
+    // (b) nothing but opacity and transform animates.
+    const bad = frames.flatMap((f) => f.badProps);
+    if (bad.length) throw new Error(`animated ${[...new Set(bad)].join(", ")}`);
+    // (c) the reader stays at the tail.
+    const off = Math.max(...frames.map((f) => f.fromTail));
+    if (off > 1) {
+      const bad = frames.map((f, i) => [i, Math.round(f.fromTail)] as const).filter(([, d]) => d > 1);
+      throw new Error(`left the tail by ${off}px in ${bad.length} of ${frames.length} frames: ${JSON.stringify(bad.slice(0, 12))}`);
+    }
+
+    const glides = Math.max(...frames.map((f) => f.glides));
+    if (!motionAllowed()) {
+      if (glides !== 0) throw new Error("reduced motion must not glide");
+      return;
+    }
+    // Motion allowed: the stutter check.
+    if (glides === 0) throw new Error("the history never glided");
+    // Skip the first frames: mounting the card is not streaming.
+    const steady = frames.slice(3);
+    const dts = steady.slice(1).map((f, i) => f.t - steady[i]!.t);
+    const longFrames = dts.filter((dt) => dt > 50);
+    if (longFrames.length) throw new Error(`${longFrames.length} long frames, worst ${Math.max(...longFrames).toFixed(0)}ms`);
+    const jumps = steady.slice(1).map((f, i) => Math.abs(f.historyTop! - steady[i]!.historyTop!));
+    const worst = Math.max(...jumps);
+    if (worst > 12) {
+      const at = jumps.map((j, i) => [i, +j.toFixed(1), +dts[i]!.toFixed(0), +steady[i + 1]!.historyTop!.toFixed(1)] as const).filter(([, j]) => j > 5);
+      throw new Error(`the history jumped ${worst.toFixed(1)}px in one frame: [frame, px, dtMs, top] ${JSON.stringify(at.slice(0, 14))}`);
+    }
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(jumpRows)} live={probeHarness.store} liveServices={storyServices} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  The floating capsules (iOS `safeAreaInset`): the dock and the typing pill are drawn over the
+  bottom of the list, and the list keeps a constant reserve under its last row. The newest row
+  is measured on every frame as the dock appears, the pill appears, and both go: it must not move
+  by even half a pixel, and it must never sit under a capsule.
+-->
+<Story
+  name="Timeline — the dock and the typing pill do not move the history"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (rowEls(root).length >= jumpRows.length ? root : null), 4000, "the history");
+    await new Promise((r) => setTimeout(r, 500));
+    const newest = () => {
+      const rows = rowEls(root);
+      return rows[rows.length - 1]!.getBoundingClientRect();
+    };
+    const before = newest();
+    const tops: number[] = [];
+    let covered = "";
+    let running = true;
+    const loop = () => {
+      setTimeout(() => {
+        const r = newest();
+        tops.push(r.top);
+        for (const el of root.querySelectorAll("[data-testid='ack-dock'], [data-testid='typing-pill']")) {
+          if (r.bottom > el.getBoundingClientRect().top + 0.5) covered = `${el.getAttribute("data-testid")} covers the newest row`;
+        }
+      }, 0);
+      if (running) requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+    const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    floaters.dock = true;
+    await settled(() => root.querySelector("[data-testid='ack-dock']"), 2000, "the dock");
+    await pause(450);
+    floaters.typing = true;
+    await settled(() => root.querySelector("[data-testid='typing-pill']"), 2000, "the pill");
+    await pause(450);
+    floaters.dock = false;
+    floaters.typing = false;
+    await pause(450);
+    running = false;
+    await pause(50);
+    const after = newest();
+    if (tops.length < 30) throw new Error(`only ${tops.length} frames sampled`);
+    const moved = Math.max(...tops.map((t) => Math.abs(t - before.top)));
+    if (moved > 0.5) throw new Error(`the newest row moved ${moved.toFixed(1)}px as the capsules came and went`);
+    if (Math.abs(after.top - before.top) > 0.5) throw new Error("the newest row did not come back");
+    if (covered) throw new Error(covered);
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(jumpRows)} live={floatHarness.store} liveServices={storyServices}>
+        {#snippet overlay()}
+          <AcknowledgementDock ack={floaters.dock ? { kind: "onIt", names: ["Atlas"], text: "Atlas is on it…" } : null} />
+          <TypingIndicator text={floaters.typing ? "Kiran is typing…" : null} />
+        {/snippet}
+      </Timeline>
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  The reader has scrolled back 400px: the card grows below the fold and the
+  first visible row does not move.
+-->
+<Story
+  name="Timeline — a streaming turn, scrolled back"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const scroller = (await settled(() => root.querySelector(".timeline-scroller"), 3000, "the scroller")) as HTMLElement;
+    await settled(() => (root.textContent?.includes("Replying to the plan.") ? root : null), 4000, "the newest row");
+    await new Promise((r) => setTimeout(r, 400));
+    scroller.dispatchEvent(new WheelEvent("wheel", { deltaY: -400, bubbles: true }));
+    scroller.scrollTop = Math.max(0, scroller.scrollTop - 400);
+    await settled(
+      () => [...root.querySelectorAll("button")].find((b) => /newest|jump/i.test(b.getAttribute("aria-label") ?? b.textContent ?? "")),
+      3000,
+      "the jump-to-newest button",
+    );
+    await new Promise((r) => setTimeout(r, 300));
+    const sampler = sampleFrames(root);
+    // The card is not on screen, so its row is not what is measured: the first visible row is.
+    await new Promise((r) => setTimeout(r, 100));
+    const before = sampler.frames.at(-1)!.firstVisibleTop;
+    await streamAnswer(awayHarness);
+    await new Promise((r) => setTimeout(r, 400));
+    sampler.stop();
+    if (before === null) throw new Error("no visible row");
+    const moved = Math.max(...sampler.frames.map((f) => Math.abs((f.firstVisibleTop ?? before) - before)));
+    if (moved > 1) throw new Error(`the first visible row moved ${moved}px while the card grew`);
+    const bad = sampler.frames.flatMap((f) => f.badProps);
+    if (bad.length) throw new Error(`animated ${bad.join(", ")}`);
+    if (sampler.frames.some((f) => f.glides > 0)) throw new Error("a scrolled-back reader's history must not glide");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(jumpRows)} live={awayHarness.store} liveServices={storyServices} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  Every peer message is a card (O2); "Agent" marks an agent and nobody else.
+-->
+<Story
+  name="An agent and a person, as cards"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (cardEls(root).length >= cardRows.length ? root : null), 4000, "the rows");
+    const [agent, person, own] = cardEls(root) as [HTMLElement, HTMLElement, HTMLElement];
+    const header = (el: HTMLElement) => el.querySelector("[data-testid='sender-header']");
+    if (!header(agent)?.textContent?.includes("Agent")) throw new Error("the agent's header should say Agent");
+    if (header(person)?.textContent?.includes("Agent")) throw new Error("a person's header must not say Agent");
+    if (own.textContent?.includes("Agent")) throw new Error("your own message must not say Agent");
+    const card = (el: HTMLElement) => el.querySelector("[data-testid='message-card']") as HTMLElement | null;
+    if (!card(agent) || !card(person)) throw new Error("every peer message should be a card");
+    if (card(own)) throw new Error("your own message stays on its tint");
+    if (card(agent)!.getBoundingClientRect().width > 600.5) throw new Error("a card is at most 600 wide");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[420px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(cardRows)} />
+    </div>
+  {/snippet}
+</Story>
+
+<!--
+  A long report is cut at 320px under a fade; "Read" opens the whole message in
+  the serif reading view. Escape closes it and focus returns to "Read".
+-->
+<Story
+  name="A long read"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const read = (await settled(() => buttonNamed(root, "Read"), 4000, "the Read button")) as HTMLElement;
+    const text = read.parentElement!.querySelector(".long-read-cut") as HTMLElement;
+    if (!text || text.getBoundingClientRect().height > 320.5) throw new Error("the text should be cut at 320px");
+    // A click focuses the button; a script has to wait until it can be focused.
+    await settled(() => {
+      read.focus();
+      return document.activeElement === read ? read : null;
+    }, 3000, "the Read button to take focus");
+    read.click();
+    const dialog = (await settled(() => document.querySelector("dialog[open]"), 3000, "the reading view")) as HTMLDialogElement;
+    const body = dialog.querySelector("[data-testid='long-read-body']") as HTMLElement;
+    if (!body.textContent?.includes("The very last paragraph of the report.")) throw new Error("the whole message belongs in the dialog");
+    if (!getComputedStyle(body).fontFamily.toLowerCase().includes("serif")) throw new Error("the reading view is serif");
+    await settled(() => (document.activeElement === buttonNamed(dialog, "Done") ? dialog : null), 3000, "focus on Done");
+    dialog.dispatchEvent(new Event("cancel", { cancelable: true }));
+    await settled(() => (document.querySelector("dialog[open]") ? null : root), 3000, "the dialog to close");
+    await settled(() => (document.activeElement === read ? read : null), 3000, "focus to return to Read");
+    read.blur();
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[560px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(longRows)} />
+    </div>
+  {/snippet}
+</Story>
+
+<!-- The reply directly under its parent drops the quote; a later reply keeps it. -->
+<Story
+  name="A reply under its parent"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (cardEls(root).length >= underParent.length ? root : null), 4000, "the rows");
+    const [, under, , later] = cardEls(root) as [HTMLElement, HTMLElement, HTMLElement, HTMLElement];
+    if (under.textContent?.includes("Quoted: Ship it.")) throw new Error("the quote should hide under its parent");
+    if (!later.textContent?.includes("Quoted: Ship it.")) throw new Error("a later reply keeps its quote");
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[460px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(underParent)} />
+    </div>
+  {/snippet}
+</Story>
+
+<!-- Two agents in the room: the runtime joins each name. -->
+<Story
+  name="Two agents speaking (runtime shown)"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (cardEls(root).length >= twoAgents.length ? root : null), 4000, "the rows");
+    const names = [...root.querySelectorAll("[data-testid='sender-header'] .truncate")].map((n) => n.textContent?.trim());
+    if (names.join("|") !== "Atlas (claude on mac)|Bea (codex on linux)") throw new Error(`names were ${names.join("|")}`);
+  }}
+>
+  {#snippet template()}
+    <div class="flex h-[300px] w-[760px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(twoAgents)} />
+    </div>
+  {/snippet}
+</Story>
+
+<!-- 150 % text in a 600px window: the name truncates, "Agent" stays whole. -->
+<Story
+  name="Largest text at 600px"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => (cardEls(root).length >= 1 ? root : null), 4000, "the row");
+    const header = root.querySelector("[data-testid='sender-header']") as HTMLElement;
+    const name = header.querySelector(".truncate") as HTMLElement;
+    if (name.scrollWidth <= name.clientWidth) throw new Error("the long name should truncate");
+    const agent = [...header.querySelectorAll("span")].find((n) => n.textContent === "Agent") as HTMLElement | undefined;
+    if (!agent) throw new Error("Agent should show");
+    if (agent.scrollWidth > agent.clientWidth + 1 || agent.getBoundingClientRect().width < 30) throw new Error("Agent was squeezed");
+  }}
+>
+  {#snippet template()}
+    <div style="zoom: 1.5; width: 400px;" class="flex h-[220px] flex-col bg-surface">
+      <Timeline roomId={ROOM} store={seededStore(longNameRows)} />
     </div>
   {/snippet}
 </Story>

@@ -104,3 +104,11 @@ export function rerunsOnScopeChange(args: {
 }): boolean {
   return args.changed && args.searched && args.term.trim() !== "";
 }
+
+/**
+ * What Escape does in the search panel: the overlay closes; the one embedded in the sidebar has
+ * nothing to close, so it clears the term and stays.
+ */
+export function escapeOutcome(embedded: boolean): "close" | "clear" {
+  return embedded ? "clear" : "close";
+}

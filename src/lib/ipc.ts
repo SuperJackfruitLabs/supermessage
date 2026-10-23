@@ -1571,6 +1571,16 @@ export async function markRoomRead(roomId: string): Promise<boolean> {
 }
 
 /**
+ * Marks `roomId` read without it being the open room: a row in the room list
+ * (the roster's "Mark read"). Sends a public read receipt on the room's latest
+ * event; when `roomId` is the open room it is {@link markRoomRead}. Resolves
+ * to whether a receipt was sent.
+ */
+export async function markRoomReadFromList(roomId: string): Promise<boolean> {
+  return invoke<boolean>("mark_room_read_from_list", { roomId });
+}
+
+/**
  * Resolves and fetches `roomId`'s avatar as a `data:` URI, or `null` when
  * the room genuinely has nothing to show (or the core couldn't identify the
  * fetched bytes as a renderable image format). Takes a room id, not an mxc
@@ -2207,6 +2217,14 @@ export async function acknowledgement(
     typingAgents,
     turnInProgress,
   });
+}
+
+/**
+ * The people an `@` query offers in `roomId`: its cast, agents first, matched by the core, at
+ * most six. One call per query; the cast is a few dozen people.
+ */
+export async function roomMentionCandidates(roomId: string, query: string): Promise<PersonDto[]> {
+  return invoke<PersonDto[]>("room_mention_candidates", { roomId, query });
 }
 
 /** Subscribes to focused-timeline diff envelopes on {@link TIMELINE_DIFF_EVENT}. */

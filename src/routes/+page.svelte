@@ -16,7 +16,7 @@
   // used to build a second `Client` and a second set of streams, which
   // froze the room list for the whole session.
 
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { spacesStore } from "$lib/stores/spaces.svelte";
@@ -43,18 +43,28 @@
   import { liveStore } from "$lib/stores/live.svelte";
   import { typingStore } from "$lib/stores/typing.svelte";
   import { createAvatarCache } from "$lib/stores/avatarCache.svelte";
-  import { boundTypers } from "$lib/components/typingView";
+  import { typingArgs } from "$lib/components/typingView";
+  import { castStore } from "$lib/stores/cast.svelte";
+  import { acknowledgementStore } from "$lib/stores/acknowledgement.svelte";
+  import { timelineStore } from "$lib/stores/timeline.svelte";
+  import AcknowledgementDock from "$lib/components/composer/AcknowledgementDock.svelte";
+  import { turnAgentName } from "$lib/stores/liveTurn";
+  import RoomHeaderLine from "$lib/components/RoomHeaderLine.svelte";
+  import { createHeaderStatus, headerRows, headerTurnFlag } from "$lib/components/roomHeaderView";
+  import type { RoomStatus } from "$lib/ipc";
   import { railEntries } from "$lib/components/spacesRailView";
+  import KeptPane from "$lib/components/KeptPane.svelte";
   import RoomList from "$lib/components/RoomList.svelte";
   import SpacesRail from "$lib/components/SpacesRail.svelte";
   import Timeline from "$lib/components/Timeline.svelte";
   import TypingIndicator from "$lib/components/TypingIndicator.svelte";
-  import AgentReasoning from "$lib/components/AgentReasoning.svelte";
-  import LiveTurn from "$lib/components/LiveTurn.svelte";
-  import LiveActivity from "$lib/components/LiveActivity.svelte";
   import Composer from "$lib/components/Composer.svelte";
   import EmptyRoomState from "$lib/components/layout/EmptyRoomState.svelte";
   import SearchPanel from "$lib/components/SearchPanel.svelte";
+  import SidebarDestinations from "$lib/components/SidebarDestinations.svelte";
+  import NeedsYouList from "$lib/components/NeedsYouList.svelte";
+  import AgentsList from "$lib/components/AgentsList.svelte";
+  import { DESTINATIONS, destinations, type Destination } from "$lib/stores/destinations.svelte";
   import NewRoomPanel from "$lib/components/NewRoomPanel.svelte";
   import { openConversation } from "$lib/components/roomCreation";
   import SpaceInvitePanel from "$lib/components/SpaceInvitePanel.svelte";
@@ -62,6 +72,8 @@
   import ConnectionLine from "$lib/components/ConnectionLine.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
   import RecoveryPanel from "$lib/components/RecoveryPanel.svelte";
+  import FirstRunDemo from "$lib/components/FirstRunDemo.svelte";
+  import { browserOnboarding, demoDue } from "$lib/onboarding";
   import AccountPanel from "$lib/components/AccountPanel.svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { appearanceStore } from "$lib/stores/appearance.svelte";
@@ -73,29 +85,146 @@
 
   let checking = $state(true);
   let restored = $state(false);
+
+  /** The sidebar's title follows its destination; the connection line stays under it (O4). */
+  const destinationTitle = $derived(DESTINATIONS.find((d) => d.id === destinations.selected)!.title);
+  /**
+   * The instant the Needs you and Agents ages measure against. Derived from the roster, so it
+   * moves exactly when a row's age could be stale and never on a timer (as `RoomList`'s is).
+   */
+  const nowMs = $derived.by(() => {
+    void roomsStore.rooms;
+    return Date.now();
+  });
+  /**
+   * Follows the selected space's roster (Q1): `roomsStore.rooms` is already that. The core is asked
+   * once per roster; a turn starting or ending re-reads only the Agents statuses.
+   */
+  $effect(() => {
+    if (!restored) return;
+    void destinations.refresh(
+      roomsStore.rooms,
+      nowMs,
+      roomsStore.selectedId,
+      liveStore.roomId === roomsStore.selectedId && liveStore.inProgress,
+    );
+  });
   let signingOut = $state(false);
 
   // The typing line's wording is the core's (`typing_view`); the desktop only
   // bounds each name's length first. `null` until the core answers, and
   // whenever nobody is typing.
   let typingLine = $state<string | null>(null);
+  // The agents typing now, for the dock above the composer (the dock's effect reads it).
+  let typingAgents = $state<string[]>([]);
+
+  // The focused room's turn and cast follow the selection. They load in parallel;
+  // the live card names its agent once the cast arrives.
   $effect(() => {
-    const users = boundTypers(typingStore.users);
-    let current = true;
-    if (users.length === 0) {
-      typingLine = null;
+    const id = roomsStore.selectedId;
+    void liveStore.focus(id);
+    if (id !== null) void castStore.load(id);
+    else castStore.clear();
+  });
+  // The live card names the agent writing the turn, else the room's agent.
+  $effect(() => {
+    const id = roomsStore.selectedId;
+    if (id === null) return;
+    liveStore.setAgentName(turnAgentName(liveStore.summary, castStore.castFor(id)), id);
+  });
+
+  // The header's second line: the status pill of an agent's room, else the member count. The
+  // core answers from the roster rows already held (one `rosterRow` call per refresh, no
+  // per-row IPC); the clock moves every 60 s while the reader stays and resets on a room change.
+  let headerStatus = $state<RoomStatus | null>(null);
+  let headerWord = $state<string | null>(null);
+  let headerMembers = $state<number | null>(null);
+  const header = createHeaderStatus(undefined, () => {
+    headerStatus = header.status;
+    headerWord = header.word;
+    headerMembers = header.members;
+  });
+  let headerNow = $state(Date.now());
+  // Only the selected room's row crosses IPC, and the turn flag is a boolean `$derived`, so a
+  // turn step that changes nothing here does not re-run the effect.
+  const headerRowsNow = $derived(
+    roomsStore.selectedId === null ? [] : headerRows(roomsStore.rooms, roomsStore.selectedId),
+  );
+  const headerTurn = $derived(
+    headerTurnFlag(roomsStore.selectedId, {
+      roomId: liveStore.roomId,
+      isLive: liveStore.isLive,
+      finished: liveStore.finished,
+    }),
+  );
+  $effect(() => {
+    const id = roomsStore.selectedId;
+    headerNow = Date.now();
+    if (id === null) return;
+    const timer = setInterval(() => (headerNow = Date.now()), 60_000);
+    return () => clearInterval(timer);
+  });
+  $effect(() => {
+    const id = roomsStore.selectedId;
+    if (id === null) {
+      header.clear();
       return;
     }
-    typingView(users, [], null)
+    void header.refresh(id, headerRowsNow, headerNow, headerTurn);
+  });
+  $effect(() => {
+    const id = roomsStore.selectedId;
+    // A room of people that is not an invitation (iOS `RoomScreen.swift:116-123`).
+    if (id !== null && (roomsStore.selectedAffordance ?? "compose") === "compose") {
+      void header.refreshMembers(id);
+    } else {
+      // An invitation, a left room or no room: no count, and not the previous room's.
+      header.forgetMembers();
+    }
+  });
+
+  $effect(() => {
+    const args = typingArgs(typingStore.users, castStore.castFor(roomsStore.selectedId), roomsStore.selectedId);
+    let current = true;
+    if (args.typers.length === 0) {
+      typingLine = null;
+      // Not a fresh array each run: the dock's effect depends on this one.
+      if (untrack(() => typingAgents.length) > 0) typingAgents = [];
+      return;
+    }
+    typingView(args.typers, args.agentIds, args.counterpart)
       .then((view) => {
-        if (current) typingLine = view.line;
+        if (!current) return;
+        typingLine = view.line;
+        typingAgents = view.agents;
       })
       .catch(() => {
-        if (current) typingLine = null;
+        if (!current) return;
+        typingLine = null;
+        typingAgents = [];
       });
     return () => {
       current = false;
     };
+  });
+
+  // The dock above the composer. The core decides what it says from the timeline's own rows,
+  // so it is asked again on any change of the room, the timeline, who is typing, the turn or
+  // the cast: a progress message the agent edits ends "Sent to" only if it is asked again.
+  const ackTurn = $derived(liveStore.roomId === roomsStore.selectedId && liveStore.inProgress);
+  $effect(() => {
+    const id = roomsStore.selectedId;
+    if (id === null) {
+      acknowledgementStore.clear();
+      return;
+    }
+    void timelineStore.items;
+    void acknowledgementStore.ask({
+      roomId: id,
+      cast: castStore.castFor(id),
+      typingAgents,
+      inProgress: ackTurn,
+    });
   });
 
   /**
@@ -225,8 +354,6 @@
    * thing for a room-switch effect to have to remember to do.
    */
   let showRoomInfo = $state(false);
-  /** Whether the search panel is up. Fleet-wide, so not scoped to a room. */
-  let searchOpen = $state(false);
   /** Whether the create/join panel is up. */
   let newRoomOpen = $state(false);
   /**
@@ -468,13 +595,28 @@
         key: event.key,
         panelIsModal,
         defaultPrevented: event.defaultPrevented,
-        // The search panel is a modal overlay too, and handles its own Escape.
-        modalDialogOpen: searchOpen || accountOpen || newRoomOpen || document.querySelector("dialog:modal") !== null,
+        modalDialogOpen: accountOpen || newRoomOpen || document.querySelector("dialog:modal") !== null,
       })
     )
       return;
     event.preventDefault();
     void closeRoomInfo();
+  }
+
+  /** Chooses what the sidebar shows; in the collapsed layout that is the roster group. */
+  function chooseDestination(d: Destination): void {
+    destinations.select(d);
+    if (narrow) roomPaneOpen = false;
+  }
+
+  /**
+   * A room chosen from Needs you, Agents or Search: select it unless it already is (a re-select
+   * re-arms the timeline subscription) and, in the collapsed layout, show the room pane. The
+   * sidebar stays on its destination.
+   */
+  function chooseFromDestination(roomId: string): void {
+    if (roomId !== roomsStore.selectedId) roomsStore.select(roomId);
+    roomPaneOpen = true;
   }
 
   /**
@@ -673,7 +815,13 @@
         .then((key) => {
           if (key) void openRecovery(key);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          // The first-run demo waited for this: a new key is shown before anything else.
+          recoverySettled = true;
+        });
+    } else {
+      recoverySettled = true;
     }
   });
 
@@ -698,6 +846,29 @@
   let recoveryState = $state<"enabled" | "disabled" | "incomplete" | "unknown">("unknown");
   /** The key just created at sign-in, shown once by the panel. */
   let recoveryNewKey = $state<string | null>(null);
+
+  /**
+   * The first-run demo (iOS `RootView`): over the signed-in app when it is queued and unseen, and
+   * never while a new recovery key is being set up or shown. It opens when that panel closes.
+   * `recoverySettled` is false from a fresh sign-in until `ensureRecovery` has answered, so the
+   * demo cannot slip in before the key panel has had its chance to open.
+   */
+  const firstRun = browserOnboarding();
+  let recoverySettled = $state(false);
+  let demoOpen = $state(false);
+  /** Closed in this run, whether or not storage took the "seen" mark, so a refusing store cannot reopen it. */
+  let demoDone = $state(false);
+  $effect(() => {
+    const holdForRecovery = !recoverySettled || (recoveryOpen && recoveryNewKey !== null);
+    if (!demoOpen && !demoDone && demoDue({ demoPending: firstRun.demoPending, demoSeen: firstRun.demoSeen }, holdForRecovery)) {
+      demoOpen = true;
+    }
+  });
+  function finishDemo(): void {
+    firstRun.finishDemo();
+    demoDone = true;
+    demoOpen = false;
+  }
 
   async function openRecovery(newKey: string | null = null): Promise<void> {
     recoveryNewKey = newKey;
@@ -855,9 +1026,18 @@
             live, so the title sits alone then.
           -->
           <div class="shrink-0 px-3 pt-3">
-            <h2 class="text-ui-lg font-medium text-content">Chats</h2>
+            <h2 class="text-ui-lg font-medium text-content" data-testid="sidebar-title">{destinationTitle}</h2>
             <ConnectionLine state={connectionStore.state} message={connectionStore.message} />
           </div>
+          <!--
+            The four places the sidebar can show, above the roster (iOS `SidebarDestinations`).
+            The room pane keeps the open room whichever is chosen.
+          -->
+          <SidebarDestinations
+            selected={destinations.selected}
+            badgeCount={destinations.badgeCount}
+            onSelect={chooseDestination}
+          />
           <!--
             Starting a conversation sits above the roster, where the list of
             conversations is — not in the room header, which is about the room
@@ -883,7 +1063,44 @@
               that value, so returning to it from the roster would silently
               do nothing.
             -->
-            <RoomList onSelect={() => (roomPaneOpen = true)} />
+            <!--
+              The roster stays mounted whichever destination shows, and is hidden (out of the layout,
+              the tab order and the accessibility tree) rather than unmounted: a return to Chats
+              would otherwise rebuild its avatar cache (every avatar over IPC again), lose the scroll
+              position and flash "No rooms yet" until the first read landed.
+            -->
+            <KeptPane active={destinations.selected === "chats"}>
+              <RoomList onSelect={() => (roomPaneOpen = true)} />
+            </KeptPane>
+            {#if destinations.selected === "needsYou"}
+              <NeedsYouList
+                inbox={destinations.inbox}
+                {nowMs}
+                showsState={true}
+                avatars={headerAvatarCache}
+                selectedId={roomsStore.selectedId}
+                onSelect={chooseFromDestination}
+              />
+            {:else if destinations.selected === "agents"}
+              <AgentsList
+                agents={destinations.agents}
+                {nowMs}
+                statuses={destinations}
+                avatars={headerAvatarCache}
+                selectedId={roomsStore.selectedId}
+                onSelect={chooseFromDestination}
+              />
+            {:else if destinations.selected === "search"}
+              <SearchPanel
+                embedded
+                rooms={roomsStore.rooms}
+                scope={roomsStore.selectedId
+                  ? { roomId: roomsStore.selectedId, name: selectedIdentity.name }
+                  : null}
+                onSearch={searchMessages}
+                onOpenRoom={chooseFromDestination}
+              />
+            {/if}
           </div>
           <!--
             One "Account" button: appearance, links, encryption recovery and
@@ -950,9 +1167,9 @@
             topic/alias/member list; see `RoomInfoPanel.svelte`'s doc
             comment.
 
-            No member count here by design (spec §6.2): it only comes from
-            `roomInfo`, fetched when the panel opens, and a stale or absent
-            number would be worse than none.
+            Under the name, a second line (M4 A1, owner Q3): the status pill of an agent's room,
+            else the member count of a room of people (`roomInfo`, fetched on selection). Either
+            is absent until the core answers, and the line then takes no height.
 
             `bg-surface-sunken`, so the header joins the field rather than
             capping the sheet. It was the last element outside the depth
@@ -1006,7 +1223,7 @@
                   class="-ml-1 flex shrink-0 items-center gap-1 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface hover:text-content"
                 >
                   <span aria-hidden="true">‹</span>
-                  Chats
+                  {destinationTitle}
                 </button>
               {/if}
               {#if headerAvatar}
@@ -1025,53 +1242,58 @@
                   {selectedIdentity.initial}
                 </span>
               {/if}
-              <span class="min-w-0 truncate text-ui-lg text-content">{selectedIdentity.name}</span>
-              {#if selectedIdentity.role !== null}
-                <!--
-                  `min-w-0` and a `max-w`, not `shrink-0`: a `shrink-0` flex
-                  item never shrinks below its own nowrap content width, so
-                  pairing it with `truncate` makes the truncation dead code
-                  and lets a long role push `Info`
-                  button out of the header. The role is bounded to 40
-                  characters by `core::room_identity`, which caps the damage
-                  but does not prevent it. The name is the more important
-                  half of the identity, so the chip is the one given a hard
-                  ceiling and told to give way first.
+              <div class="flex min-w-0 flex-col items-start">
+                <div class="flex min-w-0 max-w-full items-center gap-2">
+                  <span class="min-w-0 truncate text-ui-lg text-content">{selectedIdentity.name}</span>
+                  {#if selectedIdentity.role !== null}
+                    <!--
+                      `min-w-0` and a `max-w`, not `shrink-0`: a `shrink-0` flex
+                      item never shrinks below its own nowrap content width, so
+                      pairing it with `truncate` makes the truncation dead code
+                      and lets a long role push `Info`
+                      button out of the header. The role is bounded to 40
+                      characters by `core::room_identity`, which caps the damage
+                      but does not prevent it. The name is the more important
+                      half of the identity, so the chip is the one given a hard
+                      ceiling and told to give way first.
 
-                  The ceiling is written out in full because the two
-                  obvious short forms are both wrong, and the first one
-                  shipped. `max-w-[14ch]` was a *border-box* cap — Tailwind
-                  sets `box-sizing: border-box` globally — so `px-2` and
-                  the 1px border ate into it: 84px of box, 66px of room,
-                  and `SQUAD LEAD` needs 68. The spec's own canonical role
-                  (§1, §5.1, §6.2) rendered `SQUAD LE…` at 1905px while the
-                  roster row two inches away showed it whole; `CODE &
-                  BUILD` (98px) lost four characters. Widening to
-                  `max-w-[16ch]` would not have fixed it either: `ch` is
-                  the *advance* of `0`, and `--text-label` adds `0.08em` of
-                  tracking to every character, so 16ch of box is only
-                  ~11 characters of chip.
+                      The ceiling is written out in full because the two
+                      obvious short forms are both wrong, and the first one
+                      shipped. `max-w-[14ch]` was a *border-box* cap — Tailwind
+                      sets `box-sizing: border-box` globally — so `px-2` and
+                      the 1px border ate into it: 84px of box, 66px of room,
+                      and `SQUAD LEAD` needs 68. The spec's own canonical role
+                      (§1, §5.1, §6.2) rendered `SQUAD LE…` at 1905px while the
+                      roster row two inches away showed it whole; `CODE &
+                      BUILD` (98px) lost four characters. Widening to
+                      `max-w-[16ch]` would not have fixed it either: `ch` is
+                      the *advance* of `0`, and `--text-label` adds `0.08em` of
+                      tracking to every character, so 16ch of box is only
+                      ~11 characters of chip.
 
-                  So the cap names what it actually means — sixteen
-                  characters of this element's own text (`16ch` of advance
-                  plus `16 × 0.08em` of tracking), plus the box it sits in
-                  (`px-2` = 1rem, and 2px of border). 127px total, 109px of
-                  text. `CODE & BUILD` fits with 29px to spare, and the
-                  40-character worst case still truncates rather than
-                  reaching `Info`.
+                      So the cap names what it actually means — sixteen
+                      characters of this element's own text (`16ch` of advance
+                      plus `16 × 0.08em` of tracking), plus the box it sits in
+                      (`px-2` = 1rem, and 2px of border). 127px total, 109px of
+                      text. `CODE & BUILD` fits with 29px to spare, and the
+                      40-character worst case still truncates rather than
+                      reaching `Info`.
 
-                  Those figures are from when the chip was mono capitals
-                  with tracking. It is sentence-case sans now
-                  (docs/design-language.md §1), which is narrower per
-                  character, so the same cap only leaves more room; the
-                  `1.28em` term is kept as slack rather than re-measured.
-                -->
-                <span
-                  class="min-w-0 max-w-[calc(16ch+1.28em+1rem+2px)] truncate rounded-pill border border-border px-2 py-0.5 text-label text-content-muted"
-                >
-                  {selectedIdentity.role}
-                </span>
-              {/if}
+                      Those figures are from when the chip was mono capitals
+                      with tracking. It is sentence-case sans now
+                      (docs/design-language.md §1), which is narrower per
+                      character, so the same cap only leaves more room; the
+                      `1.28em` term is kept as slack rather than re-measured.
+                    -->
+                    <span
+                      class="min-w-0 max-w-[calc(16ch+1.28em+1rem+2px)] truncate rounded-pill border border-border px-2 py-0.5 text-label text-content-muted"
+                    >
+                      {selectedIdentity.role}
+                    </span>
+                  {/if}
+                </div>
+                <RoomHeaderLine status={headerStatus} word={headerWord} members={headerMembers} />
+              </div>
             </div>
             <div class="flex shrink-0 items-center gap-3">
               <!--
@@ -1090,20 +1312,6 @@
                 ground was never the only channel — but a state a sighted
                 operator cannot see is still a state that is not working.
               -->
-              <!--
-                Search is a fleet-wide action, not a room one, but this header
-                is where the reader's hands already are — and a second control
-                strip for one button would be a worse answer than borrowing
-                this one.
-              -->
-              <button
-                type="button"
-                onclick={() => (searchOpen = true)}
-                aria-label="Search messages"
-                class="shrink-0 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content"
-              >
-                Search
-              </button>
               <button
                 type="button"
                 bind:this={infoButton}
@@ -1118,33 +1326,15 @@
             </div>
           </div>
           {#key roomsStore.selectedId}
-            <Timeline roomId={roomsStore.selectedId} onOpenRecovery={() => void openRecovery()} />
+            <Timeline roomId={roomsStore.selectedId} onOpenRecovery={() => void openRecovery()}>
+              {#snippet overlay()}
+                <!-- The dock, then the typing pill: floating capsules over the newest end
+                     (iOS `TimelineView.swift:118-146`). They take no room in the layout. -->
+                <AcknowledgementDock ack={acknowledgementStore.current} />
+                <TypingIndicator text={typingLine} />
+              {/snippet}
+            </Timeline>
           {/key}
-          <!--
-            Why the answer is what it is, above the answer itself — the order
-            the agent produced them in, and the order a reader reconstructs
-            them in. Collapsed unless asked for; see `AgentReasoning.svelte`.
-          -->
-          <AgentReasoning streaming={liveStore.thought(roomsStore.selectedId)} />
-          <!--
-            The answer as it is written, between the timeline and the typing
-            line: closest to where it will land, and outside the virtual list
-            on purpose — see `LiveTurn.svelte`.
-          -->
-          <LiveTurn
-            roomId={roomsStore.selectedId}
-            senderName={roomsStore.selectedRoomName ?? roomsStore.selectedId}
-          />
-          <!--
-            What it is *doing*, under what it is saying. One line, never a log:
-            the durable record of a turn's work lands in the room as a card when
-            the turn ends, and this only answers "right now".
-          -->
-          <LiveActivity
-            tools={liveStore.tools(roomsStore.selectedId)}
-            thinking={liveStore.thought(roomsStore.selectedId)}
-          />
-          <TypingIndicator text={typingLine} />
           <!--
             The composer is for rooms this account is *in*. An invitation gets
             Accept / Decline in the same place instead (issue #1), and a room
@@ -1281,18 +1471,6 @@
   />
 {/if}
 
-{#if searchOpen}
-  <SearchPanel
-    rooms={roomsStore.rooms}
-    scope={roomsStore.selectedId
-      ? { roomId: roomsStore.selectedId, name: selectedIdentity.name }
-      : null}
-    onSearch={searchMessages}
-    onOpenRoom={(roomId) => roomsStore.select(roomId)}
-    onClose={() => (searchOpen = false)}
-  />
-{/if}
-
 {#if spaceInvite !== null}
   <SpaceInvitePanel
     label={spaceInvite.identity.name}
@@ -1314,6 +1492,10 @@
       }}
     />
   {/if}
+
+{#if demoOpen}
+  <FirstRunDemo onFinish={finishDemo} />
+{/if}
 
 {#if newRoomOpen}
   <NewRoomPanel

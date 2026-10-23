@@ -197,6 +197,7 @@ struct PreviewClient: SessionClient {
 
     func setRoomNotifications(roomId: String, mode: NotificationMode) async throws {}
     func setRoomPinned(roomId: String, pinned: Bool) async throws {}
+    func markRoomReadFromList(roomId: String) async throws -> Bool { false }
     func roomInfo(roomId: String) async throws -> RoomInfoDto { PreviewFixtures.roomInfo }
     func roomAvatarFull(roomId: String) async throws -> String? { nil }
 
@@ -212,7 +213,10 @@ struct PreviewClient: SessionClient {
             memberIds: PreviewFixtures.roomInfo.members.map(\.userId), headerName: nil,
             isAgentRoom: false)
     }
-    func hasSent(roomId: String) async -> Bool { false }
+    func acknowledgement(
+        roomId: String, addressee: String?, agentIds: [String],
+        typingAgents: [String], turnInProgress: Bool
+    ) async throws -> Acknowledgement? { nil }
     func setHiddenEvents(eventIds: [String]) async {}
     func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto] {
         isEmpty ? [] : PreviewFixtures.searchResults

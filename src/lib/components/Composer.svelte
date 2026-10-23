@@ -77,12 +77,13 @@
   import { editTargetStore } from "$lib/stores/editTarget.svelte";
   import ComposerCapsule from "./composer/ComposerCapsule.svelte";
   import StagedAttachmentChip from "./composer/StagedAttachmentChip.svelte";
-  import { roomInfo } from "$lib/ipc";
-  import { applyMention, findMentionQuery, matchMentions, mentionLabel } from "./mentions";
+  import { applyMention, findMentionQuery, type MentionCandidate } from "./mentions";
+  import { createMentionSearch } from "./composer/mentionSearch";
+  import { castStore } from "$lib/stores/cast.svelte";
   // `collectMentions` is the core's: it produces the `m.mentions` that goes on
   // the wire, and an agent decides a message was addressed to it from that.
   // The caret handling above it stays here, where the input model lives.
-  import { collectMentions, type Mentionable } from "$lib/ipc";
+  import { collectMentions } from "$lib/ipc";
   import { timelineStore } from "$lib/stores/timeline.svelte";
   import { replyTargetStore } from "$lib/stores/replyTarget.svelte";
   import { DraftTracker } from "./draftTracker";
@@ -124,46 +125,48 @@
   // decides a message was meant for it, so this is on the integration path,
   // not only the ergonomics one.
 
-  /** The focused room's joined members, loaded once per room. */
-  let members = $state<Mentionable[]>([]);
   /** The textarea, so the caret position can be read and restored. */
   let input = $state<HTMLTextAreaElement | undefined>();
   /** Which suggestion is highlighted, or -1 when the list is closed. */
   let mentionCursor = $state(-1);
   /** What is being typed after an `@`, or null when nothing is. */
   let mentionQuery = $state<string | null>(null);
+  /** The index of the `@` whose menu Escape closed, or null. */
+  let dismissedAt: number | null = null;
 
-  const mentionMatches = $derived(
-    mentionQuery === null ? [] : matchMentions(mentionQuery, members)
-  );
-
-  /**
-   * Loads the room's members for autocomplete.
-   *
-   * Failure is silent by design: mentions are a convenience, and a room whose
-   * member list could not be read must still be a room you can type in.
-   */
-  $effect(() => {
-    const id = roomId;
-    members = [];
-    void roomInfo(id)
-      .then((info) => {
-        // The room may have changed while this was in flight.
-        if (id === roomId) members = info.members;
-      })
-      .catch(() => {});
+  // The candidates are the core's: the room's cast matched by `room_mention_candidates`, asked
+  // per query after a short pause and dropped if stale.
+  let mentionMatches = $state<MentionCandidate[]>([]);
+  const mentionSearch = createMentionSearch(undefined, () => {
+    untrack(() => {
+      mentionMatches = mentionSearch.results;
+      if (mentionCursor >= mentionMatches.length) mentionCursor = mentionMatches.length === 0 ? -1 : 0;
+    });
   });
+  $effect(() => {
+    // A room change or a closed query forgets the list.
+    const id = roomId;
+    const q = mentionQuery;
+    if (q === null) mentionSearch.close();
+    else mentionSearch.search(id, q);
+  });
+  onDestroy(() => mentionSearch.close());
 
   /** Reads the caret and reopens (or closes) the suggestion list. */
   function refreshMentionQuery(): void {
     const caret = input?.selectionStart ?? value.length;
     const found = findMentionQuery(value, caret);
-    mentionQuery = found?.query ?? null;
-    mentionCursor = found === null ? -1 : 0;
+    // Escape closed the menu for this `@`; it stays closed until the caret leaves it.
+    if (found === null || found.start !== dismissedAt) dismissedAt = null;
+    const next = found !== null && found.start !== dismissedAt ? found.query : null;
+    // The cursor goes back to the top only when the query changes: a key-up after an arrow key
+    // must not undo the arrow.
+    if (next !== mentionQuery) mentionCursor = next === null ? -1 : 0;
+    mentionQuery = next;
   }
 
   /** Completes the mention at the caret with `member`. */
-  function chooseMention(member: Mentionable): void {
+  function chooseMention(member: MentionCandidate): void {
     const caret = input?.selectionStart ?? value.length;
     const next = applyMention(value, caret, member);
     value = next.text;
@@ -647,7 +650,7 @@
         // Resolved from the finished text rather than tracked as the reader
         // types: a mention that was typed and then deleted must not still be
         // reported, and one pasted in whole should count.
-        await timelineStore.send(sentRoomId, body, await collectMentions(body, members));
+        await timelineStore.send(sentRoomId, body, await collectMentions(body, castStore.castFor(sentRoomId)?.mentionables ?? []));
       }
       if (roomId === sentRoomId) {
         value = "";
@@ -700,12 +703,16 @@
       }
       if (event.key === "Enter" || event.key === "Tab") {
         event.preventDefault();
+        // The list on screen may answer the query before this one (80 ms pause plus the round
+        // trip): do not insert from it.
+        if (mentionSearch.resultQuery !== mentionQuery) return;
         const picked = mentionMatches[Math.max(mentionCursor, 0)];
         if (picked) chooseMention(picked);
         return;
       }
       if (event.key === "Escape") {
         event.preventDefault();
+        dismissedAt = findMentionQuery(value, input?.selectionStart ?? value.length)?.start ?? null;
         mentionQuery = null;
         mentionCursor = -1;
         return;
@@ -819,6 +826,15 @@
       onclick={refreshMentionQuery}
       onkeyup={refreshMentionQuery}
       oninput={handleInput}
+      role="combobox"
+      aria-expanded={mentionQuery !== null && mentionMatches.length > 0}
+      aria-haspopup="listbox"
+      aria-controls={mentionQuery !== null && mentionMatches.length > 0 ? "mention-menu" : undefined}
+      aria-autocomplete="list"
+      aria-activedescendant={mentionQuery !== null && mentionMatches.length > 0 && mentionCursor >= 0
+        ? `mention-menu-option-${mentionCursor}`
+        : undefined}
+      aria-label="Message"
       disabled={sending}
       rows="1"
       placeholder={composerPlaceholder(editTarget !== null, replyTarget?.sender ?? null)}

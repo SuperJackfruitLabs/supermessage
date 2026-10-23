@@ -207,8 +207,15 @@ public actor CoreClient {
         try await run { try $0.roomCast(roomId: roomId) }
     }
 
-    public func hasSent(roomId: String) async -> Bool {
-        await run { $0.hasSent(roomId: roomId) }
+    public func acknowledgement(
+        roomId: String, addressee: String?, agentIds: [String],
+        typingAgents: [String], turnInProgress: Bool
+    ) async throws -> Acknowledgement? {
+        try await run {
+            try $0.acknowledgement(
+                roomId: roomId, addressee: addressee, agentIds: agentIds,
+                typingAgents: typingAgents, turnInProgress: turnInProgress)
+        }
     }
 
     public func setHiddenEvents(eventIds: [String]) async {
@@ -272,6 +279,10 @@ public actor CoreClient {
 
     public func setRoomPinned(roomId: String, pinned: Bool) async throws {
         try await run { try $0.setRoomPinned(roomId: roomId, pinned: pinned) }
+    }
+
+    public func markRoomReadFromList(roomId: String) async throws -> Bool {
+        try await run { try $0.markRoomReadFromList(roomId: roomId) }
     }
 
     public func editMessage(roomId: String, eventId: String, body: String) async throws {
