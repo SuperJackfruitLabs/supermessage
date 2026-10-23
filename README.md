@@ -106,20 +106,23 @@ handling requires a compatible bridge on the receiving side.
 
 ## Installing
 
-Choose an asset from the [latest published desktop release](https://github.com/SuperJackfruitLabs/supermessage/releases/latest):
+Choose an asset from the [v0.1.0 release](https://github.com/SuperJackfruitLabs/supermessage/releases/tag/v0.1.0) (2026-10-23):
 
 | Platform | Download |
 | --- | --- |
 | Linux x86_64 | `.deb`, `.rpm` or `.AppImage` |
 | macOS, Apple Silicon and Intel | Universal `.dmg` |
 | Windows x64 | Setup `.exe` or `.msi` |
+| Android | Debug-signed `.apk`, one per ABI (arm64-v8a, armeabi-v7a, x86, x86_64), for sideloading only |
+| iOS | TestFlight build, invite-only; no App Store release |
 
-These formats are present in the published v0.0.11 release (August 30, 2026).
 The source capability table above may include changes newer than a download.
 Desktop binaries are **unsigned**; macOS Gatekeeper and Windows SmartScreen
-can warn on first run. Native iOS and Android clients currently have build
-instructions in [AGENTS.md](AGENTS.md), rather than a mobile store release
-published by this repository's release workflow.
+can warn on first run. The Android APKs are debug-signed, not release-signed,
+and are not on Google Play. Background push on Android needs a UnifiedPush
+distributor, such as ntfy. On Linux, voice recording needs GStreamer's
+`gst-plugins-good`. Build instructions for the native clients are in
+[AGENTS.md](AGENTS.md).
 
 Use an existing Matrix account on a homeserver that supports password login.
 Ordinary chat needs no AgentPod or SuperPipeline installation.
@@ -144,8 +147,8 @@ cargo test --workspace     # core, FFI and desktop shell
 
 Use `pnpm tauri build` for a desktop bundle. `pnpm build` only builds the
 frontend; a bare Cargo debug binary expects the Vite server to be running.
-The [release workflow](.github/workflows/release.yml) creates draft desktop
-releases on `v*` tags, which need publication before users can download them.
+The [release workflow](.github/workflows/release.yml) creates draft releases
+on `v*` tags, which need publication before users can download them.
 
 ## Repository guide
 

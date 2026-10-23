@@ -59,8 +59,8 @@ it.
 **Amber is spent on exactly one thing:** the item waiting on a person. Giving the only warm colour
 in the palette to "needs you" is the point of the palette.
 
-**No download button, and no waitlist.** What exists is unsigned desktop previews on GitHub
-Releases and no public mobile build, and the status bar says exactly that in the first line a
+**No download button, and no waitlist.** What exists is unsigned desktop previews and debug-signed Android APKs on GitHub
+Releases, and iOS by TestFlight invitation only, and the status bar says exactly that in the first line a
 visitor reads. The two calls to action go to the docs and the source. A landing page that implies
 more than you can install is the one mistake worth avoiding here — and the opposite mistake,
 saying there is nothing when there is, is the one this page made until September 2026.

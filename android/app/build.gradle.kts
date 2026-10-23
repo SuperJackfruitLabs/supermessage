@@ -46,7 +46,7 @@ android {
             System.getenv("ANDROID_VERSION_CODE")?.toIntOrNull() ?: 0,
             VERSION_CODE_FLOOR,
         )
-        versionName = "0.0.15"
+        versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
