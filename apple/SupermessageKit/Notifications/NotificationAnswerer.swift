@@ -1,4 +1,5 @@
 import Foundation
+import SupermessageFFI
 import os
 
 /// Sends an answer given from a notification — with no room open, and

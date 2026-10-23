@@ -11,20 +11,6 @@ struct NotificationComposerTests {
 
     static let now: UInt64 = 1_700_000_000_000
 
-    func roomRow(
-        _ id: String, unread: UInt64, own: Bool = false, pending: Bool = false,
-        text: String = "hello", membership: Membership = .joined, at: UInt64 = now
-    ) -> RoomRow {
-        RoomRow(
-            room: RoomSummary(
-                id: id, name: id, avatarUrl: nil, unread: unread, lastMessage: text,
-                lastMessageIsOwn: own, lastMessageNamesSender: false, lastEventType: nil,
-                lastActivityMs: at, runtime: nil, membership: membership),
-            identity: RoomIdentity(glyph: nil, name: "Room \(id)", role: nil, initial: "R"),
-            preview: RoomPreview(text: text, pending: pending),
-            affordance: .compose)
-    }
-
     func timelineRow(
         _ eventId: String?, view: ItemView = .bubble(muted: false, blocks: [], voice: nil),
         own: Bool = false, at: UInt64? = now, preview: String? = "hi there",
@@ -56,97 +42,6 @@ struct NotificationComposerTests {
             eventType: subject == nil ? "dev.agentpod.permission.v1" : "dev.superpipeline.gate.v1")
     }
 
-    let background = NotificationContext(openRoomId: nil, appActive: false, timelineRoomId: nil)
-
-    // MARK: - Roster
-
-    @Test("the first roster is a baseline, not a burst")
-    func firstRosterIsBaseline() {
-        let notes = NotificationComposer.forRoster(
-            previous: [], next: [roomRow("!a", unread: 5)], context: background)
-        #expect(notes.isEmpty)
-    }
-
-    @Test("a new message in another room notifies, with the core's preview")
-    func newMessageNotifies() {
-        let notes = NotificationComposer.forRoster(
-            previous: [roomRow("!a", unread: 0)],
-            next: [roomRow("!a", unread: 1, text: "deploy finished")], context: background)
-        #expect(notes.count == 1)
-        #expect(notes.first?.category == .message)
-        #expect(notes.first?.body == "deploy finished")
-        #expect(notes.first?.title == "Room !a")
-        #expect(notes.first?.roomId == "!a")
-    }
-
-    @Test("a room new to the roster is not news")
-    func newRoomIsBaseline() {
-        let notes = NotificationComposer.forRoster(
-            previous: [roomRow("!b", unread: 0)], next: [roomRow("!a", unread: 5)],
-            context: background)
-        #expect(notes.isEmpty, "a space switch would notify for every room it brought in")
-    }
-
-    @Test("an unread count that did not rise is not news")
-    func noRiseNoNotification() {
-        let notes = NotificationComposer.forRoster(
-            previous: [roomRow("!a", unread: 2)], next: [roomRow("!a", unread: 2, text: "edit")],
-            context: background)
-        #expect(notes.isEmpty)
-    }
-
-    @Test("the reader's own message does not notify them")
-    func ownMessageIsQuiet() {
-        let notes = NotificationComposer.forRoster(
-            previous: [roomRow("!a", unread: 0)], next: [roomRow("!a", unread: 1, own: true)],
-            context: background)
-        #expect(notes.isEmpty)
-    }
-
-    @Test("the open room, with the app in front, does not notify")
-    func openRoomSuppressed() {
-        let open = NotificationContext(openRoomId: "!a", appActive: true, timelineRoomId: nil)
-        let notes = NotificationComposer.forRoster(
-            previous: [roomRow("!a", unread: 0), roomRow("!b", unread: 0)],
-            next: [roomRow("!a", unread: 1), roomRow("!b", unread: 1)], context: open)
-        #expect(notes.map(\.roomId) == ["!b"], "only the room not on screen notifies")
-    }
-
-    @Test("the open room notifies once the app is in the background")
-    func openRoomInBackgroundNotifies() {
-        let away = NotificationContext(openRoomId: "!a", appActive: false, timelineRoomId: nil)
-        let notes = NotificationComposer.forRoster(
-            previous: [roomRow("!a", unread: 0)], next: [roomRow("!a", unread: 1)], context: away)
-        #expect(notes.count == 1)
-    }
-
-    @Test("the subscribed room is left to the timeline path")
-    func timelineRoomSkipped() {
-        let context = NotificationContext(openRoomId: nil, appActive: false, timelineRoomId: "!a")
-        let notes = NotificationComposer.forRoster(
-            previous: [roomRow("!a", unread: 0)], next: [roomRow("!a", unread: 1)],
-            context: context)
-        #expect(notes.isEmpty, "the same message would be posted twice")
-    }
-
-    @Test("a pending decision in another room opens it rather than offering answers")
-    func pendingRosterRowIsGate() {
-        let notes = NotificationComposer.forRoster(
-            previous: [roomRow("!a", unread: 0)],
-            next: [roomRow("!a", unread: 1, pending: true, text: "Waiting on you")],
-            context: background)
-        #expect(notes.first?.category == .decision)
-        #expect(notes.first?.allowOptionId == nil)
-    }
-
-    @Test("an invitation's roster row is not a message")
-    func invitationRowIsQuiet() {
-        let notes = NotificationComposer.forRoster(
-            previous: [roomRow("!a", unread: 0, membership: .invited)],
-            next: [roomRow("!a", unread: 1, membership: .invited)], context: background)
-        #expect(notes.isEmpty)
-    }
-
     // MARK: - Timeline
 
     func timeline(
@@ -158,43 +53,6 @@ struct NotificationComposerTests {
             alreadyNotified: notified,
             context: context
                 ?? NotificationContext(openRoomId: "!a", appActive: false, timelineRoomId: "!a"))
-    }
-
-    @Test("a new message in the subscribed room notifies while the app is away")
-    func timelineMessage() {
-        let notes = timeline([timelineRow("$1")])
-        #expect(notes.count == 1)
-        #expect(notes.first?.category == .message)
-        #expect(notes.first?.title == "Atlas")
-        #expect(notes.first?.subtitle == "Room !a")
-        #expect(notes.first?.body == "hi there")
-    }
-
-    @Test("the subscribed room on screen, with the app in front, is silent")
-    func timelineSuppressed() {
-        let onScreen = NotificationContext(openRoomId: "!a", appActive: true, timelineRoomId: "!a")
-        #expect(timeline([timelineRow("$1")], context: onScreen).isEmpty)
-    }
-
-    @Test("the subscribed room notifies once the reader has gone back to the roster")
-    func timelineNotOpen() {
-        let roster = NotificationContext(openRoomId: nil, appActive: true, timelineRoomId: "!a")
-        #expect(timeline([timelineRow("$1")], context: roster).count == 1)
-    }
-
-    @Test("history does not notify")
-    func historyIsQuiet() {
-        #expect(timeline([timelineRow("$old", at: Self.now - 1)]).isEmpty)
-    }
-
-    @Test("a row already posted is not posted again when it changes")
-    func alreadyNotified() {
-        #expect(timeline([timelineRow("$1")], notified: ["$1"]).isEmpty)
-    }
-
-    @Test("own rows and local echoes do not notify")
-    func ownAndLocal() {
-        #expect(timeline([timelineRow("$1", own: true), timelineRow(nil)]).isEmpty)
     }
 
     @Test("a permission request with Allow once and Reject gets both actions")
@@ -352,28 +210,14 @@ struct NotificationComposerTests {
         let info = NotificationKeys.userInfo(for: note)
         #expect(
             NotificationKeys.response(actionIdentifier: NotificationKeys.allowAction, userInfo: info)
-                == .answer(.permission(roomId: "!a", optionId: "Allow once")))
+                == .answer(answer: .permission(roomId: "!a", optionId: "Allow once")))
         #expect(
             NotificationKeys.response(actionIdentifier: NotificationKeys.rejectAction, userInfo: info)
-                == .answer(.permission(roomId: "!a", optionId: "Reject")))
+                == .answer(answer: .permission(roomId: "!a", optionId: "Reject")))
         #expect(
             NotificationKeys.response(
                 actionIdentifier: "com.apple.UNNotificationDefaultActionIdentifier", userInfo: info)
                 == .open(roomId: "!a"))
-    }
-
-    @Test("an action with no option to send opens the room instead")
-    func actionWithoutOption() {
-        let note = LocalNotification(
-            id: "g", roomId: "!a", eventId: "$g", title: "", subtitle: nil, body: "",
-            category: .decision)
-        let info = NotificationKeys.userInfo(for: note)
-        #expect(
-            NotificationKeys.response(actionIdentifier: NotificationKeys.allowAction, userInfo: info)
-                == .open(roomId: "!a"))
-        #expect(
-            NotificationKeys.response(actionIdentifier: NotificationKeys.approveGateAction, userInfo: info)
-                == .open(roomId: "!a"), "a gate action on a note that carries no gate")
     }
 
     func gateNote(options: [String] = ["approve", "request_changes", "reject"]) -> [String: String] {
@@ -389,13 +233,13 @@ struct NotificationComposerTests {
         #expect(
             NotificationKeys.response(actionIdentifier: NotificationKeys.approveGateAction, userInfo: gateNote())
                 == .answer(
-                    .gate(
+                    answer: .gate(
                         roomId: "!a", gateEventId: "$g", gateId: "gate-1", optionId: "approve",
                         comment: nil, prompt: "Ship it?")))
         #expect(
             NotificationKeys.response(actionIdentifier: NotificationKeys.rejectGateAction, userInfo: gateNote())
                 == .answer(
-                    .gate(
+                    answer: .gate(
                         roomId: "!a", gateEventId: "$g", gateId: "gate-1", optionId: "reject",
                         comment: nil, prompt: "Ship it?")))
         // The permission request's Reject is a different action: it must not
@@ -412,43 +256,37 @@ struct NotificationComposerTests {
                 actionIdentifier: NotificationKeys.requestChangesAction, userInfo: gateNote(),
                 userText: "  Add a test first.\n")
                 == .answer(
-                    .gate(
+                    answer: .gate(
                         roomId: "!a", gateEventId: "$g", gateId: "gate-1",
                         optionId: "request_changes", comment: "Add a test first.",
                         prompt: "Ship it?")))
     }
 
-    @Test("Request changes with nothing typed opens the gate instead of sending no reason")
-    func requestChangesNeedsText() {
-        for typed in [nil, "", "  \n "] as [String?] {
-            #expect(
-                NotificationKeys.response(
-                    actionIdentifier: NotificationKeys.requestChangesAction, userInfo: gateNote(),
-                    userText: typed)
-                    == .open(roomId: "!a"), "typed \(String(describing: typed))")
+    @Test("the categories' actions are the core's, with iOS's ids and copy")
+    func actionsAreTheCores() {
+        #expect(
+            notificationActions(category: .gate).map(\.id) == [
+                NotificationKeys.approveGateAction, NotificationKeys.requestChangesAction,
+                NotificationKeys.rejectGateAction, NotificationKeys.openAction,
+            ])
+        #expect(notificationActions(category: .permission).map(\.title) == ["Allow once", "Reject"])
+        #expect(
+            notificationUserInfo(note: answerFailedNotification(roomId: "!a"))
+                == [NotificationKeys.roomId: "!a"])
+    }
+
+    @Test("a planned notification survives the Swift value both ways")
+    func plannedRoundTrips() {
+        let failed = answerFailedNotification(roomId: "!a")
+        let gate = plannedFromDecided(
+            note: NotificationDto(
+                roomId: "!a", eventId: "$gate", title: "Room !a", subtitle: "Approval",
+                body: "Ship it?", category: .gate, permission: nil,
+                gate: GateAnswers(gateId: "g1", prompt: "Ship it?", optionIds: ["approve", "reject"]),
+                threadId: "!a", suppress: nil, fallbackTitle: nil, fallbackBody: nil, activity: nil))
+        for planned in [failed, gate] {
+            #expect(LocalNotification(planned: planned).planned == planned)
         }
-    }
-
-    @Test("an action the gate does not offer opens it rather than sending an answer it would refuse")
-    func gateActionNotOffered() {
-        #expect(
-            NotificationKeys.response(
-                actionIdentifier: NotificationKeys.approveGateAction,
-                userInfo: gateNote(options: ["reject"]))
-                == .open(roomId: "!a"))
-        #expect(
-            NotificationKeys.response(
-                actionIdentifier: NotificationKeys.requestChangesAction,
-                userInfo: gateNote(options: ["approve", "reject"]), userText: "Fix it")
-                == .open(roomId: "!a"))
-    }
-
-    @Test("a plain tap on a gate opens it")
-    func gateTapOpens() {
-        #expect(
-            NotificationKeys.response(
-                actionIdentifier: "com.apple.UNNotificationDefaultActionIdentifier", userInfo: gateNote())
-                == .open(roomId: "!a"))
     }
 
     @MainActor

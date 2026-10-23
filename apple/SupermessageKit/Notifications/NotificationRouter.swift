@@ -3,7 +3,10 @@ import Observation
 import SupermessageFFI
 
 // Shared with the Notification Service Extension as source, which does not
-// compile Sendability.swift (see CoreLocation.swift).
+// compile Sendability.swift (see CoreLocation.swift). The response crosses from
+// the app delegate's nonisolated method into `respond`; the answer is sent
+// from inside a `@Sendable` deadline closure.
+extension NotificationAnswer: @retroactive @unchecked Sendable {}
 extension NotificationResponse: @retroactive @unchecked Sendable {}
 
 /// A request, from outside the view tree, to show a room.
@@ -35,19 +38,10 @@ public final class NotificationRouter {
     }
 }
 
-/// An answer given from a notification, ready to send with no room open.
-///
-/// See `NotificationAnswerer`, which sends it.
-public enum NotificationAnswer: Equatable, Sendable {
-    /// An AgentPod permission request: `optionId` goes into the room as a
-    /// plain message, as every other client answers one.
-    case permission(roomId: String, optionId: String)
-    /// A superpipeline gate: a `dev.superpipeline.gate.decision.v1`
-    /// referencing `gateEventId`, exactly what the card sends.
-    case gate(
-        roomId: String, gateEventId: String, gateId: String, optionId: String, comment: String?,
-        prompt: String)
-
+extension NotificationAnswer {
+    /// The room the answer goes to. The type is the core's
+    /// (`core::notification_policy::NotificationAnswer`); see
+    /// `NotificationAnswerer`, which sends it.
     public var roomId: String {
         switch self {
         case let .permission(roomId, _): roomId
@@ -79,88 +73,26 @@ public enum NotificationKeys {
     /// A text-input action: what the reader types is the gate's comment.
     public static let requestChangesAction = "sm.gate.requestChanges"
 
-    /// superpipeline's `GateDecision` ids — the only three its resolution
-    /// endpoint accepts, and the only three the core will send
-    /// (`GATE_OPTION_IDS`).
-    public static let approveOption = "approve"
-    public static let requestChangesOption = "request_changes"
-    public static let rejectOption = "reject"
-
-    /// The `userInfo` a notification is posted with.
+    /// The `userInfo` a notification is posted with
+    /// (`core::notification_policy::user_info`).
     public static func userInfo(for note: LocalNotification) -> [String: String] {
-        var info = [roomId: note.roomId]
-        if let id = note.eventId { info[eventId] = id }
-        if let id = note.allowOptionId { info[allowOptionId] = id }
-        if let id = note.rejectOptionId { info[rejectOptionId] = id }
-        if let gate = note.gate {
-            info[gateId] = gate.gateId
-            info[gatePrompt] = gate.prompt
-            info[gateOptions] = gate.optionIds.joined(separator: " ")
-        }
-        return info
-    }
-
-    /// What an action on a delivered notification means.
-    public enum Response: Equatable, Sendable {
-        /// Open the room.
-        case open(roomId: String)
-        /// Send this answer — no room needs to be open.
-        case answer(NotificationAnswer)
-        /// Nothing this app can act on.
-        case ignore
+        notificationUserInfo(note: note.planned)
     }
 
     /// Decode an action. `actionIdentifier` is the system's
-    /// `UNNotificationDefaultActionIdentifier` for a plain tap, which lands
-    /// in the default branch along with `openAction`. `userText` is what the
-    /// reader typed into a text-input action, when the action was one.
+    /// `UNNotificationDefaultActionIdentifier` for a plain tap. `userText` is
+    /// what the reader typed into a text-input action, when the action was one.
     ///
-    /// Anything that cannot be answered exactly as the button said — an
-    /// option the notification did not carry, a gate that does not offer it,
-    /// "Request changes" with nothing typed — opens the room instead. A tap
-    /// that silently does something other than its label is the one outcome
-    /// worse than asking the reader to look.
+    /// Anything that cannot be answered exactly as the button said opens the
+    /// room instead; the rule is the core's
+    /// (`core::notification_policy::response`).
     public static func response(
         actionIdentifier: String, userInfo: [AnyHashable: Any], userText: String? = nil
-    ) -> Response {
-        guard let room = userInfo[roomId] as? String else { return .ignore }
-        switch actionIdentifier {
-        case allowAction:
-            guard let option = userInfo[allowOptionId] as? String else { return .open(roomId: room) }
-            return .answer(.permission(roomId: room, optionId: option))
-        case rejectAction:
-            guard let option = userInfo[rejectOptionId] as? String else { return .open(roomId: room) }
-            return .answer(.permission(roomId: room, optionId: option))
-        case approveGateAction:
-            return gate(approveOption, comment: nil, room: room, userInfo: userInfo)
-        case rejectGateAction:
-            return gate(rejectOption, comment: nil, room: room, userInfo: userInfo)
-        case requestChangesAction:
-            // Feedback is the whole point of this answer — superpipeline
-            // hands it to the rework. Sent empty, the card goes back with no
-            // reason, so an empty reply is read as "let me look" instead.
-            let comment = userText?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !comment.isEmpty else { return .open(roomId: room) }
-            return gate(requestChangesOption, comment: comment, room: room, userInfo: userInfo)
-        case "com.apple.UNNotificationDismissActionIdentifier":
-            return .ignore
-        default:
-            return .open(roomId: room)
+    ) -> NotificationResponse {
+        var strings: [String: String] = [:]
+        for (key, value) in userInfo {
+            if let key = key as? String, let value = value as? String { strings[key] = value }
         }
-    }
-
-    private static func gate(
-        _ option: String, comment: String?, room: String, userInfo: [AnyHashable: Any]
-    ) -> Response {
-        guard let event = userInfo[eventId] as? String,
-            let gate = userInfo[gateId] as? String, !gate.isEmpty,
-            let offered = userInfo[gateOptions] as? String,
-            offered.split(separator: " ").contains(Substring(option))
-        else { return .open(roomId: room) }
-        let prompt = userInfo[gatePrompt] as? String ?? ""
-        return .answer(
-            .gate(
-                roomId: room, gateEventId: event, gateId: gate, optionId: option, comment: comment,
-                prompt: prompt))
+        return notificationResponse(actionId: actionIdentifier, userInfo: strings, userText: userText)
     }
 }

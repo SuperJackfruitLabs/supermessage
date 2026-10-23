@@ -1,20 +1,6 @@
 import Foundation
 import SupermessageFFI
 
-extension NotificationAnswer {
-    /// The notification answer a widget's button sends: the same two paths a
-    /// notification's actions take, so a widget cannot answer differently.
-    public init(_ answer: WidgetAnswer) {
-        if let gateId = answer.gateId {
-            self = .gate(
-                roomId: answer.roomId, gateEventId: answer.eventId, gateId: gateId,
-                optionId: answer.optionId, comment: nil, prompt: answer.prompt)
-        } else {
-            self = .permission(roomId: answer.roomId, optionId: answer.optionId)
-        }
-    }
-}
-
 /// A widget's Allow / Reject / Approve button, answered with no room open.
 ///
 /// Runs in the app's process (see `AnswerDecisionIntent`): the snapshot says
@@ -49,7 +35,7 @@ public enum WidgetAnswering {
         }
         if feed.markAnswered(roomId: roomId, eventId: eventId, optionId: optionId) { reload() }
         let landed = await NotificationAnswerer.send(
-            NotificationAnswer(owed), via: client, within: budget)
+            notificationAnswerForWidget(answer: owed), via: client, within: budget)
         guard landed else {
             if feed.clearAnswer(roomId: roomId, eventId: eventId) { reload() }
             return .failed

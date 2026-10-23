@@ -1,3 +1,4 @@
+import SupermessageFFI
 import SupermessageKit
 import UIKit
 import UserNotifications
@@ -126,7 +127,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         await respond(decoded)
     }
 
-    private func respond(_ decoded: NotificationKeys.Response) async {
+    private func respond(_ decoded: NotificationResponse) async {
         switch decoded {
         case .ignore:
             return
