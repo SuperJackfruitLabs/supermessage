@@ -71,6 +71,8 @@
   import ConnectionLine from "$lib/components/ConnectionLine.svelte";
   import RoomInfoPanel from "$lib/components/RoomInfoPanel.svelte";
   import RecoveryPanel from "$lib/components/RecoveryPanel.svelte";
+  import FirstRunDemo from "$lib/components/FirstRunDemo.svelte";
+  import { browserOnboarding, demoDue } from "$lib/onboarding";
   import AccountPanel from "$lib/components/AccountPanel.svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { appearanceStore } from "$lib/stores/appearance.svelte";
@@ -812,7 +814,13 @@
         .then((key) => {
           if (key) void openRecovery(key);
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          // The first-run demo waited for this: a new key is shown before anything else.
+          recoverySettled = true;
+        });
+    } else {
+      recoverySettled = true;
     }
   });
 
@@ -837,6 +845,26 @@
   let recoveryState = $state<"enabled" | "disabled" | "incomplete" | "unknown">("unknown");
   /** The key just created at sign-in, shown once by the panel. */
   let recoveryNewKey = $state<string | null>(null);
+
+  /**
+   * The first-run demo (iOS `RootView`): over the signed-in app when it is queued and unseen, and
+   * never while a new recovery key is being set up or shown. It opens when that panel closes.
+   * `recoverySettled` is false from a fresh sign-in until `ensureRecovery` has answered, so the
+   * demo cannot slip in before the key panel has had its chance to open.
+   */
+  const firstRun = browserOnboarding();
+  let recoverySettled = $state(false);
+  let demoOpen = $state(false);
+  $effect(() => {
+    const holdForRecovery = !recoverySettled || (recoveryOpen && recoveryNewKey !== null);
+    if (!demoOpen && demoDue({ demoPending: firstRun.demoPending, demoSeen: firstRun.demoSeen }, holdForRecovery)) {
+      demoOpen = true;
+    }
+  });
+  function finishDemo(): void {
+    firstRun.finishDemo();
+    demoOpen = false;
+  }
 
   async function openRecovery(newKey: string | null = null): Promise<void> {
     recoveryNewKey = newKey;
@@ -1453,6 +1481,10 @@
       }}
     />
   {/if}
+
+{#if demoOpen}
+  <FirstRunDemo onFinish={finishDemo} />
+{/if}
 
 {#if newRoomOpen}
   <NewRoomPanel

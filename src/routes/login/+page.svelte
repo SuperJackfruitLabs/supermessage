@@ -11,8 +11,15 @@
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { markFreshSignIn } from "$lib/stores/freshSignIn";
+  import { browserOnboarding } from "$lib/onboarding";
+  import Welcome from "$lib/components/Welcome.svelte";
   import type { CoreError } from "$lib/ipc";
   import { loginMessage } from "./loginMessage";
+  import { createLoginGate } from "./loginGate";
+
+  // The welcome until it has been passed once on this install, then the form.
+  const gate = createLoginGate({ onboarding: browserOnboarding(), markFreshSignIn });
+  let view = $state<"welcome" | "form">(gate.view);
 
   let homeserver = $state("https://id.agentpod.dev");
   let username = $state("");
@@ -32,8 +39,9 @@
     errorMessage = null;
     try {
       await roomsStore.login(homeserver.trim(), username.trim(), password);
-      // The main page sets recovery up once it mounts; see `freshSignIn.ts`.
-      markFreshSignIn();
+      // The main page sets recovery up once it mounts (`freshSignIn.ts`) and then, once any new
+      // recovery key has been dealt with, offers the first-run demo.
+      gate.signedIn();
       await goto("/");
     } catch (err) {
       errorMessage = loginMessage(err as CoreError);
@@ -43,6 +51,14 @@
   }
 </script>
 
+{#if view === "welcome"}
+  <Welcome
+    onContinue={() => {
+      gate.passWelcome();
+      view = "form";
+    }}
+  />
+{:else}
 <main
   class="flex min-h-dvh flex-col items-center justify-center overflow-y-auto bg-surface-sunken p-6"
   style="padding-top: calc(1.5rem + var(--inset-top)); padding-bottom: calc(1.5rem + var(--inset-bottom));"
@@ -110,3 +126,4 @@
     </form>
   </div>
 </main>
+{/if}
