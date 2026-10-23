@@ -20,8 +20,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.AccountDto
@@ -224,6 +227,15 @@ class Session(
     internal val pump = EventPump()
     val timeline: TimelineStore = TimelineStore(client = client, sink = pump, scope = scope)
     val live = LiveStore(scope)
+
+    private val _turnUpdates = MutableSharedFlow<uniffi.supermessage_core.TurnUpdate>(extraBufferCapacity = 64)
+
+    /**
+     * Every turn update the core sends, for every room, not only the open one ([live] keeps the
+     * open room's). The ongoing notification of a running turn reads it; nothing here changes
+     * what [live] does with the same update.
+     */
+    val turnUpdates: SharedFlow<uniffi.supermessage_core.TurnUpdate> = _turnUpdates.asSharedFlow()
     val typing = TypingStore()
     val dock = DockStore()
     val drafts = DraftStore()
@@ -1150,7 +1162,11 @@ class Session(
         // rather than swept into an `else` so a new variant on the boundary
         // still breaks this build.
         is FfiEvent.Tool -> Unit
-        is FfiEvent.Turn -> live.apply(event.update)
+        is FfiEvent.Turn -> {
+            live.apply(event.update)
+            _turnUpdates.tryEmit(event.update)
+            Unit
+        }
         is FfiEvent.AttachmentStaged -> {
             // Handled by the composer, which owns the staged strip. Listed
             // rather than swept into an `else` so a new variant on the
