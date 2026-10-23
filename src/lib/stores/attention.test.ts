@@ -133,6 +133,41 @@ describe("attention", () => {
     expect(sent).toEqual([[2, 0], [0, 0]]);
   });
 
+  it("a follow still counting when the reader signs out cannot bring the counts back", async () => {
+    const sent: [number, number][] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const attention = createAttention({
+      setAttention: async (n, w) => void sent.push([n, w]),
+      roomStatus: async () => {
+        await gate;
+        return "working";
+      },
+    });
+    const pending = attention.follow(page({ inbox: inbox(2, 0), agents: [agent("a", "working")] }));
+    attention.reset();
+    release();
+    await pending;
+    await flush();
+    expect(sent).toEqual([[0, 0]]);
+  });
+
+  it("a page follow after a tick keeps the tick's newer read of the same agents", async () => {
+    const stale = [agent("a", "idle")];
+    const { sent, ticks, attention } = harness(() => [agent("a", "working")]);
+    attention.startTicking();
+    await attention.follow(page({ agents: stale }));
+    ticks[0]();
+    await flush();
+    expect(sent).toEqual([[0, 1]]);
+    // The page hands back the array it read earlier (only the inbox changed).
+    await attention.follow(page({ inbox: inbox(1, 0), agents: stale }));
+    expect(sent).toEqual([[0, 1], [1, 1]]);
+    // A new roster read from the page replaces it.
+    await attention.follow(page({ inbox: inbox(1, 0), agents: [agent("a", "idle")] }));
+    expect(sent).toEqual([[0, 1], [1, 1], [1, 0]]);
+  });
+
   it("after a sign-out the same counts are sent again for the next account", async () => {
     const { sent, attention } = harness();
     await attention.follow(page({ inbox: inbox(2, 0) }));

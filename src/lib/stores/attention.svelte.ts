@@ -51,6 +51,9 @@ export function createAttention(overrides: Partial<AttentionDeps> = {}) {
   let shown = "0/0";
   let input: AttentionInput | null = null;
   let generation = 0;
+  // The page's own agents array, and the fresher one a tick read since it last changed.
+  let pageAgents: RosterRow[] | null = null;
+  let tickAgents: RosterRow[] | null = null;
 
   function show(needsYou: number, working: number): void {
     const key = `${needsYou}/${working}`;
@@ -89,6 +92,7 @@ export function createAttention(overrides: Partial<AttentionDeps> = {}) {
     try {
       const agents = await deps.rosterAgentDirectory(held.rows, deps.now());
       if (mine !== generation || input !== held) return;
+      tickAgents = agents;
       input = { ...held, agents };
       await recompute(input);
     } catch (e) {
@@ -99,6 +103,14 @@ export function createAttention(overrides: Partial<AttentionDeps> = {}) {
   return {
     /** Follows the page; a null inbox (nothing read yet) counts as zero. */
     async follow(next: AttentionInput): Promise<void> {
+      // The page re-hands the array it read at the last roster change; until that changes, the
+      // tick's later read of the same agents is the newer one.
+      if (next.agents === pageAgents && tickAgents !== null) {
+        next = { ...next, agents: tickAgents };
+      } else {
+        pageAgents = next.agents;
+        tickAgents = null;
+      }
       input = next;
       await recompute(next);
     },
@@ -110,6 +122,7 @@ export function createAttention(overrides: Partial<AttentionDeps> = {}) {
     /** Sign-out or account switch: back to the plain title and a quiet tray, whatever was showing. */
     reset(): void {
       input = null;
+      pageAgents = tickAgents = null;
       generation++;
       show(0, 0);
     },

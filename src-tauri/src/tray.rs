@@ -42,25 +42,36 @@ pub const NAVIGATE_EVENT: &str = "sm://navigate";
 const NEEDS_YOU_DESTINATION: &str = "needsYou";
 
 /// The app's own icon, which the tray wears.
+#[cfg(not(target_os = "macos"))]
 const ICON_PNG: &[u8] = include_bytes!("../icons/32x32.png");
 
-/// The dot's radius, and the ring of the icon's transparent margin kept clear around it.
+/// macOS's menu bar recolours a template image by its alpha alone, and the app icon is an
+/// opaque rounded square, which would show as a blob. This is the mark itself, black on
+/// transparent at 64 px (two points per pixel), with the top-right corner left free for the
+/// dot. Made by `assets/build-tray-template.py`.
+#[cfg(target_os = "macos")]
+const ICON_PNG: &[u8] = include_bytes!("../tray/template@2x.png");
+
+/// The dot's radius, and the ring of the icon's transparent margin kept clear around it, at
+/// the 32 px size. A larger icon scales both.
 const DOT_RADIUS: i64 = 5;
 const DOT_RING: i64 = 1;
 
 /// `rgba` (`width` x `height`, four bytes a pixel) with a filled `colour` dot in the
 /// top-right corner. The dot has radius 5 px and is ringed by 1 px made transparent, so it
-/// stays apart from the glyph. The dot and its ring lie in a square flush with the corner;
-/// no pixel outside that square is touched.
+/// stays apart from the glyph (at 32 px; the sizes scale with `width / 32`). The dot and its ring lie in a square flush
+/// with the corner; no pixel outside that square is touched.
 pub fn dot_icon(rgba: &[u8], width: u32, height: u32, colour: [u8; 4]) -> Vec<u8> {
     let mut out = rgba.to_vec();
-    let reach = DOT_RADIUS + DOT_RING;
+    let scale = i64::from(width) / 32;
+    let (radius, ring) = (DOT_RADIUS * scale.max(1), DOT_RING * scale.max(1));
+    let reach = radius + ring;
     let (cx, cy) = (i64::from(width) - 1 - reach, reach);
     for y in (cy - reach).max(0)..=(cy + reach).min(i64::from(height) - 1) {
         for x in (cx - reach).max(0)..=(cx + reach).min(i64::from(width) - 1) {
             let distance_squared = (x - cx).pow(2) + (y - cy).pow(2);
             let at = (y as usize * width as usize + x as usize) * 4;
-            if distance_squared <= DOT_RADIUS * DOT_RADIUS {
+            if distance_squared <= radius * radius {
                 out[at..at + 4].copy_from_slice(&colour);
             } else if distance_squared <= reach * reach {
                 out[at..at + 4].copy_from_slice(&[0, 0, 0, 0]);
@@ -68,18 +79,6 @@ pub fn dot_icon(rgba: &[u8], width: u32, height: u32, colour: [u8; 4]) -> Vec<u8
         }
     }
     out
-}
-
-/// The icon as a macOS template image wants it: black wherever the icon is painted, with the
-/// icon's own alpha. The menu bar recolours a template by its alpha alone, so the dot shows
-/// there as a shape (the knock-out ring keeps it apart), not as amber.
-#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
-pub fn monochrome(rgba: &[u8]) -> Vec<u8> {
-    rgba.as_chunks::<4>()
-        .0
-        .iter()
-        .flat_map(|p| [0, 0, 0, p[3]])
-        .collect()
 }
 
 /// What the tray shows. [`TauriTray`] is the real one.
@@ -154,9 +153,6 @@ pub struct TauriTray<R: Runtime = tauri::Wry> {
 /// handled by [`on_menu_event`].
 pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<TauriTray<R>> {
     let decoded = Image::from_bytes(ICON_PNG)?;
-    #[cfg(target_os = "macos")]
-    let base = monochrome(decoded.rgba());
-    #[cfg(not(target_os = "macos"))]
     let base = decoded.rgba().to_vec();
     let plain = Image::new_owned(base.clone(), decoded.width(), decoded.height());
     let dotted = Image::new_owned(
@@ -303,12 +299,6 @@ mod tests {
     }
 
     #[test]
-    fn monochrome_keeps_the_alpha_and_drops_the_colour() {
-        let out = monochrome(&[200, 100, 50, 255, 9, 9, 9, 0, 1, 2, 3, 128]);
-        assert_eq!(out, vec![0, 0, 0, 255, 0, 0, 0, 0, 0, 0, 0, 128]);
-    }
-
-    #[test]
     fn dot_icon_paints_the_signal_colour_in_the_top_right() {
         let painted = dot_icon(&icon(), SIZE, SIZE, AMBER);
         // The dot's centre, six pixels in from the right and top edges.
@@ -318,6 +308,21 @@ mod tests {
         assert_eq!(pixel(&painted, SIZE - 7 + 6, 6), [0, 0, 0, 0]);
         // Nothing lands in the top-left.
         assert_ne!(pixel(&painted, 6, 6), AMBER);
+    }
+
+    #[test]
+    fn dot_icon_scales_with_a_larger_icon() {
+        let size = 64u32;
+        let before = vec![0xFF; (size * size * 4) as usize];
+        let after = dot_icon(&before, size, size, AMBER);
+        let at = |x: u32, y: u32| {
+            let i = ((y * size + x) * 4) as usize;
+            after[i..i + 4].to_vec()
+        };
+        // Radius 10 about (64 - 1 - 12, 12).
+        assert_eq!(at(51, 12), AMBER);
+        assert_eq!(at(51 + 10, 12), AMBER);
+        assert_eq!(at(51 + 11, 12), [0, 0, 0, 0]);
     }
 
     #[test]
