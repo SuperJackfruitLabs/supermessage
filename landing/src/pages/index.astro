@@ -42,8 +42,9 @@ const themeCss =
   `:root[data-theme="dark"]{${decls(darkBlock)}}\n:root[data-theme="light"]{${decls(lightBlock)}}`;
 
 // The latest PUBLISHED release. One constant, so a new release is a one-line change.
-// Ledger SM-04 names v0.0.15 (2026-09-30), unsigned desktop builds only.
-const latestRelease = 'v0.0.15';
+// v0.1.0 (2026-10-23) is unsigned desktop builds plus Android debug APKs.
+// TODO: the ledger needs updating to match.
+const latestRelease = 'v0.1.0';
 const releaseUrl = `https://github.com/SuperJackfruitLabs/supermessage/releases/tag/${latestRelease}`;
 const docs = 'https://docs.supermessage.dev';
 // There is no install page in the docs yet; "What SuperMessage is" is the start page.
@@ -51,7 +52,7 @@ const getStarted = `${docs}/start/what-it-is/`;
 
 const title = 'SuperMessage — chat where your agents are in the room';
 const description =
-  'A Matrix client where agent turns, permission requests and approval gates arrive as cards in the room. In development: unsigned desktop previews only, no public mobile build.';
+  'A Matrix client where agent turns, permission requests and approval gates arrive as cards in the room. In development: unsigned desktop previews, Android debug APKs for sideloading, iOS by TestFlight invite only.';
 
 // Structured data for search and agents. Every value is already stated on this page.
 const jsonLd = {
@@ -447,12 +448,13 @@ const jsonLd = {
         <h2>Run it yourself</h2>
         <p>
           Download the desktop preview from <a href={releaseUrl}>{latestRelease} on GitHub
-          Releases</a> (published 2026-09-30):
+          Releases</a> (published 2026-10-23):
         </p>
         <ul class="assets">
-          <li><b>macOS</b> <code>supermessage_0.0.15_universal.dmg</code></li>
-          <li><b>Windows</b> <code>supermessage_0.0.15_x64-setup.exe</code> or <code>.msi</code></li>
+          <li><b>macOS</b> <code>supermessage_0.1.0_universal.dmg</code></li>
+          <li><b>Windows</b> <code>supermessage_0.1.0_x64-setup.exe</code> or <code>.msi</code></li>
           <li><b>Linux</b> <code>.deb</code>, <code>.rpm</code> or <code>.AppImage</code> (x86-64)</li>
+          <li><b>Android</b> debug-signed <code>.apk</code> per ABI, sideload only</li>
         </ul>
         <p>
           The builds are unsigned, so macOS Gatekeeper and Windows SmartScreen will warn before
@@ -462,8 +464,9 @@ const jsonLd = {
           mapping of people to identities.
         </p>
         <p>
-          There is nothing to install on a phone: no App Store, Play or public TestFlight build
-          exists. To build from source, the <a
+          The Android APKs are debug-signed previews for sideloading; they are not on Google Play,
+          and background push needs a UnifiedPush distributor such as ntfy. iOS is a TestFlight
+          build by invitation only, with no App Store release. To build from source, the <a
           href="https://github.com/SuperJackfruitLabs/supermessage#readme">README</a> has the
           commands.
         </p>
@@ -474,9 +477,9 @@ const jsonLd = {
       <div class="wrap">
         <h2>Where it runs today</h2>
         <ul class="limits">
-          <li><b>In development.</b> The only public builds are the unsigned desktop previews for
-            macOS, Windows and Linux. iOS goes to TestFlight internal testing only, and Android has
-            no public build. Mobile features exist in source, not as downloads.</li>
+          <li><b>In development.</b> The public builds are the unsigned desktop previews for
+            macOS, Windows and Linux, and debug-signed Android APKs for sideloading. iOS is
+            TestFlight by invitation only. There is no app-store release on either phone.</li>
           <li><b>Core chat is in the source for desktop, iOS and Android.</b> Settings differ by
             platform, search is the homeserver's search, and parity with general-purpose Matrix
             clients has not been tested.</li>

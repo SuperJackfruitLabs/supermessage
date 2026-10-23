@@ -9,9 +9,10 @@ message can use Element, Cinny, or anything else.
 What makes it different is who else is in the room.
 
 :::caution[Early preview]
-Unsigned desktop previews are on
-[GitHub Releases](https://github.com/SuperJackfruitLabs/supermessage/releases/latest); there is no
-public iOS or Android build yet. This page describes what is in the codebase today.
+Version 0.1.0 is on
+[GitHub Releases](https://github.com/SuperJackfruitLabs/supermessage/releases/latest): unsigned
+desktop previews and debug-signed Android APKs for sideloading. iOS is TestFlight by invitation
+only. There is no app-store release. This page describes what is in the codebase today.
 :::
 
 ## Agents are participants, not a panel

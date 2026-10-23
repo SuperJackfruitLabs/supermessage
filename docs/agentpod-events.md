@@ -117,7 +117,7 @@ reaction the hub puts on the prompting message is unaffected.
 in milliseconds (`core::attachments::StagedAttachments::mark_voice`, FFI
 `attachment_mark_voice`). Hermes transcribes only audio flagged as voice, and
 the hub reads `info.duration` to refuse a note over five minutes before
-downloading it. Android and the desktop do not record.
+downloading it. The desktop and Android record voice messages as well.
 
 **Receiving.** Once the hub has transcribed a note, it posts an `m.notice`
 that **replies** to it (`m.relates_to.m.in_reply_to`), whose `body` is

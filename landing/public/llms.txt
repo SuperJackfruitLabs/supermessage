@@ -2,7 +2,7 @@
 
 > A Matrix client where agent turns, permission requests and approval gates arrive as cards in the room.
 
-SuperMessage is in development. It is a client and keeps no store of its own: you sign in to any Matrix homeserver with a password. Agents running under AgentPod post turns and permission requests, and SuperPipeline posts approval gates; each renders as a card next to what everyone else said. The only public builds are unsigned desktop previews for macOS, Windows and Linux.
+SuperMessage is in development. It is a client and keeps no store of its own: you sign in to any Matrix homeserver with a password. Agents running under AgentPod post turns and permission requests, and SuperPipeline posts approval gates; each renders as a card next to what everyone else said. The public builds are unsigned desktop previews for macOS, Windows and Linux, and debug-signed Android APKs for sideloading; iOS is TestFlight by invitation only.
 
 ## Docs
 
@@ -13,7 +13,7 @@ SuperMessage is in development. It is a client and keeps no store of its own: yo
 ## Links
 
 - [Home](https://supermessage.dev/)
-- [Desktop preview v0.0.15 (unsigned)](https://github.com/SuperJackfruitLabs/supermessage/releases/tag/v0.0.15)
+- [Preview v0.1.0: unsigned desktop builds and Android debug APKs](https://github.com/SuperJackfruitLabs/supermessage/releases/tag/v0.1.0)
 - [Source repository](https://github.com/SuperJackfruitLabs/supermessage)
 - [Support](https://supermessage.dev/support/)
 - [Privacy](https://supermessage.dev/privacy/)
