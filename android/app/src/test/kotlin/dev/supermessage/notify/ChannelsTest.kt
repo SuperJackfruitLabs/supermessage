@@ -38,6 +38,6 @@ class ChannelsTest {
         val second = manager.notificationChannels.map { Triple(it.id, it.name.toString(), it.importance) }.sortedBy { it.first }
 
         assertEquals(first, second)
-        assertEquals(listOf("decisions", "messages"), second.map { it.first })
+        assertEquals(listOf("agent-activity", "decisions", "messages"), second.map { it.first })
     }
 }

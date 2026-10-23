@@ -19,7 +19,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import uniffi.supermessage_ffi.CoreInterface
+import uniffi.supermessage_core.NotificationAnswer
 import uniffi.supermessage_core.NotificationResponse
+import dev.supermessage.kit.widgets.DecisionAnswersUnderWay
 import uniffi.supermessage_ffi.answerFailedNotification
 import uniffi.supermessage_ffi.notificationResponse
 
@@ -46,6 +48,11 @@ import uniffi.supermessage_ffi.notificationResponse
  *   cold core happens inside it. A send that outruns it may still land, so
  *   the reader is told "wasn't sent" only once it has definitely failed, and
  *   only while the note's account is still signed in.
+ * - **One answer per decision, across surfaces.** While a widget's answer to
+ *   the same decision is under way, this sends nothing
+ *   ([DecisionAnswersUnderWay]); once this answer lands, the widgets mark the
+ *   decision sent (the core's `mark_answered`, [AppCore.widgetsAnswered]), so
+ *   they no longer offer it.
  */
 class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -63,13 +70,15 @@ class NotificationActionReceiver : BroadcastReceiver() {
         clock: () -> Long = SystemClock::elapsedRealtime,
         receivedAt: Long = clock(),
         core: () -> CoreInterface = { AppCore.core(context) },
+        answered: suspend (roomId: String, eventId: String, optionId: String) -> Unit =
+            { room, event, option -> AppCore.widgetsAnswered(context, room, event, option) },
     ): Job = scope.launch {
         val tag = intent.getStringExtra(AndroidPoster.EXTRA_TAG)
         // A repeat of a note whose answer is under way is dropped.
         if (tag != null && !inFlight.add(tag)) return@launch
         var releasedLater = false
         try {
-            releasedLater = run(context, intent, scope, deadline = receivedAt + budgetMs, clock, core) {
+            releasedLater = run(context, intent, scope, deadline = receivedAt + budgetMs, clock, core, answered) {
                 if (tag != null) inFlight.remove(tag)
             }
         } catch (e: CancellationException) {
@@ -89,6 +98,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
         deadline: Long,
         clock: () -> Long,
         core: () -> CoreInterface,
+        answered: suspend (roomId: String, eventId: String, optionId: String) -> Unit,
         release: () -> Unit,
     ): Boolean {
         val tag = intent.getStringExtra(AndroidPoster.EXTRA_TAG)
@@ -100,33 +110,53 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val poster = AndroidPoster(context, accountId = account)
         when (val response = notificationResponse(intent.getStringExtra(AndroidPoster.EXTRA_ACTION_ID) ?: "", userInfo, typed)) {
             is NotificationResponse.Answer -> {
-                // The core is built inside the work, so a cold start is inside the budget too.
-                val client = LazyCoreAnswering(core)
-                val guarded = AccountScopedAnswering(client, account) { client.account().userId }
-                val work = NotificationAnswerer.start(response.answer, guarded, scope)
-                val left = deadline - clock()
-                val sent = if (left > 0) withTimeoutOrNull(left) { work.await() } else null
-                val failed = answerFailedNotification(roomOf(response))
-                // Another account's note is dropped without a word; and once
-                // its account has signed out (sign-out withdrew everything),
-                // nothing goes up for it.
-                suspend fun tell() {
-                    if (!guarded.refusedOtherAccount && stillSignedInAs(client, account)) poster.postFailure(failed)
-                }
-                when (sent) {
-                    false -> tell()
-                    true -> Unit
-                    null -> {
-                        // Still under way, and it may yet land: say so only if it fails.
-                        scope.launch {
-                            try {
-                                if (!work.await()) tell()
-                            } finally {
-                                release()
-                            }
-                        }
-                        return true
+                val decision = decisionOf(response.answer, userInfo)
+                // A widget is answering this decision right now: a second answer is not sent.
+                if (decision != null && !DecisionAnswersUnderWay.claim(decision.roomId, decision.eventId)) return false
+                var handedOn = false
+                try {
+                    // The core is built inside the work, so a cold start is inside the budget too.
+                    val client = LazyCoreAnswering(core)
+                    val guarded = AccountScopedAnswering(client, account) { client.account().userId }
+                    val work = NotificationAnswerer.start(response.answer, guarded, scope)
+                    val left = deadline - clock()
+                    val sent = if (left > 0) withTimeoutOrNull(left) { work.await() } else null
+                    val failed = answerFailedNotification(roomOf(response))
+                    // Another account's note is dropped without a word; and once
+                    // its account has signed out (sign-out withdrew everything),
+                    // nothing goes up for it.
+                    suspend fun tell() {
+                        if (!guarded.refusedOtherAccount && stillSignedInAs(client, account)) poster.postFailure(failed)
                     }
+                    // Landed: the widgets stop offering it. Their failure is theirs alone.
+                    suspend fun landed() {
+                        if (decision == null) return
+                        try {
+                            answered(decision.roomId, decision.eventId, decision.optionId)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                        }
+                    }
+                    when (sent) {
+                        false -> tell()
+                        true -> landed()
+                        null -> {
+                            // Still under way, and it may yet land: say so only if it fails.
+                            handedOn = true
+                            scope.launch {
+                                try {
+                                    if (work.await()) landed() else tell()
+                                } finally {
+                                    decision?.let { DecisionAnswersUnderWay.release(it.roomId, it.eventId) }
+                                    release()
+                                }
+                            }
+                            return true
+                        }
+                    }
+                } finally {
+                    if (!handedOn) decision?.let { DecisionAnswersUnderWay.release(it.roomId, it.eventId) }
                 }
             }
             is NotificationResponse.Open -> AndroidPoster.noteFromExtras(intent)?.let { poster.postAgain(it) }
@@ -135,14 +165,13 @@ class NotificationActionReceiver : BroadcastReceiver() {
         return false
     }
 
-    /** The account the note was for is the one signed in, still; anything unknown is no. */
-    private suspend fun stillSignedInAs(client: LazyCoreAnswering, account: String?): Boolean = try {
-        account != null && client.restoreSessionQuietly() && client.account().userId == account
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        false
+    /** Which decision an answer is to, as the widgets' snapshot keys it; null when the note did not carry its event. */
+    private fun decisionOf(answer: NotificationAnswer, userInfo: Map<String, String>): Decision? = when (answer) {
+        is NotificationAnswer.Permission -> userInfo[KEY_EVENT_ID]?.let { Decision(answer.roomId, it, answer.optionId) }
+        is NotificationAnswer.Gate -> Decision(answer.roomId, answer.gateEventId, answer.optionId)
     }
+
+    private data class Decision(val roomId: String, val eventId: String, val optionId: String)
 
     private fun roomOf(response: NotificationResponse.Answer): String = when (val a = response.answer) {
         is uniffi.supermessage_core.NotificationAnswer.Permission -> a.roomId
@@ -156,9 +185,21 @@ class NotificationActionReceiver : BroadcastReceiver() {
          */
         const val BUDGET_MS = 9_000L
 
+        /** `notification_policy::KEY_EVENT_ID`: the user-info key the core puts the event under. */
+        private const val KEY_EVENT_ID = "sm.eventId"
+
         /** The tags of notes whose answer is under way, process-wide. */
         private val inFlight: MutableSet<String> = ConcurrentHashMap.newKeySet()
     }
+}
+
+/** The account [account] is the one signed in, still; anything unknown is no. */
+internal suspend fun stillSignedInAs(client: LazyCoreAnswering, account: String?): Boolean = try {
+    account != null && client.restoreSessionQuietly() && client.account().userId == account
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    false
 }
 
 /**
@@ -166,7 +207,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
  * a cold process) on the first call, inside the answer's own work and off
  * every cooperative thread.
  */
-private class LazyCoreAnswering(private val core: () -> CoreInterface) : NotificationAnswering {
+internal class LazyCoreAnswering(private val core: () -> CoreInterface) : NotificationAnswering {
     @Volatile
     private var client: CoreClient? = null
 

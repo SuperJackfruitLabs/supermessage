@@ -66,8 +66,22 @@ class NotificationActionReceiverTest {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
     }
 
+    /** The widgets' snapshot, in memory over the real core's merges; no test writes the real file. */
+    private val widgets = dev.supermessage.kit.widgets.WidgetFixtures.feed(dev.supermessage.kit.widgets.WidgetFixtures.Memory())
+
+    @org.junit.Before
+    fun widgetsInMemory() = AppCore.installWidgetsForTest(
+        widgets,
+        object : dev.supermessage.widgets.WidgetRedraw(app, nextChangeMs = { null }, widgets = { emptyList() }) {
+            override suspend fun after(reload: Boolean) {}
+        },
+    )
+
     @After
-    fun forget() = AppCore.installForTest(null)
+    fun forget() {
+        AppCore.installForTest(null)
+        AppCore.installWidgetsForTest(null)
+    }
 
     private fun install(core: Recording = Recording()) {
         this.core = core
@@ -352,5 +366,73 @@ class NotificationActionReceiverTest {
         built.countDown()
         scope.settle()
         assertEquals(listOf("permission !r:x allow_once"), recording.sent())
+    }
+
+    // MARK: - One answer per decision, across the notification and the widget (I4)
+
+    /** The widgets hold the decision the note is for (same room and event). */
+    private fun widgetsOwe() = runBlocking {
+        widgets.apply(dev.supermessage.kit.widgets.WidgetFixtures.permission(event = "\$e1", room = "!r:x"))
+        widgets.apply(dev.supermessage.kit.widgets.WidgetFixtures.gate(event = "\$e2", room = "!r:x"))
+    }
+
+    private fun widgetAnswer(event: String) =
+        widgets.view(dev.supermessage.kit.widgets.WidgetFixtures.NOW).decisions.single { it.decision.eventId == event }
+
+    @Test
+    fun anAnswerThatLandsMarksTheWidgetsSent() {
+        install()
+        widgetsOwe()
+        press(note(NotificationCategory.PERMISSION), "Allow once")
+        val owed = widgetAnswer("\$e1")
+        assertNotNull("marked sent", owed.decision.answered)
+        assertTrue("the widget offers no button for it", owed.buttons.isEmpty())
+        assertNull("the other decision is untouched", widgetAnswer("\$e2").decision.answered)
+    }
+
+    @Test
+    fun aGateAnswerThatLandsMarksTheWidgetsSent() {
+        install()
+        widgetsOwe()
+        press(note(NotificationCategory.GATE).copy(id = "\$e2", eventId = "\$e2"), "Approve")
+        assertEquals("Sent: Approve · waiting for the board", widgetAnswer("\$e2").decision.answered?.line)
+    }
+
+    @Test
+    fun aFailedAnswerLeavesTheWidgetsOwed() {
+        install(Recording(refuses = true))
+        widgetsOwe()
+        press(note(NotificationCategory.PERMISSION), "Allow once")
+        assertNull(widgetAnswer("\$e1").decision.answered)
+    }
+
+    @Test(timeout = 15_000)
+    fun aLateLandingMarksTheWidgetsToo() {
+        val gated = Gated()
+        install(gated)
+        widgetsOwe()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val intent = intentFor(note(NotificationCategory.PERMISSION), "Allow once")
+        runBlocking { NotificationActionReceiver().handle(app, intent, scope, budgetMs = 200).join() }
+        assertNull("not yet: it may still fail", widgetAnswer("\$e1").decision.answered)
+        gated.release()
+        scope.settle()
+        assertNotNull(widgetAnswer("\$e1").decision.answered)
+    }
+
+    @Test
+    fun aDecisionAWidgetIsAnsweringIsNotSentFromItsNotification() {
+        install()
+        widgetsOwe()
+        assertTrue(dev.supermessage.kit.widgets.DecisionAnswersUnderWay.claim("!r:x", "\$e1"))
+        try {
+            press(note(NotificationCategory.PERMISSION), "Allow once")
+            assertEquals("no second answer", emptyList<String>(), core.sent())
+        } finally {
+            dev.supermessage.kit.widgets.DecisionAnswersUnderWay.release("!r:x", "\$e1")
+        }
+        // Once it is done, the notification's next answer goes.
+        press(note(NotificationCategory.PERMISSION), "Allow once")
+        assertEquals(listOf("permission !r:x allow_once"), core.sent())
     }
 }

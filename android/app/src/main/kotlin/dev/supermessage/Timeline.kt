@@ -226,7 +226,10 @@ fun Timeline(
 ) {
     // Per list, so per room (the pane keys the list by room), and above the
     // lazy items so a recycled row cannot forget what this device answered.
-    val decisionAnswers = rememberDecisionAnswers()
+    // An answer that landed also tells the widgets, which stop offering it.
+    val decisionAnswers = rememberDecisionAnswers(
+        onAnswered = { eventId, optionId -> AppCore.decisionAnswered(roomId, eventId, optionId) },
+    )
     // One state for everything live: the core's turn record (and the answer
     // being written). `finished` is the core's `endedBy`, however it ended.
     val isLive = liveSummary != null || liveAnswer != null

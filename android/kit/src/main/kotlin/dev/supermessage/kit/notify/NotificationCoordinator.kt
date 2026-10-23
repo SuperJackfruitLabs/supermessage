@@ -62,6 +62,16 @@ class NotificationCoordinator(
             remotePush = remotePush,
         )
 
+    /**
+     * Called after the app comes forward or goes away, or the room in front changes: what shows
+     * only while the reader is not looking (a running turn's notification) looks again.
+     */
+    @Volatile
+    var onPresenceChanged: () -> Unit = {}
+
+    /** The room the reader is looking at: the app is in front and this room is open. */
+    fun isLookingAt(roomId: String): Boolean = active && openRoomId == roomId
+
     fun activeChanged(active: Boolean) {
         this.active = active
         if (active) {
@@ -73,10 +83,12 @@ class NotificationCoordinator(
             // after the app goes away.
             timelineSinceMs = maxOf(timelineSinceMs, now())
         }
+        onPresenceChanged()
     }
 
     fun openRoomChanged(roomId: String?) {
         openRoomId = roomId
+        onPresenceChanged()
     }
 
     fun setRemotePush(on: Boolean) {

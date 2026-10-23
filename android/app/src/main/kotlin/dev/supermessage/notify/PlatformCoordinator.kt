@@ -26,6 +26,9 @@ import kotlinx.coroutines.flow.StateFlow
  *   background push (`:188-205`). [run] only runs while the Activity is
  *   started, so each return to the foreground asks again; the registrar
  *   never registers the same endpoint twice.
+ * - The widgets' snapshot is not written from here: it is process-wide, so an
+ *   Activity's recreation cannot restart its recap or leak through it
+ *   ([dev.supermessage.widgets.WidgetPublisher]).
  */
 internal class PlatformCoordinator(
     context: Context,
