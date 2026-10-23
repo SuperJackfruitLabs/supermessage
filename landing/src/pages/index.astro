@@ -12,11 +12,12 @@
 //
 // Amber is used for exactly one thing: the item that is waiting on a person.
 //
-// How it works carries a small three.js scene (src/scripts/scenes), set in one post room: the
+// Two bands carry a small three.js scene (src/scripts/scenes), set in one post room: the
 // homeserver is a wall of pigeonholes, SuperMessage a reading desk with no shelves, an agent a pod
 // across the floor. How it works walks its three steps beside one pinned stage (sign in, an
-// agent's card lands, your answer goes back and the card stops waiting on you). One canvas visits
-// every stage, loaded only near the first; public/scenes holds a still per scene,
+// agent's card lands, your answer goes back and the card stops waiting on you); What it's like
+// shows live text going straight to the desk and only the finished turn landing in the room. One
+// canvas visits every stage, loaded only near the first; public/scenes holds a still per scene,
 // beat and sun phase for reduced motion and no WebGL. The scenes use amber the same way.
 //
 // Every capability sentence here maps to an entry in the SJL claims ledger
@@ -292,7 +293,7 @@ const jsonLd = {
       .stage img { transition: opacity .5s ease; }
       .stage.live :global(canvas) { opacity: 1; }
       .stage.live img, .stage.pending img { opacity: 0; }
-      .walk { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 56px; }
+      .walk, .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 56px; }
       .walk .cell { min-height: 62vh; display: flex; flex-direction: column; justify-content: center; transition: opacity .35s ease; }
       .walk.walking .cell:not(.current) { opacity: .5; }
       .walk .per-step { display: none; }
@@ -301,12 +302,13 @@ const jsonLd = {
 
       @media (max-width: 899px) {
         .grid { grid-template-columns: 1fr; gap: 32px; }
-        .walk { grid-template-columns: 1fr; gap: 0; }
+        .walk, .split { grid-template-columns: 1fr; gap: 0; }
         .walk .pin { display: none; }
         .walk .per-step { display: block; order: -1; margin-bottom: 18px; }
         .walk .cell { min-height: 0; padding-bottom: 44px; }
         .walk.walking .cell:not(.current) { opacity: 1; }
-
+        .split .pin { order: -1; margin-bottom: 24px; }
+        .split .pinned { position: relative; top: auto; }
         section.band .wrap { padding-top: 64px; padding-bottom: 64px; }
       }
 
@@ -471,7 +473,8 @@ const jsonLd = {
     </section>
 
     <section class="band">
-      <div class="wrap prose">
+      <div class="wrap split">
+        <div class="prose">
         <h2>What it's like to use</h2>
         <p>
           Say you ask in a room where a migration got to. The agent working on it answers with a
@@ -491,6 +494,13 @@ const jsonLd = {
           A colleague in the same room on Element sees each card as a plain sentence instead.
           Nothing about the room depends on SuperMessage.
         </p>
+        </div>
+        <div class="pin">
+          <figure class="stage pinned" data-scene="live" aria-hidden="true">
+              <img data-still alt="" width="480" height="360" loading="lazy" decoding="async" />
+              <noscript><img src="/scenes/live-noon.webp" alt="" width="480" height="360" loading="lazy" decoding="async" /></noscript>
+            </figure>
+        </div>
       </div>
     </section>
 
