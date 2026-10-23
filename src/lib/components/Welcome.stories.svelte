@@ -19,9 +19,8 @@
   function check(root: HTMLElement, widthPx = 132) {
     const mark = root.querySelector<HTMLImageElement>("[data-testid='welcome-mark']")!;
     if (mark.getAttribute("alt") !== "supermessage") throw new Error("the mark's alt");
-    if (Math.round(mark.getBoundingClientRect().width) !== widthPx) {
-      throw new Error(`the mark is ${mark.getBoundingClientRect().width}px, not ${widthPx}`);
-    }
+    // Layout width: the arrival animation scales the box (0.94 to 1), which `getBoundingClientRect` sees.
+    if (mark.offsetWidth !== widthPx) throw new Error(`the mark is ${mark.offsetWidth}px, not ${widthPx}`);
     // Scale only, never opacity: the mark is fully there on the very first frame.
     if (getComputedStyle(mark).opacity !== "1") throw new Error(`the mark fades: opacity ${getComputedStyle(mark).opacity}`);
     const text = root.textContent ?? "";

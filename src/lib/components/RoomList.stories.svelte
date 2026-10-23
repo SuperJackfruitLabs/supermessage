@@ -102,6 +102,33 @@
   {#snippet template()}{@render frame(standIn([one("recent", null, fleetRosterRows)]))}{/snippet}
 </Story>
 
+<!-- A roster taller than its column: the chip row keeps its height (it is a flex child of a scrolling column). -->
+<Story
+  name="Chips stay whole in a long roster"
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    await settled(() => rowCount(root) >= 20, "twenty rooms");
+    const chips = q(root, "[data-testid='filter-chips']")!;
+    if (chips.getBoundingClientRect().height < 30) throw new Error(`the chip row is squashed to ${chips.getBoundingClientRect().height}px`);
+    const nav = q(root, "nav[aria-label='Rooms']")!;
+    if (nav.scrollHeight <= nav.clientHeight) throw new Error("the roster should scroll");
+  }}
+>
+  {#snippet template()}
+    {@render frame(
+      standIn([
+        one(
+          "recent",
+          null,
+          Array.from({ length: 4 }, (_, n) =>
+            fleetRosterRows.map((r) => ({ ...r, row: { ...r.row, room: { ...r.row.room, id: `${r.row.room.id}-${n}` } } })),
+          ).flat(),
+        ),
+      ]),
+    )}
+  {/snippet}
+</Story>
+
 <Story
   name="Unread narrows, never reorders"
   play={async ({ canvasElement }) => {
@@ -139,7 +166,8 @@
     await settled(() => q(root, "[data-testid='show-all']"), "Show all");
     q(root, "[data-testid='show-all']")!.click();
     await settled(() => rowCount(root) === allRead.length, "every room back");
-    if (q(root, "[data-testid='roster-empty']")) throw new Error("the empty state is gone");
+    // The list animates a removal, so the old node may linger for a moment.
+    await settled(() => !q(root, "[data-testid='roster-empty']"), "the empty state to leave");
     if (q(root, "[data-testid='chip-all']")!.getAttribute("aria-pressed") !== "true") throw new Error("All is back");
   }}
 >

@@ -20,7 +20,7 @@
   role="group"
   aria-label="Filter rooms"
   data-testid="filter-chips"
-  class="flex gap-2 overflow-x-auto px-4 py-1.5"
+  class="flex shrink-0 gap-2 overflow-x-auto px-4 py-1.5"
 >
   {#each chips as chip (chip.filter)}
     {@const on = chip.filter === selected}
