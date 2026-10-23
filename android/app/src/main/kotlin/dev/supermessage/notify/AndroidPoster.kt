@@ -190,6 +190,15 @@ internal class AndroidPoster(
         const val EXTRA_BODY = "dev.supermessage.extra.BODY"
         const val EXTRA_CATEGORY = "dev.supermessage.extra.CATEGORY"
 
+        /**
+         * Withdraws the decision's notification, wherever it came from (a push or the open
+         * timeline): the core plans a decision's notification under its event id
+         * (`planned_from_decided`), which is the tag every post uses.
+         */
+        fun cancelDecision(context: Context, eventId: String) {
+            NotificationManagerCompat.from(context).cancel(eventId, NOTIFICATION_ID)
+        }
+
         /** The RemoteInput result key of "Request changes". */
         const val KEY_TEXT = "dev.supermessage.reply"
 
@@ -225,8 +234,14 @@ internal class AndroidPoster(
             )
         }
 
-        /** `supermessage://open?room=<id>`; a Matrix id holds `!` and `:`, so it is a query item, encoded. */
-        fun openRoomUri(roomId: String): Uri =
-            Uri.parse("supermessage://open?room=" + URLEncoder.encode(roomId, "UTF-8"))
+        /**
+         * `supermessage://open?room=<id>[&event=<id>]`; a Matrix id holds `!` and `:`, so each is
+         * a query item, encoded. With [eventId] it opens the decision card (iOS `AppLink.decision`).
+         */
+        fun openRoomUri(roomId: String, eventId: String? = null): Uri =
+            Uri.parse(
+                "supermessage://open?room=" + URLEncoder.encode(roomId, "UTF-8") +
+                    (eventId?.let { "&event=" + URLEncoder.encode(it, "UTF-8") } ?: ""),
+            )
     }
 }

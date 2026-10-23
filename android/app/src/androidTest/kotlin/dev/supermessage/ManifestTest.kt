@@ -115,6 +115,17 @@ class ManifestTest {
         assertFalse("not exported", resolved.single().serviceInfo.exported)
     }
 
+    /** The widgets' redraw alarms: declared, and reachable only by this app's own PendingIntents. */
+    @Test
+    fun theWidgetRedrawReceiverIsNotExported() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val receivers = context.packageManager
+            .getPackageInfo(context.packageName, PackageManager.GET_RECEIVERS)
+            .receivers.orEmpty()
+        val redraw = receivers.single { it.name == dev.supermessage.widgets.WidgetRedrawReceiver::class.java.name }
+        assertFalse("not exported", redraw.exported)
+    }
+
     /**
      * `supermessage://open?room=` is the link iOS registers and its widgets build. Without the
      * filter the system finds no app for it and a tap on one does nothing.

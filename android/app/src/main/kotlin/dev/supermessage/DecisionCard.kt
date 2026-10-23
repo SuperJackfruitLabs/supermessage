@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -181,6 +182,8 @@ class DecisionAnswers internal constructor(
     private val scope: CoroutineScope,
     answered: Map<String, AnsweredHere> = emptyMap(),
     failed: Set<String> = emptySet(),
+    /** Told once an answer has landed, with the answer key and the option sent: the widgets stop offering it. */
+    private val onAnswered: (key: String, optionId: String) -> Unit = { _, _ -> },
 ) {
     private val answeredKeys = mutableStateMapOf<String, AnsweredHere>().apply { putAll(answered) }
     private val sendingKeys = mutableStateMapOf<String, Boolean>()
@@ -215,6 +218,7 @@ class DecisionAnswers internal constructor(
                 answeredKeys[key] = AnsweredHere(receiptOutcome(option), Instant.now())
                 haptics.play(Haptic.Success)
                 onLanded()
+                onAnswered(key, option.id)
             } else {
                 failedKeys[key] = true
                 haptics.play(Haptic.Failure)
@@ -228,9 +232,12 @@ class DecisionAnswers internal constructor(
 internal fun rememberDecisionAnswers(
     answered: Map<String, AnsweredHere> = emptyMap(),
     failed: Set<String> = emptySet(),
+    onAnswered: (key: String, optionId: String) -> Unit = { _, _ -> },
 ): DecisionAnswers {
     val scope = rememberCoroutineScope()
-    return remember(scope) { DecisionAnswers(scope, answered, failed) }
+    // The latest callback, without rebuilding the holder (which would forget what was answered).
+    val latest = rememberUpdatedState(onAnswered)
+    return remember(scope) { DecisionAnswers(scope, answered, failed) { key, option -> latest.value(key, option) } }
 }
 
 @Composable

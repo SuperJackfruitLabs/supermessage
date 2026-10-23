@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- NeedsYouWidget.swift:11-12, verbatim. WidgetCopy holds the same words for the body. -->
+    <string name="needs_you_widget_label">Needs you</string>
+    <string name="needs_you_widget_description">Decisions waiting on you — answer them from here.</string>
+    <!-- AgentsWidget.swift:11-13, verbatim. -->
+    <string name="agents_widget_label">Agents</string>
+    <string name="agents_widget_description">What your agents did since you last opened the app.</string>
+</resources>

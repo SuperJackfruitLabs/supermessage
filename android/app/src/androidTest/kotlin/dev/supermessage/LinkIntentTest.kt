@@ -96,4 +96,32 @@ class LinkIntentTest {
         assertNull(linkedRoom(Intent(Intent.ACTION_MAIN)))
         assertNull(linkedRoom(null))
     }
+
+    /**
+     * A widget row (and the Needs you text) opens its room through `AnswerFromWidget.roomIntent`
+     * and `decisionIntent`: the same `supermessage://` handler a notification's tap uses.
+     * Started as the launcher does, with the real MainActivity, the room becomes its request.
+     */
+    @Test
+    fun aWidgetRowsIntentOpensItsRoom() {
+        for (make in listOf<() -> Intent>(
+            { dev.supermessage.widgets.AnswerFromWidget.roomIntent(context, "!row:x") },
+            { dev.supermessage.widgets.AnswerFromWidget.decisionIntent(context, "!row:x", "\$e1") },
+        )) {
+            val app = instrumentation.startActivitySync(make().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as MainActivity
+            started += app
+            var pending: String? = null
+            val deadline = System.currentTimeMillis() + 10_000
+            while (System.currentTimeMillis() < deadline && pending == null) {
+                instrumentation.waitForIdleSync()
+                instrumentation.runOnMainSync {
+                    pending = androidx.lifecycle.ViewModelProvider(app)[SessionViewModel::class.java].requests.pending.value
+                }
+                if (pending == null) Thread.sleep(100)
+            }
+            assertEquals("!row:x", pending)
+            instrumentation.runOnMainSync { app.finishAndRemoveTask() }
+            instrumentation.waitForIdleSync()
+        }
+    }
 }

@@ -10,6 +10,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
 import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -121,7 +123,11 @@ class MainActivity : ComponentActivity() {
         model.startNotifications()
         // Start and stop of the Activity are the app coming forward and going
         // away (iOS `scenePhase`); the notification lifecycle follows them.
-        lifecycle.addObserver(ScenePhaseObserver { active -> model.notifications.activeChanged(active) })
+        lifecycle.addObserver(
+            ScenePhaseObserver { active ->
+                model.notifications.activeChanged(active)
+            },
+        )
         val registrar = AppCore.registrar(this)
         val coordinator = PlatformCoordinator(
             context = this,
@@ -129,6 +135,20 @@ class MainActivity : ComponentActivity() {
             permissionLauncher = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
             askForPush = { askForPush(this, registrar) },
         ).also { coordinator = it }
+        // The widgets' snapshot is the process's, not this Activity's: the recap follows the
+        // app's real foreground (so a recreation does not restart it), and the feed runs on
+        // the process's scope so a change after the Activity stops still lands.
+        AppCore.observeProcess(this)
+        val publisher = AppCore.widgetPublisher(this)
+        val watch = publisher.watch(model.session.phase, model.session, AppCore.scope)
+        lifecycle.addObserver(
+            object : DefaultLifecycleObserver {
+                override fun onDestroy(owner: LifecycleOwner) {
+                    // This Activity's own watch only: a recreation's new one is already running.
+                    watch.stop()
+                }
+            },
+        )
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { coordinator.run() }
         }

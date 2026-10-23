@@ -23,7 +23,6 @@ import org.unifiedpush.android.connector.FailedReason
 import org.unifiedpush.android.connector.PushService
 import org.unifiedpush.android.connector.data.PushEndpoint
 import org.unifiedpush.android.connector.data.PushMessage
-import uniffi.supermessage_core.NotificationDto
 import uniffi.supermessage_core.PlannedNotification
 import uniffi.supermessage_ffi.CoreInterface
 import uniffi.supermessage_ffi.genericNotification
@@ -74,14 +73,6 @@ class SupermessagePushService : PushService() {
     companion object {
         /** How long one push may take, from arrival to a posted (or generic) notification. */
         const val BUDGET_MS = 20_000L
-
-        /**
-         * Every push the core decided, posted or not (a suppressed one too).
-         * M7 Task 1 feeds the widgets from it, as the iOS extension merges
-         * each decided push (`NotificationService.swift:109-112`).
-         */
-        @Volatile
-        var onDecided: (NotificationDto) -> Unit = {}
     }
 }
 
@@ -128,7 +119,7 @@ internal fun deliverPush(
     currentOwner: () -> String? = { AppCore.pushOwner(context).account },
 ): Job = scope.launch {
     val verified = AtomicReference<String?>(null)
-    val work = scope.async { decide(push, owner, core, verified) }
+    val work = scope.async { decide(context, push, owner, core, verified, currentOwner) }
     val outcome = withTimeoutOrNull(budgetMs) { work.await() }
         ?: verified.get()?.let { PushOutcome.Generic(it) }
         ?: PushOutcome.Drop
@@ -156,10 +147,12 @@ internal fun deliverPush(
 }
 
 private suspend fun decide(
+    context: Context,
     push: MatrixPush,
     owner: String?,
     core: () -> CoreInterface,
     verified: AtomicReference<String?>,
+    currentOwner: () -> String?,
 ): PushOutcome {
     // No account had a pusher when it came: it is no one's.
     if (owner == null) return PushOutcome.Drop
@@ -173,8 +166,16 @@ private suspend fun decide(
         verified.set(account)
         try {
             val note = client.notificationFor(push.roomId, push.eventId)
-            // The widgets' business; it never changes what is posted.
-            runCatching { SupermessagePushService.onDecided(note) }
+            // Merged before the push is shown, as on iOS (`NotificationService.swift:118-125`);
+            // its failure is its own. Only while the push's account is still the one signed in,
+            // asked under the snapshot's lock: a sign-out while the note was fetched has reset
+            // the snapshot, and this must not put the last account's decision back.
+            try {
+                AppCore.widgetsDecided(context, note) { currentOwner() == owner && signedInAs(client, owner) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
             if (note.suppress != null) PushOutcome.Drop else PushOutcome.Show(plannedFromDecided(note), account)
         } catch (e: CancellationException) {
             throw e
@@ -187,6 +188,15 @@ private suspend fun decide(
         // Who is signed in could not be told: not posted for anyone.
         PushOutcome.Drop
     }
+}
+
+/** The session is [account]'s still; anything unknown (signed out, no session) is no. */
+private suspend fun signedInAs(client: CoreClient, account: String): Boolean = try {
+    client.account().userId == account
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Exception) {
+    false
 }
 
 /**
