@@ -349,8 +349,16 @@ pub fn run() {
             attachment_send,
             attachment_discard,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Notifications belong to the running app; none should outlive it.
+            if let tauri::RunEvent::Exit = event {
+                if let Some(poster) = tauri::Manager::try_state::<Arc<dyn notify::Poster>>(app) {
+                    poster.withdraw_all();
+                }
+            }
+        });
 }
 
 #[cfg(test)]

@@ -20,7 +20,7 @@
 #![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 /// One notification to show. Every word in it came from the core.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,12 +103,37 @@ pub use xdg::{NotifyRustBackend, XdgPoster};
 #[cfg(target_os = "linux")]
 mod xdg {
     use super::*;
+    use serde_json::json;
     use std::collections::VecDeque;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex, MutexGuard};
 
-    /// How many notifications may have a thread waiting on a button at once.
-    /// The next one closes the oldest rather than leave dead buttons on screen.
+    /// How many threads may wait on a button at once. Past it a note is posted
+    /// without buttons (the reader still opens it by clicking). It counts live
+    /// *threads*, not entries: a waiter whose close never arrives (a server that
+    /// restarted) still holds its slot, so the cap bounds threads and bus
+    /// connections whatever the server does.
     pub const MAX_WAITERS: usize = 16;
+
+    /// One slot of the cap. Dropping it, including by a panic unwinding the
+    /// waiter's thread, gives the slot back.
+    struct Slot(Arc<AtomicUsize>);
+
+    impl Slot {
+        fn take(live: &Arc<AtomicUsize>) -> Option<Slot> {
+            live.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
+                (n < MAX_WAITERS).then_some(n + 1)
+            })
+            .ok()
+            .map(|_| Slot(Arc::clone(live)))
+        }
+    }
+
+    impl Drop for Slot {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
 
     /// How many posted notes are remembered for replacement. Past this the oldest
     /// is forgotten (a note that old has long been seen).
@@ -159,18 +184,14 @@ mod xdg {
         known: VecDeque<Known>,
     }
 
-    impl State {
-        fn waiting(&self) -> usize {
-            self.known.iter().filter(|k| k.waiting).count()
-        }
-    }
-
     pub struct XdgPoster {
         backend: Arc<dyn XdgBackend>,
         /// Read once: the server does not change under a running app.
         actions: bool,
         state: Arc<Mutex<State>>,
         sender: ActionSender,
+        /// Threads waiting on a button right now.
+        live: Arc<AtomicUsize>,
     }
 
     fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -187,7 +208,13 @@ mod xdg {
                     known: VecDeque::new(),
                 })),
                 sender,
+                live: Arc::new(AtomicUsize::new(0)),
             }
+        }
+
+        /// How many threads are waiting on a button right now.
+        pub fn live_waiters(&self) -> usize {
+            self.live.load(Ordering::SeqCst)
         }
 
         /// Whether buttons are offered on this desktop.
@@ -195,9 +222,9 @@ mod xdg {
             self.actions
         }
 
-        fn request(&self, note: &PostedNote, replaces: Option<u32>) -> XdgRequest {
+        fn request(&self, note: &PostedNote, replaces: Option<u32>, buttons: bool) -> XdgRequest {
             let mut actions = Vec::new();
-            if self.actions {
+            if buttons {
                 actions.push((DEFAULT_ACTION.to_owned(), DEFAULT_ACTION_LABEL.to_owned()));
                 actions.extend(
                     note.actions
@@ -216,12 +243,17 @@ mod xdg {
 
         /// Waits for the reader on a thread of its own; when they act, sends the
         /// action, and in every case forgets the notification.
-        fn spawn_waiter(&self, server_id: u32) {
+        fn spawn_waiter(&self, server_id: u32, slot: Slot) {
             let backend = Arc::clone(&self.backend);
             let state = Arc::clone(&self.state);
             let sender = self.sender.clone();
             let work = move || {
-                let outcome = backend.wait(server_id);
+                let _slot = slot;
+                // A bus failure inside the backend must not leave the entry behind.
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    backend.wait(server_id)
+                }))
+                .unwrap_or(Outcome::Closed);
                 let gone = {
                     let mut state = lock(&state);
                     state
@@ -248,50 +280,47 @@ mod xdg {
 
     impl Poster for XdgPoster {
         fn post(&self, note: &PostedNote) -> Result<(), String> {
-            let replaces = lock(&self.state)
-                .known
-                .iter()
-                .find(|k| k.note_id == note.id)
-                .map(|k| k.server_id);
-            let handle = self.backend.show(&self.request(note, replaces))?;
+            let (replaces, replaces_waiting) = {
+                let state = lock(&self.state);
+                let known = state.known.iter().find(|k| k.note_id == note.id);
+                (
+                    known.map(|k| k.server_id),
+                    known.is_some_and(|k| k.waiting),
+                )
+            };
+            // A repost of a note that already has a waiter keeps that waiter. Any
+            // other note with buttons needs a slot, and without one it is posted
+            // without buttons.
+            let slot = if self.actions && !replaces_waiting {
+                Slot::take(&self.live)
+            } else {
+                None
+            };
+            let buttons = replaces_waiting || slot.is_some();
+            let handle = self
+                .backend
+                .show(&self.request(note, replaces, buttons))?;
             let server_id = handle.id();
             let user_info = json!({ "id": note.id, "roomId": note.room_id });
 
-            let mut to_close = Vec::new();
-            let spawn;
             {
                 let mut state = lock(&self.state);
-                // A repost keeps the waiter already listening on that server id; only
-                // the info it will report changes.
-                let existing = state.known.iter().position(|k| k.server_id == server_id);
-                let was_waiting = existing
-                    .and_then(|i| state.known.remove(i))
-                    .is_some_and(|k| k.waiting);
-                spawn = self.actions && !was_waiting;
+                if let Some(i) = state.known.iter().position(|k| k.server_id == server_id) {
+                    state.known.remove(i);
+                }
                 state.known.push_back(Known {
                     note_id: note.id.clone(),
                     server_id,
                     user_info,
-                    waiting: self.actions,
+                    waiting: buttons,
                     handle,
                 });
-                while state.waiting() > MAX_WAITERS {
-                    if let Some(i) = state.known.iter().position(|k| k.waiting) {
-                        if let Some(old) = state.known.remove(i) {
-                            to_close.push(old.handle);
-                        }
-                    }
-                }
                 while state.known.len() > MAX_KNOWN {
                     state.known.pop_front();
                 }
             }
-            if spawn {
-                self.spawn_waiter(server_id);
-            }
-            // Outside the lock: closing ends a waiter, which takes the lock.
-            for handle in to_close {
-                handle.close();
+            if let Some(slot) = slot {
+                self.spawn_waiter(server_id, slot);
             }
             Ok(())
         }
@@ -408,6 +437,7 @@ mod tests {
             Outcome, XdgBackend, XdgHandle, XdgPoster, XdgRequest, MAX_WAITERS,
         };
         use super::super::*;
+        use serde_json::json;
         use std::collections::HashMap;
         use std::sync::mpsc::{channel, Receiver, Sender};
         use std::sync::{Arc, Mutex};
@@ -422,6 +452,8 @@ mod tests {
             /// What each blocked `wait` is waiting on: press, or close.
             gates: Mutex<HashMap<u32, Sender<Outcome>>>,
             waiters: Mutex<HashMap<u32, Receiver<Outcome>>>,
+            /// Makes `wait` panic, as a failing bus connection can.
+            panic_in_wait: std::sync::atomic::AtomicBool,
         }
 
         impl FakeServer {
@@ -433,6 +465,7 @@ mod tests {
                     closed: Mutex::new(vec![]),
                     gates: Mutex::new(HashMap::new()),
                     waiters: Mutex::new(HashMap::new()),
+                    panic_in_wait: std::sync::atomic::AtomicBool::new(false),
                 })
             }
             fn press(&self, id: u32, action: &str) {
@@ -487,6 +520,9 @@ mod tests {
                 }))
             }
             fn wait(&self, id: u32) -> Outcome {
+                if self.0.panic_in_wait.load(std::sync::atomic::Ordering::SeqCst) {
+                    panic!("the bus went away");
+                }
                 let rx = self
                     .0
                     .waiters
@@ -622,18 +658,41 @@ mod tests {
         }
 
         #[test]
-        fn the_seventeenth_waiter_closes_the_oldest() {
+        fn the_live_waiters_never_exceed_the_cap_and_return_to_zero() {
             let (poster, server, _rx) = poster(true);
             for i in 0..MAX_WAITERS {
                 poster.post(&note(&format!("$n{i}"), vec![])).unwrap();
             }
-            assert!(server.closed.lock().unwrap().is_empty());
+            assert_eq!(poster.live_waiters(), MAX_WAITERS);
             poster.post(&note("$last", vec![])).unwrap();
-            assert_eq!(
-                *server.closed.lock().unwrap(),
-                vec![101],
-                "the oldest closes"
+            assert_eq!(poster.live_waiters(), MAX_WAITERS, "the cap holds");
+            let shown = server.shown.lock().unwrap();
+            assert_eq!(shown.len(), MAX_WAITERS + 1);
+            assert!(
+                shown[MAX_WAITERS].actions.is_empty(),
+                "past the cap a note has no buttons"
             );
+            assert!(shown[0].actions.len() == 1, "under the cap it has Open");
+            drop(shown);
+            assert!(server.closed.lock().unwrap().is_empty(), "nothing is evicted");
+            poster.withdraw_all();
+            wait_until("every waiter to end", || poster.live_waiters() == 0);
+        }
+
+        #[test]
+        fn a_waiter_that_panics_gives_back_its_slot_and_leaves_no_entry() {
+            let (poster, server, _rx) = poster(true);
+            server
+                .panic_in_wait
+                .store(true, std::sync::atomic::Ordering::SeqCst);
+            poster.post(&note("$a", vec![])).unwrap();
+            wait_until("the slot to return", || poster.live_waiters() == 0);
+            // No stale entry: the same id is a new notification, not a replacement.
+            server
+                .panic_in_wait
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            poster.post(&note("$a", vec![])).unwrap();
+            assert_eq!(server.shown.lock().unwrap()[1].replaces, None);
         }
 
         /// Manual: posts two LOCAL notifications to the desktop's real server, the
