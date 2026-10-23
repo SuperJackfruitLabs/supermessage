@@ -48,14 +48,18 @@ class StreamingGlideTest {
 
     private var thought by mutableStateOf<String?>(null)
     private var steps by mutableStateOf(emptyList<uniffi.supermessage_core.TurnStep>())
+    private var revision by mutableStateOf(0uL)
+    private var room by mutableStateOf("!a:x")
+    private var shown by mutableStateOf(emptyList<TimelineRowDto>())
 
     private fun show(rows: List<TimelineRowDto>, reduce: Boolean) {
+        shown = rows
         compose.setContent {
             CompositionLocalProvider(LocalReduceMotion provides reduce) {
                 Box(Modifier.requiredWidth(411.dp)) {
                     Timeline(
-                        rows = rows, revision = 0uL, typingLine = null, isPaginating = false,
-                        canPaginate = false, onPaginate = {}, onMarkRead = {},
+                        rows = shown, revision = revision, typingLine = null, isPaginating = false,
+                        canPaginate = false, onPaginate = {}, onMarkRead = {}, roomId = room,
                         liveSummary = inProgress(), liveThought = thought, liveSteps = steps,
                         liveAnswer = null, liveName = "Atlas",
                     )
@@ -121,6 +125,26 @@ class StreamingGlideTest {
         assertTrue("still gliding at ~270 ms: $at250 vs settled $settled", at250 > settled + 0.5f)
         assertEquals("done by ~420 ms", settled, at400, 0.5f)
         assertTrue(before > settled)
+    }
+
+    /** Leaving a room mid-glide: the next room's history is at rest, not carrying the old offset. */
+    @Test
+    fun switchingRoomsStopsTheGlide() {
+        show(three, reduce = false)
+        val cardBefore = cardHeight()
+        thought = "Checking whether the roster is already sorted."
+        untilTheCardGrows(cardBefore)
+        compose.mainClock.advanceTimeBy(100) // mid-glide
+        // The other room: its own rows, no turn.
+        room = "!b:x"
+        shown = (11..13).map(::message)
+        revision += 1uL
+        compose.mainClock.advanceTimeByFrame()
+        compose.mainClock.advanceTimeByFrame()
+        val oneFrame = top("row-\$m13")
+        compose.mainClock.advanceTimeBy(1_000)
+        val settled = top("row-\$m13")
+        assertEquals("the new room's history is at rest at once", settled, oneFrame, 0.5f)
     }
 
     @Test

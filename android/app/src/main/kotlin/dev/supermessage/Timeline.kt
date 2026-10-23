@@ -443,6 +443,8 @@ fun Timeline(
     // in the draw phase (a layer block), never in composition or layout.
     val glideDriver = remember { GlideDriver() }
     LaunchedEffect(glideDriver) { glideDriver.run() }
+    // A glide belongs to the room it started in: another room's history starts at rest.
+    LaunchedEffect(roomId) { glideDriver.reset() }
     // No reset when the turn ends: a glide under way finishes, so the history
     // never snaps by what was left of it.
     // Grouping applied here, the row's own header rendered by TimelineRow.

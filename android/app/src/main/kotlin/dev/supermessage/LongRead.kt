@@ -24,6 +24,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +66,14 @@ private const val ReadHint = "Opens the whole message in a reading view"
 @Composable
 internal fun LongReadBody(blocks: List<RichBlock>, fontFamily: FontFamily, title: String) {
     var reading by remember { mutableStateOf(false) }
+    // Focus goes back to "Read" when the reading view closes, so a keyboard or
+    // switch user lands where they were rather than at the top of the window.
+    val readFocus = remember { FocusRequester() }
+    var opened by remember { mutableStateOf(false) }
+    LaunchedEffect(reading) {
+        if (reading) opened = true
+        else if (opened) runCatching { readFocus.requestFocus() }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // `wrapContentHeight(unbounded = true)` first: the text lays out at its
         // full height and the 320 then cuts it, instead of every paragraph
@@ -91,6 +102,7 @@ internal fun LongReadBody(blocks: List<RichBlock>, fontFamily: FontFamily, title
         Row(
             modifier = Modifier
                 .testTag("long-read-button")
+                .focusRequester(readFocus)
                 .clickable(onClickLabel = ReadHint, role = Role.Button) { reading = true }
                 .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,

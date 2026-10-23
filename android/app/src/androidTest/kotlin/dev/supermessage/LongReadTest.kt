@@ -8,6 +8,14 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
+import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.unit.Density
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -69,5 +77,77 @@ class LongReadTest {
         show(onDone = { done++ })
         compose.onNodeWithText("Done").performClick()
         assertEquals(1, done)
+    }
+
+    private fun readingBody(fontScale: Float? = null) {
+        compose.setContent {
+            val density = LocalDensity.current
+            val inputMode = LocalInputModeManager.current
+            SideEffect { inputMode.requestInputMode(InputMode.Keyboard) }
+            CompositionLocalProvider(
+                LocalDensity provides if (fontScale == null) density else Density(density.density, fontScale),
+            ) {
+                SupermessageTheme {
+                    Box(Modifier.fillMaxSize()) {
+                        LongReadBody(blocks = paragraphs(40), fontFamily = SupermessageThemeFonts.body, title = "Atlas — Platform")
+                    }
+                }
+            }
+        }
+        compose.waitForIdle()
+    }
+
+    /** Back goes to the sheet window's own dispatcher: an injected KEYCODE_BACK never reaches the app on the CI AVD. */
+    private fun pressSystemBack() {
+        val view = (compose.onNodeWithTag("long-read-view").fetchSemanticsNode().root as androidx.compose.ui.platform.ViewRootForTest).view
+        val dispatcher = checkNotNull(view.findViewTreeOnBackPressedDispatcherOwner()) { "the sheet window has no back dispatcher" }
+            .onBackPressedDispatcher
+        compose.runOnUiThread { dispatcher.onBackPressed() }
+    }
+
+    @Test
+    fun backClosesTheReadingView() {
+        readingBody()
+        compose.onNodeWithTag("long-read-button").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("long-read-view").assertIsDisplayed()
+        pressSystemBack()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodes(hasTestTag("long-read-view")).fetchSemanticsNodes().isEmpty()
+        }
+        compose.onNodeWithTag("long-read-view").assertDoesNotExist()
+    }
+
+    @Test
+    fun focusReturnsToReadWhenTheReadingViewCloses() {
+        readingBody()
+        compose.onNodeWithTag("long-read-button").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Done").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodes(hasTestTag("long-read-view")).fetchSemanticsNodes().isEmpty()
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("long-read-button").assertIsFocused()
+    }
+
+    @Test
+    fun theReadingViewWorksAtFontScaleTwo() {
+        readingBody(fontScale = 2f)
+        compose.onNodeWithTag("long-read-button").performClick()
+        compose.waitForIdle()
+        val root = compose.onNodeWithTag("long-read-view").fetchSemanticsNode().boundsInRoot
+        val done = compose.onNodeWithText("Done").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val title = compose.onNodeWithText("Atlas — Platform").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val body = compose.onNode(hasText("Paragraph number 1 of the report.") and hasAnyAncestor(hasTestTag("long-read-view")), useUnmergedTree = true)
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue("Done inside the sheet: $done in $root", done.right <= root.right + 1f && done.bottom <= root.bottom + 1f)
+        assertTrue("the title does not overlap Done: $title vs $done", title.right <= done.left + 1f)
+        assertTrue("the body starts below the header: $body vs $title", body.top >= title.bottom - 1f)
+        // Done stays tappable and closes it.
+        compose.onNodeWithText("Done").performClick()
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.onAllNodes(hasTestTag("long-read-view")).fetchSemanticsNodes().isEmpty()
+        }
     }
 }
