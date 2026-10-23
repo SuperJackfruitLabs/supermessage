@@ -305,9 +305,9 @@
     row({ id, sender: MIRA, senderDisplayName: "Mira", timestampMs: T0 + at, body, ...extra }, "M");
 
   const cardRows: TimelineRow[] = [
-    agent(atlas("c1", 0, "Staging is green across all four ABIs.")),
-    mira("c2", 10 * 60_000, "Thanks, promoting now."),
-    mine("c3", 20 * 60_000, "Hold the promotion until Mira confirms."),
+    ends(agent(atlas("c1", 0, "Staging is green across all four ABIs."))),
+    ends(mira("c2", 10 * 60_000, "Thanks, promoting now.")),
+    ends(mine("c3", 20 * 60_000, "Hold the promotion until Mira confirms.")),
   ];
 
   const PARAGRAPHS = Array.from(
@@ -316,14 +316,14 @@
   );
   PARAGRAPHS[5] = "The very last paragraph of the report.";
   const longRow: TimelineRow = {
-    ...agent(atlas("l1", 0, PARAGRAPHS.join("\n\n")), { isLongRead: true }),
+    ...agent(atlas("l1", 0, PARAGRAPHS.join("\n\n")), { isLongRead: true, endsRun: true }),
     view: {
       render: "bubble",
       muted: false,
       blocks: PARAGRAPHS.map((text) => ({ block: "paragraph", inlines: [{ inline: "text", text }] })),
     },
   } as TimelineRow;
-  const longRows: TimelineRow[] = [mine("l0", -60_000, "Write up the migration."), longRow];
+  const longRows: TimelineRow[] = [ends(mine("l0", -60_000, "Write up the migration.")), longRow];
 
   const underParent: TimelineRow[] = [
     agent(atlas("u1", 0, "Ship it.")),
@@ -599,8 +599,8 @@
       <Timeline
         roomId={ROOM}
         store={seededStore([
-          mine("b0", 0, "Find where the tokens are generated."),
-          atlas("b1", 20_000, "🔎 Searching files…", { edited: true }),
+          ends(mine("b0", 0, "Find where the tokens are generated.")),
+          ends(atlas("b1", 20_000, "🔎 Searching files…", { edited: true })),
         ])}
         live={bridgeHarness.store}
         liveServices={storyServices}
@@ -644,8 +644,8 @@
       <Timeline
         roomId={ROOM}
         store={seededStore([
-          mine("c0", 0, "Find where the tokens are generated."),
-          atlas("c1", 20_000, "They come from design/tokens.toml through the generator."),
+          ends(mine("c0", 0, "Find where the tokens are generated.")),
+          ends(atlas("c1", 20_000, "They come from design/tokens.toml through the generator.")),
         ])}
         live={replyHarness.store}
         liveServices={storyServices}
