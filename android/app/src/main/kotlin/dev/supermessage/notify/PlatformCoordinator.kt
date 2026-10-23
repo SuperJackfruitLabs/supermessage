@@ -18,7 +18,12 @@ import kotlinx.coroutines.flow.StateFlow
  *   (`:124-131`, `:161-173`); a restored session never prompts.
  * - On `SIGNED_IN → SIGNED_OUT` it withdraws every delivered notification
  *   (`:143-155`, `LocalNotifier.swift:101-107`), so the next account never
- *   sees the last one's.
+ *   sees the last one's, and unregisters from the UnifiedPush distributor
+ *   (the core's logout already removed the pusher, `C/session.rs:297`).
+ * - **Signed in, allowed to notify, and in front**, it asks the connector for
+ *   background push (`:188-205`). [run] only runs while the Activity is
+ *   started, so each return to the foreground asks again; the registrar
+ *   never registers the same endpoint twice.
  */
 internal class PlatformCoordinator(
     context: Context,
@@ -29,9 +34,18 @@ internal class PlatformCoordinator(
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
     },
+    /** Asks the UnifiedPush connector for a distributor and registers ([askForPush]). */
+    private val askForPush: () -> Unit = {},
+    /** The registrar's sign-out: unregister from the distributor and forget. */
+    private val pushSignedOut: () -> Unit = {},
 ) {
-    constructor(context: Context, session: Session, permissionLauncher: () -> Unit) :
-        this(context, session.phase, permissionLauncher)
+    constructor(
+        context: Context,
+        session: Session,
+        permissionLauncher: () -> Unit,
+        askForPush: () -> Unit = {},
+        pushSignedOut: () -> Unit = {},
+    ) : this(context, session.phase, permissionLauncher, askForPush = askForPush, pushSignedOut = pushSignedOut)
 
     private val context = context.applicationContext
 
@@ -50,9 +64,19 @@ internal class PlatformCoordinator(
             if (shouldAskForNotifications(before, now, sdkInt, granted())) {
                 permissionLauncher()
             }
+            if (now == Session.Phase.SIGNED_IN && allowed()) askForPush()
             if (before == Session.Phase.SIGNED_IN && now == Session.Phase.SIGNED_OUT) {
                 NotificationManagerCompat.from(context).cancelAll()
+                pushSignedOut()
             }
         }
     }
+
+    /** The permission dialog's answer: a grant while signed in asks for push at once. */
+    fun permissionAnswered(granted: Boolean) {
+        if (granted && lastPhase == Session.Phase.SIGNED_IN) askForPush()
+    }
+
+    /** API 31–32 have no runtime permission to grant. */
+    private fun allowed(): Boolean = sdkInt < 33 || granted()
 }

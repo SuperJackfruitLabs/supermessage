@@ -13,6 +13,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.supermessage.notify.PlatformCoordinator
+import dev.supermessage.notify.PushStatus
+import dev.supermessage.notify.askForPush
+import androidx.core.app.NotificationManagerCompat
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -97,7 +100,11 @@ class MainActivity : ComponentActivity() {
      * system remembers it.
      */
     private val notificationPermission =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            coordinator?.permissionAnswered(granted)
+        }
+
+    private var coordinator: PlatformCoordinator? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -106,11 +113,14 @@ class MainActivity : ComponentActivity() {
         // Start and stop of the Activity are the app coming forward and going
         // away (iOS `scenePhase`); the notification lifecycle follows them.
         lifecycle.addObserver(ScenePhaseObserver { active -> model.notifications.activeChanged(active) })
+        val registrar = AppCore.registrar(this)
         val coordinator = PlatformCoordinator(
             context = this,
             session = model.session,
             permissionLauncher = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
-        )
+            askForPush = { askForPush(this, registrar) },
+            pushSignedOut = registrar::signedOut,
+        ).also { coordinator = it }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) { coordinator.run() }
         }
@@ -499,6 +509,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                     }
 
                     ExtraPanel.Account -> {
+                        val notifications = rememberPushStatus()
                         val blockedNow by session.safety.blocked.collectAsStateWithLifecycle()
                         val storedView by prefs.view.collectAsStateWithLifecycle(initialValue = RosterChoice.WAITING)
                         val showsState by prefs.showsState.collectAsStateWithLifecycle(initialValue = true)
@@ -531,6 +542,7 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                             blockedNow = blockedNow,
                             loadBlocked = session::loadBlockedUsers,
                             onUnblock = session::unblock,
+                            notifications = notifications,
                         )
                     }
 
@@ -624,3 +636,20 @@ internal fun Modifier.shownOnlyIf(shown: Boolean): Modifier =
                 layout(0, 0) {}
             }
     }
+
+/**
+ * What Account → Notifications says: "turned off" when the app may not
+ * notify at all (looked at again on each resume, since the reader changes it
+ * in Settings), otherwise the push registrar's state.
+ */
+@Composable
+private fun rememberPushStatus(): PushStatus? {
+    val context = LocalContext.current
+    val registrar = remember { AppCore.registrar(context) }
+    val push by registrar.status.collectAsStateWithLifecycle()
+    var enabled by remember { mutableStateOf(NotificationManagerCompat.from(context).areNotificationsEnabled()) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        enabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+    }
+    return if (!enabled) PushStatus.NotificationsOff else push
+}

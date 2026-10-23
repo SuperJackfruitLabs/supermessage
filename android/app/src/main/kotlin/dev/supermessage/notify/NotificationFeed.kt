@@ -26,6 +26,12 @@ internal const val FEED_THROTTLE_MS = 250L
  *
  * Only the selected space's roster and the one subscribed timeline are ever
  * looked at, and at most once per [FEED_THROTTLE_MS].
+ *
+ * **The account is known before anything posts.** A note carries the account
+ * it was made for, and its buttons refuse without one; so a change is not
+ * handed to the coordinator until the poster has the account. A change
+ * skipped for that is not lost: the roster's previous snapshot and the
+ * timeline's notified set are untouched, so the next look sees it.
  */
 @OptIn(FlowPreview::class)
 internal class NotificationFeed(
@@ -45,22 +51,31 @@ internal class NotificationFeed(
             poster.accountId = null
             NotificationManagerCompat.from(context).cancelAll()
         }
+        // The sign-out hook above clears the account, synchronously with the phase.
         jobs += session.phase.onEach { phase ->
-            if (phase == Session.Phase.SIGNED_IN) poster.accountId = session.account()?.userId
+            if (phase == Session.Phase.SIGNED_IN) accountKnown()
         }.launchIn(scope)
         jobs += session.rooms.selectedId.onEach(coordinator::openRoomChanged).launchIn(scope)
         jobs += session.rooms.rooms
             .sample(FEED_THROTTLE_MS)
-            .onEach { rows -> if (session.phase.value == Session.Phase.SIGNED_IN) coordinator.roomsChanged(rows) }
+            .onEach { rows ->
+                if (session.phase.value == Session.Phase.SIGNED_IN && accountKnown()) coordinator.roomsChanged(rows)
+            }
             .launchIn(scope)
         jobs += combine(session.timeline.roomId, session.timeline.items) { id, items -> id to items }
             .sample(FEED_THROTTLE_MS)
             .onEach { (id, items) ->
-                if (session.phase.value != Session.Phase.SIGNED_IN) return@onEach
+                if (session.phase.value != Session.Phase.SIGNED_IN || !accountKnown()) return@onEach
                 val name = id?.let { session.rooms.row(it)?.identity?.name } ?: session.rooms.selectedName ?: ""
                 coordinator.timelineChanged(id, name, items)
             }
             .launchIn(scope)
+    }
+
+    /** Asks for the account when the poster has none yet; true once it has one. */
+    private suspend fun accountKnown(): Boolean {
+        if (poster.accountId == null) poster.accountId = session.account()?.userId
+        return poster.accountId != null
     }
 
     fun stop() {

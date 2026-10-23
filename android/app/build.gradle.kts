@@ -172,6 +172,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.datastore.preferences)
+    // Background push (M6 Task 4): the distributor wakes SupermessagePushService.
+    implementation(libs.unifiedpush.connector)
 
     // `StubCore`, which every FakeCore in this module extends. See :kit's
     // build file for why it is a test fixture and not a test source file.

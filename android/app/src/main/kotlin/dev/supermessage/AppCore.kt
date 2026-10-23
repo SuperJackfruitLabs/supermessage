@@ -5,6 +5,10 @@ import androidx.annotation.VisibleForTesting
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import dev.supermessage.kit.notify.NotificationCoordinator
+import dev.supermessage.notify.PushRegistrar
+import org.unifiedpush.android.connector.INSTANCE_DEFAULT
+import org.unifiedpush.android.connector.UnifiedPush
 import uniffi.supermessage_ffi.Core
 import uniffi.supermessage_ffi.CoreInterface
 
@@ -18,6 +22,8 @@ import uniffi.supermessage_ffi.CoreInterface
  * one core directly", `Supermessage/Platform/AppDelegate.swift:172-180`).
  * So the core is built here, lazily, once per process, and everything —
  * [SessionViewModel], receivers, the push service — takes it from [core].
+ * The push registrar and the live notification coordinator are shared the
+ * same way, for the same reason: a push arrives with no Activity.
  *
  * Only the core is shared. The `Session` stays ViewModel-scoped, for the
  * reasons [SessionViewModel] gives.
@@ -39,6 +45,31 @@ object AppCore {
      */
     val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * The live notification coordinator, while a [SessionViewModel] holds
+     * one: what a push consults to stay out of the way of the room on screen
+     * and of what was already posted (`notificationPresentsRemote`). `null`
+     * in a cold process, where a push simply presents
+     * (`AppDelegate.swift:111`, `platform?.presentsRemote(...) ?? true`).
+     */
+    @Volatile
+    var coordinator: NotificationCoordinator? = null
+
+    @Volatile
+    private var registrar: PushRegistrar? = null
+
+    /** The one [PushRegistrar]: the Activity asks for push, the push service hands it endpoints. */
+    internal fun registrar(context: Context): PushRegistrar {
+        registrar?.let { return it }
+        val app = context.applicationContext
+        return synchronized(lock) {
+            registrar ?: PushRegistrar(
+                core = { core(app) },
+                unregisterDistributor = { UnifiedPush.unregister(app, INSTANCE_DEFAULT) },
+            ).also { registrar = it }
+        }
+    }
+
     fun core(context: Context): CoreInterface {
         built?.let { return it }
         return synchronized(lock) {
@@ -53,5 +84,11 @@ object AppCore {
     @VisibleForTesting
     fun installForTest(core: CoreInterface?) {
         synchronized(lock) { built = core }
+    }
+
+    /** Replaces the registrar (or, with `null`, forgets it). Tests only. */
+    @VisibleForTesting
+    internal fun installRegistrarForTest(registrar: PushRegistrar?) {
+        synchronized(lock) { this.registrar = registrar }
     }
 }

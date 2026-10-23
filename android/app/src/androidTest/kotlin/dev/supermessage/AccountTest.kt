@@ -34,6 +34,13 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
+import dev.supermessage.notify.PushStatus
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -80,10 +87,17 @@ class AccountTest {
         loadBlocked: suspend () -> List<RoomMemberDto>? = { emptyList() },
         onUnblock: suspend (String) -> String? = { null },
         blockedNow: (() -> Set<String>?)? = null,
+        notifications: () -> PushStatus? = { null },
+        fontScale: Float? = null,
     ) {
         compose.setContent {
             val handler = uriHandler ?: LocalUriHandler.current
-            CompositionLocalProvider(LocalUriHandler provides handler, LocalHapticFeedback provides haptics) {
+            val density = LocalDensity.current
+            CompositionLocalProvider(
+                LocalUriHandler provides handler,
+                LocalHapticFeedback provides haptics,
+                LocalDensity provides if (fontScale == null) density else Density(density.density, fontScale),
+            ) {
                 // The width a phone has, never a height: the panel must scroll
                 // inside whatever height the device gives it.
                 Box(Modifier.requiredWidth(411.dp).fillMaxHeight()) {
@@ -100,6 +114,7 @@ class AccountTest {
                             loadBlocked = loadBlocked,
                             onUnblock = onUnblock,
                             blockedNow = blockedNow?.invoke(),
+                            notifications = notifications(),
                         )
                     }
                 }
@@ -556,5 +571,67 @@ class AccountTest {
         compose.waitForIdle()
 
         assertEquals("@zed:example.org", unblocked)
+    }
+
+    // MARK: - Notifications (M6 Task 4, Q1/Q2, no iOS copy)
+
+    private fun notificationsRowSays(status: PushStatus, words: String) {
+        panel(notifications = { status })
+        compose.waitForIdle()
+        compose.onNodeWithTag("account-notifications").performScrollTo().assertIsDisplayed().assertTextEquals(words)
+        compose.onNodeWithText("Notifications").assertIsDisplayed()
+    }
+
+    @Test
+    fun theNotificationsRowSaysPushIsOnThroughTheDistributor() =
+        notificationsRowSays(PushStatus.On("ntfy"), "On, through ntfy")
+
+    @Test
+    fun theNotificationsRowSaysWhyPushIsOff() = notificationsRowSays(
+        PushStatus.NoDistributor,
+        "Off: install a UnifiedPush app such as ntfy to get notifications while supermessage is closed",
+    )
+
+    @Test
+    fun theNotificationsRowSaysTheServerCantTakeMatrix() = notificationsRowSays(
+        PushStatus.NoMatrixGateway,
+        "Off: your UnifiedPush server can't take Matrix notifications",
+    )
+
+    @Test
+    fun theNotificationsRowSaysNotificationsAreTurnedOff() = notificationsRowSays(
+        PushStatus.NotificationsOff,
+        "Off: notifications are turned off for supermessage",
+    )
+
+    @Test
+    fun theNotificationsRowIsAbsentUntilPushIsKnown() {
+        panel(notifications = { null })
+        compose.waitForIdle()
+        compose.onNodeWithTag("account-notifications").assertDoesNotExist()
+    }
+
+    /** RF3: 411dp at font scale 2, every state, every line shown and none cut short. */
+    @Test
+    fun theNotificationsRowFitsAtFontScaleTwo() {
+        val status = mutableStateOf<PushStatus>(PushStatus.On("ntfy"))
+        panel(notifications = { status.value }, fontScale = 2f)
+        for (state in listOf(
+            PushStatus.On("ntfy"), PushStatus.NoDistributor, PushStatus.NoMatrixGateway, PushStatus.NotificationsOff,
+        )) {
+            status.value = state
+            compose.waitForIdle()
+            val row = compose.onNodeWithTag("account-notifications").performScrollTo().assertIsDisplayed()
+            val layouts = mutableListOf<TextLayoutResult>()
+            row.fetchSemanticsNode().config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+            val layout = layouts.single()
+            assertFalse("$state overflows", layout.hasVisualOverflow)
+            for (line in 0 until layout.lineCount) {
+                assertFalse("$state line $line is ellipsised", layout.isLineEllipsized(line))
+            }
+            val bounds = row.fetchSemanticsNode().boundsInRoot
+            val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+            assertTrue("$state runs off the screen: $bounds in $root", bounds.bottom <= root.bottom && bounds.top >= root.top)
+        }
     }
 }

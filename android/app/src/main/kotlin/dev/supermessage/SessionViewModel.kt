@@ -71,6 +71,8 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         super.onCleared()
         feed?.stop()
+        // Only ours: a newer ViewModel may already have published its own.
+        if (AppCore.coordinator === notifications) AppCore.coordinator = null
     }
 
     private val poster = AndroidPoster(app)
@@ -81,6 +83,13 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         modeOf = session::notificationMode,
         now = System::currentTimeMillis,
     )
+
+    init {
+        // A pusher registered earlier in this process still stands; and a push
+        // consults this coordinator about the room on screen and what was posted.
+        notifications.setRemotePush(AppCore.registrar(app).remotePush)
+        AppCore.coordinator = notifications
+    }
 
     private var feed: NotificationFeed? = null
 

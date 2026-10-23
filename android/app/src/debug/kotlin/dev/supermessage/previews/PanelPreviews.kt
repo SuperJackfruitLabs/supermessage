@@ -2,6 +2,7 @@ package dev.supermessage.previews
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import dev.supermessage.AccountPanel
 import dev.supermessage.kit.RosterChoice
 import dev.supermessage.ChipState
@@ -497,3 +498,39 @@ internal fun MemberActionsUnblock() {
         MemberActionsBody("Priya", isAgent = false, blocked = true, onBlockOrUnblock = {}, onReport = {}, onCancel = {})
     }
 }
+
+// Account → Notifications (M6 Task 4, Q1/Q2, no iOS copy): one preview per state.
+
+@Composable
+private fun NotificationsRowPreview(status: dev.supermessage.notify.PushStatus) {
+    PreviewGround(width = 411.dp) { androidx.compose.foundation.layout.Column { dev.supermessage.NotificationsRow(status) } }
+}
+
+/** Background push is on, through the reader's distributor. */
+@Preview(name = "Account notifications, on", showBackground = true)
+@Composable
+internal fun AccountNotificationsOn() = NotificationsRowPreview(dev.supermessage.notify.PushStatus.On("ntfy"))
+
+/** No UnifiedPush distributor on the phone (Q1). */
+@Preview(name = "Account notifications, no distributor", showBackground = true)
+@Composable
+internal fun AccountNotificationsNoDistributor() =
+    NotificationsRowPreview(dev.supermessage.notify.PushStatus.NoDistributor)
+
+/** The distributor's server is not a Matrix gateway, and there is no fallback (Q2). */
+@Preview(name = "Account notifications, no Matrix gateway", showBackground = true)
+@Composable
+internal fun AccountNotificationsNoMatrixGateway() =
+    NotificationsRowPreview(dev.supermessage.notify.PushStatus.NoMatrixGateway)
+
+/** Notifications are turned off for the app. */
+@Preview(name = "Account notifications, turned off", showBackground = true)
+@Composable
+internal fun AccountNotificationsTurnedOff() =
+    NotificationsRowPreview(dev.supermessage.notify.PushStatus.NotificationsOff)
+
+/** The longest line at font scale 2 (RF3): it wraps, it is never cut short. */
+@Preview(name = "Account notifications, 2x", showBackground = true, fontScale = 2f)
+@Composable
+internal fun AccountNotificationsAtFontScaleTwo() =
+    NotificationsRowPreview(dev.supermessage.notify.PushStatus.NoDistributor)

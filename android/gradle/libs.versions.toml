@@ -31,6 +31,12 @@ composablePreviewScanner = "0.9.3"
 # 4.16 is the first Robolectric with SDK 36; nothing past 4.15.1 is published,
 # so previews render at API 35 via @Config.
 robolectric = "4.15.1"
+# M6 Android Task 4: background push (G3, the hub's gateway is APNs-only).
+# Apache-2.0 (the 3.3.5 POM and Gradle module metadata on Maven Central),
+# minCompileSdk 16. Its runtime dependency Tink 1.23.0 is Apache-2.0 and brings
+# gson (Apache-2.0), error_prone_annotations (Apache-2.0), jsr305 (BSD-3) and
+# protobuf-java (BSD-3): all permissive (`:app:dependencies`).
+unifiedpush = "3.3.5"
 
 [libraries]
 jna = { group = "net.java.dev.jna", name = "jna", version.ref = "jna" }
@@ -77,6 +83,7 @@ roborazzi-compose = { group = "io.github.takahirom.roborazzi", name = "roborazzi
 roborazzi-preview-scanner = { group = "io.github.takahirom.roborazzi", name = "roborazzi-compose-preview-scanner-support", version.ref = "roborazzi" }
 composable-preview-scanner = { group = "io.github.sergio-sastre.ComposablePreviewScanner", name = "android", version.ref = "composablePreviewScanner" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+unifiedpush-connector = { group = "org.unifiedpush.android", name = "connector", version.ref = "unifiedpush" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
