@@ -1,7 +1,7 @@
 // The voice recorder's state machine: a port of `VoiceRecorder.swift:18-190` over an injected
-// capture. The recorder's numbers (sample every 100 ms, at most 60 levels, 600 ms shortest) and
-// the waveform maths are the core's (`core::voice_recording`), passed in as `spec` and
-// `waveform`; nothing here restates them.
+// capture. The recorder's numbers (sample every 100 ms, at most 60 levels), the waveform maths
+// and whether a recording is long enough to send are the core's (`core::voice_recording`),
+// passed in as `spec`, `waveform` and `longEnough`; nothing here restates them.
 
 import type { AttachmentSendOutcome, StagedAttachment, VoiceRecordingSpec } from "$lib/ipc";
 
@@ -21,7 +21,13 @@ export const SILENCE_DB = -160;
 
 /** The microphone and encoder, behind the browser APIs. */
 export interface Capture {
-  start(): Promise<void>;
+  /**
+   * Opens the microphone and starts recording. `isCurrent` is asked once the microphone is
+   * granted and before anything records: when it says no (the start was cancelled while the
+   * grant was pending), the tracks are stopped at once, nothing records, and this resolves
+   * `false`.
+   */
+  start(isCurrent: () => boolean): Promise<boolean>;
   /** Stops and returns the finished recording; its `type` is the recorder's mime type. */
   stop(): Promise<Blob>;
   /** The current input level in dBFS. */
@@ -36,6 +42,8 @@ export interface VoiceDeps {
   every(fn: () => void, ms: number): () => void;
   /** `core::voice_recording::waveform`. */
   waveform(decibels: number[], bins: number): Promise<number[]>;
+  /** `core::voice_recording::long_enough`: shorter is a slip of the thumb, not a message. */
+  longEnough(durationMs: number): Promise<boolean>;
   stageRecording(roomId: string, mime: string, body: Blob): Promise<StagedAttachment>;
   markVoice(roomId: string, token: string, durationMs: number, waveform: number[]): Promise<void>;
   sendStaged(roomId: string, token: string, caption: string | null): Promise<AttachmentSendOutcome>;
@@ -57,7 +65,12 @@ export function createVoiceRecorder(deps: VoiceDeps) {
   let failure: string | null = null;
   let starting = false;
   let unsupported = false;
-  let abandonStart = false;
+  /**
+   * Bumped by everything that ends a start before it has begun (`cancel`, a hold released
+   * early): a start that comes back from `getUserMedia` under an older generation was
+   * abandoned, and must not record.
+   */
+  let generation = 0;
   let levels: number[] = [];
   let stopMeter: (() => void) | null = null;
 
@@ -78,8 +91,7 @@ export function createVoiceRecorder(deps: VoiceDeps) {
     levels = [];
     changed();
     const blob = await deps.capture.stop();
-    // Shorter than the core's minimum is a slip of the thumb, not a message.
-    if (durationMs < deps.spec.shortestMs) return null;
+    if (!(await deps.longEnough(durationMs))) return null;
     return { blob, durationMs, decibels };
   }
 
@@ -104,30 +116,34 @@ export function createVoiceRecorder(deps: VoiceDeps) {
     /** Starts recording; asks for the microphone the first time. `held` when the mic is held down. */
     async start(held: boolean): Promise<boolean> {
       if (phase.kind !== "idle" || starting) return false;
+      const mine = ++generation;
+      const current = () => mine === generation;
       starting = true;
-      abandonStart = false;
       failure = null;
       changed();
       deps.stopPlayback();
+      let began: boolean;
       try {
-        await deps.capture.start();
+        began = await deps.capture.start(current);
       } catch (err) {
         const name = (err as { name?: string } | null)?.name;
         if (name === "NotSupportedError") unsupported = true;
-        failure =
-          name === "NotAllowedError" || name === "SecurityError"
-            ? MIC_REFUSED
-            : unsupported
-              ? NOT_SUPPORTED
-              : START_FAILED;
+        // A start the reader already walked away from fails silently.
+        if (current())
+          failure =
+            name === "NotAllowedError" || name === "SecurityError"
+              ? MIC_REFUSED
+              : unsupported
+                ? NOT_SUPPORTED
+                : START_FAILED;
         starting = false;
         changed();
         return false;
       }
       starting = false;
-      if (abandonStart) {
-        // The finger lifted during the permission prompt: throw the recording away as it starts.
-        abandonStart = false;
+      if (!began) return false;
+      if (!current()) {
+        // Cancelled between the capture starting and this line: stop it before it is used.
         await deps.capture.stop().catch(() => undefined);
         return false;
       }
@@ -140,11 +156,16 @@ export function createVoiceRecorder(deps: VoiceDeps) {
 
     /** A hold ended before recording had begun. */
     abandonPendingStart(): void {
-      if (starting) abandonStart = true;
+      if (starting) generation++;
     },
 
-    /** Stops and throws the recording away. Stages nothing. */
+    /**
+     * Stops and throws the recording away. Stages nothing. While the microphone is still being
+     * granted, it abandons that start: when the grant comes back the tracks are stopped and
+     * nothing records (a room switch, sign-out or unmount during the prompt).
+     */
     async cancel(): Promise<void> {
+      generation++;
       if (phase.kind !== "recording") return;
       endMeter();
       phase = { kind: "idle" };

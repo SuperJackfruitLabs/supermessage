@@ -2092,6 +2092,11 @@ export async function voiceWaveform(decibels: number[], bins: number): Promise<n
   return invoke<number[]>("voice_waveform", { decibels, bins });
 }
 
+/** `core::voice_recording::long_enough`: whether a recording this long is a message at all. */
+export async function voiceLongEnough(durationMs: number): Promise<boolean> {
+  return invoke<boolean>("voice_long_enough", { durationMs });
+}
+
 /**
  * Stages a finished recording for `roomId`. The bytes travel as the raw IPC body and the room
  * and the recorder's mime type as headers; the core never hands back a path. Resolves with the

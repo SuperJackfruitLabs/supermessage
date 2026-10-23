@@ -112,6 +112,7 @@
     attachmentStage,
     attachmentStageRecording,
     attachmentMarkVoice,
+    voiceLongEnough,
     voiceRecordingSpec,
     voiceWaveform,
     onStagedAttachment,
@@ -521,6 +522,7 @@
             return () => clearInterval(handle);
           },
           waveform: voiceWaveform,
+          longEnough: voiceLongEnough,
           stageRecording: attachmentStageRecording,
           markVoice: attachmentMarkVoice,
           sendStaged: attachmentSend,

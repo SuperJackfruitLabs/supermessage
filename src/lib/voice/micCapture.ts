@@ -53,10 +53,16 @@ export function createMicCapture(spec: VoiceRecordingSpec): Capture {
   }
 
   return {
-    async start() {
-      stream = await navigator.mediaDevices.getUserMedia({
+    async start(isCurrent) {
+      const granted = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: spec.channels, sampleRate: spec.sampleRate },
       });
+      if (!isCurrent()) {
+        // Cancelled while the grant was pending: the microphone goes off at once, unrecorded.
+        granted.getTracks().forEach((t) => t.stop());
+        return false;
+      }
+      stream = granted;
       try {
         chunks = [];
         recorder = new MediaRecorder(stream, {
@@ -76,6 +82,7 @@ export function createMicCapture(spec: VoiceRecordingSpec): Capture {
         release();
         throw err;
       }
+      return true;
     },
 
     stop() {

@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { StagedAttachment, VoiceRecordingSpec } from "$lib/ipc";
+import { createMicCapture } from "./micCapture";
 import { createVoiceRecorder, MIC_REFUSED, NOT_SUPPORTED, START_FAILED, type Capture, type VoiceDeps } from "./voiceRecorder";
 
 const SPEC: VoiceRecordingSpec = {
@@ -19,7 +20,7 @@ function rig(over: Partial<VoiceDeps> = {}, levels: number[] = [-30]) {
   let tick: (() => void) | null = null;
   let level = 0;
   const capture: Capture = {
-    start: vi.fn(async () => {}),
+    start: vi.fn(async () => true),
     stop: vi.fn(async () => new Blob([new Uint8Array([1])], { type: "audio/ogg;codecs=opus" })),
     levelDb: vi.fn(() => levels[Math.min(level++, levels.length - 1)]),
   };
@@ -32,6 +33,8 @@ function rig(over: Partial<VoiceDeps> = {}, levels: number[] = [-30]) {
       return () => (tick = null);
     },
     waveform: vi.fn(async (db: number[]) => db.map((d) => (d + 50) / 50)),
+    // The core's rule, as `voice_long_enough` answers it.
+    longEnough: vi.fn(async (ms: number) => ms >= SPEC.shortestMs),
     stageRecording: vi.fn(async () => (calls.push("stage"), STAGED)),
     markVoice: vi.fn(async () => void calls.push("mark")),
     sendStaged: vi.fn(async () => (calls.push("send"), { outcome: "sent" as const })),
@@ -119,14 +122,15 @@ describe("voiceRecorder", () => {
   });
 
   it("a hold released before recording starts is abandoned", async () => {
-    let release!: () => void;
+    let release!: (began: boolean) => void;
     const { rec, capture } = rig();
+    // A capture that started anyway: the recorder must stop it.
     (capture.start as ReturnType<typeof vi.fn>).mockImplementationOnce(
-      () => new Promise<void>((resolve) => (release = resolve)),
+      () => new Promise<boolean>((resolve) => (release = resolve)),
     );
     const started = rec.start(true);
     rec.abandonPendingStart();
-    release();
+    release(true);
     expect(await started).toBe(false);
     expect(rec.phase.kind).toBe("idle");
     expect(capture.stop).toHaveBeenCalled();
@@ -155,7 +159,7 @@ describe("voiceRecorder", () => {
 
   it("recording stops playback first", async () => {
     const { rec, calls, capture } = rig();
-    (capture.start as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => void calls.push("capture"));
+    (capture.start as ReturnType<typeof vi.fn>).mockImplementationOnce(async () => (calls.push("capture"), true));
     await rec.start(false);
     expect(calls).toEqual(["stopPlayback", "capture"]);
   });
@@ -177,5 +181,114 @@ describe("voiceRecorder", () => {
     const before = (capture.levelDb as ReturnType<typeof vi.fn>).mock.calls.length;
     advance(1000);
     expect((capture.levelDb as ReturnType<typeof vi.fn>).mock.calls.length).toBe(before);
+  });
+
+  it("whether it is long enough is the core's answer", async () => {
+    const { rec, advance, deps } = rig({ longEnough: vi.fn(async () => false) });
+    await rec.start(false);
+    advance(3000);
+    expect(await rec.send("!r:x")).toBe("discarded");
+    expect(deps.longEnough).toHaveBeenCalledWith(3000);
+    expect(deps.stageRecording).not.toHaveBeenCalled();
+  });
+
+  describe("a start cancelled while the microphone is being granted", () => {
+    /** A capture whose grant resolves when told, honouring `isCurrent` as `micCapture` does. */
+    function pendingGrant() {
+      let grant!: () => void;
+      const recorded = vi.fn();
+      const start = vi.fn(
+        (isCurrent: () => boolean) =>
+          new Promise<boolean>((resolve) => {
+            grant = () => {
+              if (!isCurrent()) return resolve(false);
+              recorded();
+              resolve(true);
+            };
+          }),
+      );
+      return { start, recorded, grant: () => grant() };
+    }
+
+    it("never records, and a later start still can", async () => {
+      const every = vi.fn(() => () => {});
+      const { rec, capture } = rig({ every });
+      const pending = pendingGrant();
+      (capture.start as ReturnType<typeof vi.fn>).mockImplementationOnce(pending.start);
+      const started = rec.start(false);
+      await rec.cancel();
+      pending.grant();
+      expect(await started).toBe(false);
+      expect(pending.recorded).not.toHaveBeenCalled();
+      expect(rec.phase.kind).toBe("idle");
+      expect(rec.failure).toBeNull();
+      expect(every).not.toHaveBeenCalled();
+      // The room switch is over; the reader records in the new room.
+      expect(await rec.start(false)).toBe(true);
+      expect(rec.phase.kind).toBe("recording");
+    });
+
+    it("a refusal that arrives after it says nothing", async () => {
+      let refuse!: () => void;
+      const { rec, capture } = rig();
+      (capture.start as ReturnType<typeof vi.fn>).mockImplementationOnce(
+        () =>
+          new Promise<boolean>((_, reject) => {
+            refuse = () => reject(Object.assign(new Error("denied"), { name: "NotAllowedError" }));
+          }),
+      );
+      const started = rec.start(false);
+      await rec.cancel();
+      refuse();
+      expect(await started).toBe(false);
+      expect(rec.failure).toBeNull();
+    });
+  });
+
+  describe("over the real micCapture, with a getUserMedia that resolves after cancel", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("stops the tracks at once and never starts a MediaRecorder", async () => {
+      const track = { stop: vi.fn() };
+      let grant!: () => void;
+      vi.stubGlobal("navigator", {
+        mediaDevices: {
+          getUserMedia: vi.fn(
+            () => new Promise((resolve) => (grant = () => resolve({ getTracks: () => [track] }))),
+          ),
+        },
+      });
+      const recorderMade = vi.fn();
+      vi.stubGlobal(
+        "MediaRecorder",
+        class {
+          constructor() {
+            recorderMade();
+          }
+          start() {}
+        },
+      );
+      vi.stubGlobal(
+        "AudioContext",
+        class {
+          constructor() {
+            recorderMade();
+          }
+        },
+      );
+      const { deps } = rig();
+      const every = vi.fn(() => () => {});
+      const rec = createVoiceRecorder({ ...deps, capture: createMicCapture(SPEC), every });
+
+      const started = rec.start(false);
+      await rec.cancel();
+      grant();
+
+      expect(await started).toBe(false);
+      expect(track.stop).toHaveBeenCalledTimes(1);
+      expect(recorderMade).not.toHaveBeenCalled();
+      expect(every).not.toHaveBeenCalled();
+      expect(rec.phase.kind).toBe("idle");
+    });
   });
 });

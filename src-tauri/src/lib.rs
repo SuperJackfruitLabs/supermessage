@@ -54,7 +54,8 @@ use crate::commands_session::{
     unignore_user,
 };
 use crate::commands_voice::{
-    attachment_mark_voice, attachment_stage_recording, voice_recording_spec, voice_waveform,
+    attachment_mark_voice, attachment_stage_recording, voice_long_enough, voice_recording_spec,
+    voice_waveform,
 };
 use supermessage_core::secrets::KeyringStore;
 use supermessage_core::{session::Session, tls};
@@ -322,6 +323,7 @@ pub fn run() {
             attachment_mark_voice,
             voice_recording_spec,
             voice_waveform,
+            voice_long_enough,
             core_status,
             ignore_user,
             unignore_user,

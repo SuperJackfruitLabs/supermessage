@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, voiceRecordingSpec, voiceWaveform, attachmentStageRecording, attachmentMarkVoice, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, voiceRecordingSpec, voiceWaveform, voiceLongEnough, attachmentStageRecording, attachmentMarkVoice, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -340,6 +340,7 @@ describe("session commands", () => {
     ["notificationPermission without a prompt", () => notificationPermission(false), "notification_permission", { prompt: false }],
     ["voiceRecordingSpec takes no arguments", () => voiceRecordingSpec(), "voice_recording_spec", undefined],
     ["voiceWaveform passes decibels and bins", () => voiceWaveform([-60, -10], 60), "voice_waveform", { decibels: [-60, -10], bins: 60 }],
+    ["voiceLongEnough passes the length camelCased", () => voiceLongEnough(599), "voice_long_enough", { durationMs: 599 }],
     ["attachmentMarkVoice passes room, token, length and waveform camelCased", () => attachmentMarkVoice("!r:x", "tok", 3200, [0.5]), "attachment_mark_voice", { roomId: "!r:x", token: "tok", durationMs: 3200, waveform: [0.5] }],
     ["setAttention passes the count camelCased", () => setAttention(3), "set_attention", { needsYou: 3 }],
     ["notificationClearAll takes no arguments", () => notificationClearAll(), "notification_clear_all", undefined],

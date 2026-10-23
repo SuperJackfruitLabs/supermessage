@@ -185,6 +185,13 @@ pub fn voice_waveform(decibels: Vec<f32>, bins: u32) -> Vec<f32> {
     voice_recording::waveform(&decibels, bins as usize)
 }
 
+/// Whether a recording this long is a message, not a slip of the thumb (core
+/// `voice_recording::long_enough`).
+#[tauri::command]
+pub fn voice_long_enough(duration_ms: u64) -> bool {
+    voice_recording::long_enough(duration_ms)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,6 +201,13 @@ mod tests {
             std::env::temp_dir().join(format!("sm-voice-test-{name}-{:x}", rand::random::<u32>()));
         let _ = std::fs::remove_dir_all(&d);
         d
+    }
+
+    #[test]
+    fn voice_long_enough_is_the_cores_rule() {
+        let shortest = voice_recording::spec().shortest_ms;
+        assert!(!voice_long_enough(shortest - 1));
+        assert!(voice_long_enough(shortest));
     }
 
     #[test]
