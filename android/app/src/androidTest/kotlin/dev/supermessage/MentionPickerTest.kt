@@ -260,6 +260,9 @@ class MentionPickerTest {
 
     /** Two joined rooms, a cast per room, and a record of what `sendMessage` was given. */
     private inner class FakeCore(private val casts: Map<String, RoomCast>) : StubCore() {
+        /** The session pushes the hidden set at sign-in; these tests hide nothing. */
+        override fun setHiddenEvents(eventIds: List<String>) {}
+
         val mentions = mutableListOf<List<String>>()
         private var subscribed: String? = null
 

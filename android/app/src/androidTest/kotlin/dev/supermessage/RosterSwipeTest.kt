@@ -80,6 +80,9 @@ class RosterSwipeTest {
         private val infoResult: () -> RoomInfoDto = { throw IllegalStateException("offline") },
         private val markReadResult: () -> Unit = {},
     ) : StubCore() {
+        /** The session pushes the hidden set at sign-in; these tests hide nothing. */
+        override fun setHiddenEvents(eventIds: List<String>) {}
+
         val markedRead = mutableListOf<String>()
         val notificationsSet = mutableListOf<Pair<NotificationMode, String>>()
         val pinnedSet = mutableListOf<Pair<Boolean, String>>()
