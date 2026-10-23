@@ -407,14 +407,11 @@ struct TimelineList: UIViewRepresentable {
                 DispatchQueue.main.async { topEdge = edge }
             }
         }
-        // A message reported from this device leaves the list at once (#60).
-        // Read here, so a new report re-runs this update; and a change forces
-        // a regroup, because hiding a row moves nothing the store's revision
-        // counts.
-        let hidden = session.safety.hiddenEvents
-        context.coordinator.noteHidden(hidden)
+        // A message reported from this device (#60) is hidden by the core: it
+        // groups the list as if that row were absent and marks it `hidden`,
+        // and the change arrives as ordinary row updates (`apply` skips it).
         context.coordinator.apply(
-            rows: session.safety.visible(timeline.items), revision: timeline.revision,
+            rows: timeline.items, revision: timeline.revision,
             isPaginating: timeline.isPaginating, isLive: session.live.isLive,
             isFinished: session.live.finished)
         // After the layout this update causes: a room that has just opened,
@@ -488,6 +485,9 @@ struct TimelineList: UIViewRepresentable {
             var endsRun: Bool
             /// The quote only repeats the row directly above (D6).
             var hidesQuote: Bool
+            /// Whether the attribution carries the bridge's runtime suffix:
+            /// only where two or more peers speak.
+            var showsRuntime: Bool
             /// Whose read receipts point here, with faces (D7).
             var readers: [ReaderFace]
         }
@@ -518,9 +518,6 @@ struct TimelineList: UIViewRepresentable {
         private var appliedLive = false
         private var appliedFinished = false
         private var hasApplied = false
-        /// Whether one agent does all the talking, so the runtime suffix can
-        /// come off every attribution in the room.
-        private var singleSpeaker = true
         private var writerName = "Agent"
         /// The row that carries the finished turn's record: the newest
         /// message from someone else, which is the answer the turn produced.
@@ -596,7 +593,7 @@ struct TimelineList: UIViewRepresentable {
                                 row: row,
                                 continuesRun: found.continuesRun,
                                 endsRun: found.endsRun,
-                                attribution: self.singleSpeaker ? row.senderShort : row.senderName,
+                                attribution: found.showsRuntime ? row.senderName : row.senderShort,
                                 media: self.session.media,
                                 faces: self.session.faces,
                                 voice: self.session.voice,
@@ -688,16 +685,6 @@ struct TimelineList: UIViewRepresentable {
         /// every streaming token. That is what the jitter was: not a missing
         /// animation, but every row on screen being re-measured and laid out
         /// again several times a second.
-        /// The reported-and-hidden set the last apply drew with.
-        private var appliedHidden: Set<String> = []
-
-        /// Regroup on the next apply when the hidden set has moved.
-        func noteHidden(_ hidden: Set<String>) {
-            guard hidden != appliedHidden else { return }
-            appliedHidden = hidden
-            forceRegroup = true
-        }
-
         func apply(
             rows: [TimelineRow], revision: UInt64, isPaginating: Bool, isLive: Bool,
             isFinished: Bool
@@ -736,13 +723,13 @@ struct TimelineList: UIViewRepresentable {
             // a room switch — from an arrival into a room already on screen.
             defer { hasApplied = true }
 
-            writerName = rows.last { !$0.item.isOwn }?.senderName
+            writerName = rows.last { !$0.item.isOwn && !$0.hidden }?.senderName
                 ?? session.rooms.selectedName ?? "Agent"
 
-            // Collapse membership churn first, so `continuesRun` compares a
-            // row against the row *displayed* before it rather than against a
-            // membership line that is no longer drawn on its own.
-            let display = TimelineGrouping.collapseMembershipRuns(rows, expanded: expandedStretches)
+            // The core has already grouped the rows (runs, quotes, runtime
+            // suffixes, membership); this only picks what to draw, given the
+            // stretches the reader has opened.
+            let display = TimelineGrouping.displayRows(rows, expanded: expandedStretches)
 
             // Faces for readers, from the messages they have sent here. A
             // receipt carries only a user id; the room has usually already
@@ -760,44 +747,27 @@ struct TimelineList: UIViewRepresentable {
             var byEventId: [String: String] = [:]
             var runs: [String: String] = [:]
             byId.reserveCapacity(rows.count)
-            var previous: TimelineRow?
-            // The nearest row above that is an event, for the quote check:
-            // the unread marker can sit between a message and the reply
-            // quoting it, and the quote then repeated the line right above.
-            var previousEvent: TimelineRow?
             for entry in display {
                 switch entry {
                 case let .row(row):
-                    let continues = TimelineGrouping.continuesRun(row, after: previous)
-                    // The row above is no longer the last of its run.
-                    if continues, let above = previous, var placement = byId[above.item.id] {
-                        placement.endsRun = false
-                        byId[above.item.id] = placement
-                    }
                     let readers = row.item.readBy.map {
                         facesBySender[$0] ?? ReaderFace(userId: $0, mxcUri: nil, initial: nil)
                     }
                     byId[row.item.id] = Placement(
-                        row: row, continuesRun: continues, endsRun: true,
-                        hidesQuote: TimelineGrouping.quoteRepeatsPrevious(row, after: previousEvent),
+                        row: row, continuesRun: row.continuesRun, endsRun: row.endsRun,
+                        hidesQuote: row.hidesQuote, showsRuntime: row.showsRuntime,
                         readers: readers)
                     if let eventId = row.item.eventId { byEventId[eventId] = row.item.id }
-                    previous = row
-                    if row.item.eventId != nil { previousEvent = row }
                 case let .membershipRun(id, text, _):
                     runs[id] = text
-                    previous = nil
-                    previousEvent = nil
                 }
             }
             let previousRows = rowsById
             let previousRuns = runsById
-            let previousSingleSpeaker = singleSpeaker
 
             rowsById = byId
             idByEventId = byEventId
             runsById = runs
-            singleSpeaker = TimelineGrouping.hasSingleSpeaker(rows)
 
             // Newest first, because the view is inverted. Index 0 is what the
             // reader sees at the bottom of the screen.
@@ -830,16 +800,15 @@ struct TimelineList: UIViewRepresentable {
             // **Only the ones that changed.** Reconfiguring every carried
             // identifier rebuilds the hosting configuration of every visible
             // cell, so a single edited message re-laid-out the whole screen.
-            // A row is worth reconfiguring when its content differs, when its
-            // place in a run changed, or when the attribution rule flipped —
-            // `singleSpeaker` decides which name every row shows, so a change
-            // there is a change to all of them.
+            // A row is worth reconfiguring when its content differs or when
+            // the core moved it within a run or flipped its attribution rule —
+            // those are fields of the row, so comparing the placements sees
+            // them.
             let existing = Set(dataSource.snapshot().itemIdentifiers)
             let changed = snap.itemIdentifiers.filter { entry in
                 guard existing.contains(entry) else { return false }
                 switch entry {
                 case let .row(id):
-                    if previousSingleSpeaker != singleSpeaker { return true }
                     if anchorMoved, id == previousAnchor || id == recordAnchorId { return true }
                     guard let before = previousRows[id], let after = byId[id] else { return true }
                     return before != after
@@ -1003,7 +972,7 @@ struct TimelineList: UIViewRepresentable {
             else { return nil }
             return .message(
                 roomId: roomId, eventId: eventId, senderId: sender,
-                senderName: row.senderShort, isAgent: TimelineGrouping.isAgent(row))
+                senderName: row.senderShort, isAgent: row.isAgent)
         }
 
         fileprivate func react(_ row: TimelineRow, _ key: String) {

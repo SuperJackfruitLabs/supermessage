@@ -2231,6 +2231,124 @@ public func FfiConverterTypeMediaMetaDto_lower(_ value: MediaMetaDto) -> RustBuf
 
 
 /**
+ * Where a drawn membership row sits: in a run of one sentence, inside a
+ * stretch that may collapse.
+ *
+ * Expansion is not here. The placement carries both the run lines and the
+ * stretch line, and the host picks between them by which stretches the reader
+ * has opened.
+ */
+public struct MembershipPlacement {
+    /**
+     * `group:<id of the run's first row>`, the same on every row of the run.
+     */
+    public var runId: String
+    /**
+     * The run's sentence. `Some` only on the run's first row.
+     */
+    public var runText: String?
+    /**
+     * `stretch:<id of the stretch's first row>`, on every row of a stretch
+     * that has [`STRETCH_COLLAPSE_THRESHOLD`] or more runs; otherwise `None`.
+     */
+    public var stretchId: String?
+    /**
+     * The stretch's summary line. `Some` only on its first row, with
+     * [`Self::stretch_id`].
+     */
+    public var stretchText: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `group:<id of the run's first row>`, the same on every row of the run.
+         */runId: String, 
+        /**
+         * The run's sentence. `Some` only on the run's first row.
+         */runText: String? = nil, 
+        /**
+         * `stretch:<id of the stretch's first row>`, on every row of a stretch
+         * that has [`STRETCH_COLLAPSE_THRESHOLD`] or more runs; otherwise `None`.
+         */stretchId: String? = nil, 
+        /**
+         * The stretch's summary line. `Some` only on its first row, with
+         * [`Self::stretch_id`].
+         */stretchText: String? = nil) {
+        self.runId = runId
+        self.runText = runText
+        self.stretchId = stretchId
+        self.stretchText = stretchText
+    }
+}
+
+
+
+extension MembershipPlacement: Equatable, Hashable {
+    public static func ==(lhs: MembershipPlacement, rhs: MembershipPlacement) -> Bool {
+        if lhs.runId != rhs.runId {
+            return false
+        }
+        if lhs.runText != rhs.runText {
+            return false
+        }
+        if lhs.stretchId != rhs.stretchId {
+            return false
+        }
+        if lhs.stretchText != rhs.stretchText {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(runId)
+        hasher.combine(runText)
+        hasher.combine(stretchId)
+        hasher.combine(stretchText)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeMembershipPlacement: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> MembershipPlacement {
+        return
+            try MembershipPlacement(
+                runId: FfiConverterString.read(from: &buf), 
+                runText: FfiConverterOptionString.read(from: &buf), 
+                stretchId: FfiConverterOptionString.read(from: &buf), 
+                stretchText: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: MembershipPlacement, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.runId, into: &buf)
+        FfiConverterOptionString.write(value.runText, into: &buf)
+        FfiConverterOptionString.write(value.stretchId, into: &buf)
+        FfiConverterOptionString.write(value.stretchText, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMembershipPlacement_lift(_ buf: RustBuffer) throws -> MembershipPlacement {
+    return try FfiConverterTypeMembershipPlacement.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeMembershipPlacement_lower(_ value: MembershipPlacement) -> RustBuffer {
+    return FfiConverterTypeMembershipPlacement.lower(value)
+}
+
+
+/**
  * A member a message can address.
  */
 public struct Mentionable {
@@ -6289,6 +6407,50 @@ public struct TimelineRow {
      * what puts it back standalone when the note goes.
      */
     public var voiceTranscript: TranscriptNotice?
+    /**
+     * Whether an agent sent this row (`crate::item_view::is_agent_row`):
+     * computed once here so no host re-derives it from the sender id.
+     * Defaulted and left off the desktop's JSON when false, like
+     * [`Self::voice_reply`].
+     */
+    public var isAgent: Bool
+    /**
+     * Whether this message is long enough to be offered as a long read
+     * (`crate::item_view::is_long_read`, past `LONG_READ_GRAPHEMES`).
+     * Defaulted and left off the wire when false.
+     */
+    public var isLongRead: Bool
+    /**
+     * Whether this row continues the sender run above it, so a host drops
+     * its header (`crate::timeline_grouping`). Set by the settle pass over the
+     * whole list, never by the row itself; defaulted and left off the wire
+     * when false, like [`Self::voice_reply`].
+     */
+    public var continuesRun: Bool
+    /**
+     * Whether the next drawn row does not continue this one, so a host draws
+     * the bubble's tail. Mirrors the next row's [`Self::continues_run`].
+     */
+    public var endsRun: Bool
+    /**
+     * Whether this reply's quote only repeats the drawn row above it.
+     */
+    public var hidesQuote: Bool
+    /**
+     * Whether this row shows the bridge's `(harness on host)` suffix: the
+     * room has two or more peer senders and this row has a suffix.
+     */
+    public var showsRuntime: Bool
+    /**
+     * For a drawn membership row: the run and stretch it belongs to.
+     */
+    public var membership: MembershipPlacement?
+    /**
+     * Whether the reader hid this event on this device
+     * (`crate::hidden_events`). The row stays in the list, and the grouping
+     * above settles as if it were absent; a host leaves it undrawn.
+     */
+    public var hidden: Bool
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -6375,7 +6537,43 @@ public struct TimelineRow {
          * gives: the core folds the transcript into the note's row
          * (`crate::voice_transcript::reconcile`) and hides this one, and this is
          * what puts it back standalone when the note goes.
-         */voiceTranscript: TranscriptNotice? = nil) {
+         */voiceTranscript: TranscriptNotice? = nil, 
+        /**
+         * Whether an agent sent this row (`crate::item_view::is_agent_row`):
+         * computed once here so no host re-derives it from the sender id.
+         * Defaulted and left off the desktop's JSON when false, like
+         * [`Self::voice_reply`].
+         */isAgent: Bool = false, 
+        /**
+         * Whether this message is long enough to be offered as a long read
+         * (`crate::item_view::is_long_read`, past `LONG_READ_GRAPHEMES`).
+         * Defaulted and left off the wire when false.
+         */isLongRead: Bool = false, 
+        /**
+         * Whether this row continues the sender run above it, so a host drops
+         * its header (`crate::timeline_grouping`). Set by the settle pass over the
+         * whole list, never by the row itself; defaulted and left off the wire
+         * when false, like [`Self::voice_reply`].
+         */continuesRun: Bool = false, 
+        /**
+         * Whether the next drawn row does not continue this one, so a host draws
+         * the bubble's tail. Mirrors the next row's [`Self::continues_run`].
+         */endsRun: Bool = false, 
+        /**
+         * Whether this reply's quote only repeats the drawn row above it.
+         */hidesQuote: Bool = false, 
+        /**
+         * Whether this row shows the bridge's `(harness on host)` suffix: the
+         * room has two or more peer senders and this row has a suffix.
+         */showsRuntime: Bool = false, 
+        /**
+         * For a drawn membership row: the run and stretch it belongs to.
+         */membership: MembershipPlacement? = nil, 
+        /**
+         * Whether the reader hid this event on this device
+         * (`crate::hidden_events`). The row stays in the list, and the grouping
+         * above settles as if it were absent; a host leaves it undrawn.
+         */hidden: Bool = false) {
         self.item = item
         self.view = view
         self.senderName = senderName
@@ -6387,6 +6585,14 @@ public struct TimelineRow {
         self.replyPreview = replyPreview
         self.voiceReply = voiceReply
         self.voiceTranscript = voiceTranscript
+        self.isAgent = isAgent
+        self.isLongRead = isLongRead
+        self.continuesRun = continuesRun
+        self.endsRun = endsRun
+        self.hidesQuote = hidesQuote
+        self.showsRuntime = showsRuntime
+        self.membership = membership
+        self.hidden = hidden
     }
 }
 
@@ -6427,6 +6633,30 @@ extension TimelineRow: Equatable, Hashable {
         if lhs.voiceTranscript != rhs.voiceTranscript {
             return false
         }
+        if lhs.isAgent != rhs.isAgent {
+            return false
+        }
+        if lhs.isLongRead != rhs.isLongRead {
+            return false
+        }
+        if lhs.continuesRun != rhs.continuesRun {
+            return false
+        }
+        if lhs.endsRun != rhs.endsRun {
+            return false
+        }
+        if lhs.hidesQuote != rhs.hidesQuote {
+            return false
+        }
+        if lhs.showsRuntime != rhs.showsRuntime {
+            return false
+        }
+        if lhs.membership != rhs.membership {
+            return false
+        }
+        if lhs.hidden != rhs.hidden {
+            return false
+        }
         return true
     }
 
@@ -6442,6 +6672,14 @@ extension TimelineRow: Equatable, Hashable {
         hasher.combine(replyPreview)
         hasher.combine(voiceReply)
         hasher.combine(voiceTranscript)
+        hasher.combine(isAgent)
+        hasher.combine(isLongRead)
+        hasher.combine(continuesRun)
+        hasher.combine(endsRun)
+        hasher.combine(hidesQuote)
+        hasher.combine(showsRuntime)
+        hasher.combine(membership)
+        hasher.combine(hidden)
     }
 }
 
@@ -6463,7 +6701,15 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
                 canReplyOrReact: FfiConverterBool.read(from: &buf), 
                 replyPreview: FfiConverterOptionString.read(from: &buf), 
                 voiceReply: FfiConverterOptionTypeVoiceReplyLink.read(from: &buf), 
-                voiceTranscript: FfiConverterOptionTypeTranscriptNotice.read(from: &buf)
+                voiceTranscript: FfiConverterOptionTypeTranscriptNotice.read(from: &buf), 
+                isAgent: FfiConverterBool.read(from: &buf), 
+                isLongRead: FfiConverterBool.read(from: &buf), 
+                continuesRun: FfiConverterBool.read(from: &buf), 
+                endsRun: FfiConverterBool.read(from: &buf), 
+                hidesQuote: FfiConverterBool.read(from: &buf), 
+                showsRuntime: FfiConverterBool.read(from: &buf), 
+                membership: FfiConverterOptionTypeMembershipPlacement.read(from: &buf), 
+                hidden: FfiConverterBool.read(from: &buf)
         )
     }
 
@@ -6479,6 +6725,14 @@ public struct FfiConverterTypeTimelineRow: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.replyPreview, into: &buf)
         FfiConverterOptionTypeVoiceReplyLink.write(value.voiceReply, into: &buf)
         FfiConverterOptionTypeTranscriptNotice.write(value.voiceTranscript, into: &buf)
+        FfiConverterBool.write(value.isAgent, into: &buf)
+        FfiConverterBool.write(value.isLongRead, into: &buf)
+        FfiConverterBool.write(value.continuesRun, into: &buf)
+        FfiConverterBool.write(value.endsRun, into: &buf)
+        FfiConverterBool.write(value.hidesQuote, into: &buf)
+        FfiConverterBool.write(value.showsRuntime, into: &buf)
+        FfiConverterOptionTypeMembershipPlacement.write(value.membership, into: &buf)
+        FfiConverterBool.write(value.hidden, into: &buf)
     }
 }
 
@@ -11747,6 +12001,30 @@ fileprivate struct FfiConverterOptionTypeMediaMetaDto: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeMediaMetaDto.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeMembershipPlacement: FfiConverterRustBuffer {
+    typealias SwiftType = MembershipPlacement?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeMembershipPlacement.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeMembershipPlacement.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

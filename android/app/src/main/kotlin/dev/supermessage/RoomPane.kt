@@ -218,6 +218,7 @@ internal fun RoomPane(
                         imageUri = { id -> mediaCache[id] ?: session.media.image(id) },
                         faceUri = { mxc -> faceCache[mxc] },
                         loadFace = session.faces::load,
+                        roomId = currentRoomId,
                         onMarkRead = { scope.launch { session.timeline.markRead() } },
                         liveAnswer = liveAnswer,
                         liveThought = liveThought,

@@ -56,6 +56,7 @@ extension RosterRow: @retroactive @unchecked Sendable {}
 extension RosterSection: @retroactive @unchecked Sendable {}
 extension MediaMetaDto: @retroactive @unchecked Sendable {}
 extension Membership: @retroactive @unchecked Sendable {}
+extension MembershipPlacement: @retroactive @unchecked Sendable {}
 extension Mentionable: @retroactive @unchecked Sendable {}
 extension ReactionDto: @retroactive @unchecked Sendable {}
 extension ReplyQuoteView: @retroactive @unchecked Sendable {}

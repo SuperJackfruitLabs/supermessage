@@ -8,34 +8,14 @@ import Testing
 /// it, and the messages this device has reported and hidden.
 @MainActor
 struct SafetyStoreTests {
-    private func row(_ id: String, eventId: String?, sender: String = "@troll:x.org") -> TimelineRow {
-        TimelineRow(
-            item: TimelineItemDto(
-                id: id, eventId: eventId, kind: "message", msgtype: "m.text",
-                detail: nil, sender: sender, senderDisplayName: nil, senderAvatar: nil,
-                body: "hello", formattedBody: nil, media: nil, customPayload: nil,
-                timestampMs: 1_700_000_000_000, isOwn: false, sendState: nil, replyTo: nil,
-                edited: false, reactions: [], readBy: [], editable: false, membershipSubject: nil),
-            view: .bubble(muted: false, blocks: [], voice: nil), senderName: "Troll", senderShort: "Troll",
-            senderInitial: "T", membershipVerb: nil, replyQuote: nil, canReplyOrReact: eventId != nil,
-            replyPreview: nil)
-    }
-
-    @Test("a reported message is hidden, and only that one")
-    func hidesWhatWasReported() {
+    @Test("a reported message tells the core, with the whole set")
+    func tellsTheCoreWhatWasHidden() {
         let safety = SafetyStore()
-        let rows = [row("a", eventId: "$a"), row("b", eventId: "$b"), row("c", eventId: "$c")]
+        var pushed: [Set<String>] = []
+        safety.hiddenEventsDidChange = { pushed.append($0) }
+        safety.hide(eventId: "$a")
         safety.hide(eventId: "$b")
-        #expect(safety.visible(rows).map(\.item.id) == ["a", "c"])
-    }
-
-    @Test("a local echo is never hidden by a report")
-    func aLocalEchoPasses() {
-        // It has no event id, so it cannot have been reported — and a filter
-        // keyed on `nil` would drop every unsent message at once.
-        let safety = SafetyStore()
-        safety.hide(eventId: "$b")
-        #expect(safety.visible([row("echo", eventId: nil)]).count == 1)
+        #expect(pushed == [["$a"], ["$a", "$b"]])
     }
 
     @Test("the core's block list replaces what was here, including optimistic notes")

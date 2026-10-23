@@ -15,7 +15,7 @@ import SwiftUI
 ///
 /// ## Why the builders are copied rather than imported
 ///
-/// `SupermessageKitTests/TimelineGroupingTests.swift` already has the
+/// `SupermessageKitTests/TimelineGroupingTests.swift` (`DisplayRowTests`) has a
 /// `TimelineRow` builder this file needs. **A test target is not visible to
 /// the app target**, so a preview cannot import it — and the app cannot use
 /// `@testable import` the way those tests do. So it is copied, and this
@@ -132,7 +132,9 @@ struct PreviewClient: SessionClient {
     func timelineResync() async throws -> TimelineSnapshot {
         TimelineSnapshot(
             roomId: PreviewFixtures.roomId, seq: 1,
-            items: isEmpty ? [] : PreviewFixtures.history)
+            // The core settles the grouping on every row it emits; a
+            // fixture has no core behind it, so it asks for the same pass.
+            items: isEmpty ? [] : groupTimelineRows(rows: PreviewFixtures.history))
     }
     // `false`: there is no more history behind a fixture, and saying so is
     // what stops a preview's list from trying to paginate forever.
@@ -211,6 +213,7 @@ struct PreviewClient: SessionClient {
             isAgentRoom: false)
     }
     func hasSent(roomId: String) async -> Bool { false }
+    func setHiddenEvents(eventIds: [String]) async {}
     func searchMessages(term: String, roomId: String?) async throws -> [SearchResultDto] {
         isEmpty ? [] : PreviewFixtures.searchResults
     }
@@ -238,7 +241,7 @@ enum PreviewFixtures {
 
     // MARK: Timeline rows
 
-    /// Copied from `TimelineGroupingTests.row`, for the reason in this file's
+    /// Copied from `DisplayRowTests.item`, for the reason in this file's
     /// header: a test target is invisible to an app target.
     static func item(
         id: String,
@@ -277,13 +280,36 @@ enum PreviewFixtures {
         membershipVerb: String? = nil,
         replyQuote: ReplyQuoteView? = nil,
         canReplyOrReact: Bool = true,
-        replyPreview: String? = nil
+        replyPreview: String? = nil,
+        isAgent: Bool? = nil,
+        isLongRead: Bool? = nil
     ) -> TimelineRow {
         TimelineRow(
             item: item, view: view, senderName: senderName, senderShort: senderShort,
             senderInitial: senderInitial, membershipVerb: membershipVerb,
             replyQuote: replyQuote, canReplyOrReact: canReplyOrReact,
-            replyPreview: replyPreview)
+            replyPreview: replyPreview,
+            isAgent: isAgent ?? fixtureIsAgent(item),
+            isLongRead: isLongRead ?? fixtureIsLongRead(item))
+    }
+
+    /// What the core decides for a row (`item_view::is_agent_row`), for a
+    /// fixture that does not say. Only the bridge's namespace marks an agent,
+    /// and never your own message. This mirrors the Rust for previews only;
+    /// the app reads `row.isAgent`.
+    private static func fixtureIsAgent(_ item: TimelineItemDto) -> Bool {
+        guard !item.isOwn, let sender = item.sender else { return false }
+        guard sender.hasPrefix("@agent_") else { return false }
+        // Something must be left after the prefix: `@agent_:x` is nobody.
+        return sender.dropFirst("@agent_".count).prefix { $0 != ":" }
+            .contains { !"-_.".contains($0) }
+    }
+
+    /// What the core decides (`item_view::is_long_read`): past
+    /// `longReadGraphemes()` characters, never your own message.
+    private static func fixtureIsLongRead(_ item: TimelineItemDto) -> Bool {
+        guard !item.isOwn, let body = item.body else { return false }
+        return body.count > Int(longReadGraphemes())
     }
 
     static var message: TimelineRow {

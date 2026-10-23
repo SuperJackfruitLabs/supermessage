@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, account, peopleLabel, sendPermissionAnswer, onIgnoredUsers } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, account, peopleLabel, sendPermissionAnswer, onIgnoredUsers } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -267,6 +267,13 @@ describe("cast, typing line and acknowledgement", () => {
     invokeMock.mockResolvedValue(true);
     expect(await hasSent("!r:x")).toBe(true);
     expect(invokeMock).toHaveBeenCalledWith("has_sent", { roomId: "!r:x" });
+  });
+
+  it("setHiddenEvents invokes set_hidden_events with the whole set", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue(undefined);
+    await setHiddenEvents(["$a", "$b"]);
+    expect(invokeMock).toHaveBeenCalledWith("set_hidden_events", { eventIds: ["$a", "$b"] });
   });
 
   it("spaceDisplayName invokes space_display_name with name", async () => {

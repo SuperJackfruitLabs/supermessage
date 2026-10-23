@@ -774,6 +774,13 @@ impl Core {
         self.session.has_sent(&room_id)
     }
 
+    /// The events the reader hid on this device. The focused timeline groups
+    /// as if those rows were absent and marks them `hidden`; the host keeps
+    /// the ids and pushes the full set at sign-in and whenever it changes.
+    pub fn set_hidden_events(&self, event_ids: Vec<String>) {
+        self.session.set_hidden_events(event_ids);
+    }
+
     /// The room this account already shares with `user_id` alone, if any.
     pub fn direct_room_with(&self, user_id: String) -> Result<Option<String>, FfiError> {
         Ok(self.block(self.session.direct_room_with(&user_id))?)
@@ -1176,6 +1183,25 @@ pub fn turn_duration_label(elapsed_ms: u64) -> String {
 #[uniffi::export]
 pub fn elapsed_label(elapsed_ms: i64) -> String {
     supermessage_core::turn_label::elapsed_label(elapsed_ms)
+}
+
+/// How many graphemes a message may have before a row says `is_long_read`
+/// (`core::item_view::LONG_READ_GRAPHEMES`). For hosts that need the figure
+/// itself, such as fixtures and previews. UniFFI only: no Tauri command.
+#[uniffi::export]
+pub fn long_read_graphemes() -> u32 {
+    supermessage_core::item_view::LONG_READ_GRAPHEMES as u32
+}
+
+/// Runs the timeline grouping pass over `rows` — see
+/// `core::timeline_grouping::group_rows`. For previews, fixtures and Kit tests
+/// that build rows by hand; the live timeline is grouped by the core before it
+/// reaches a host. UniFFI only: the desktop has no caller, so no Tauri command.
+#[uniffi::export]
+pub fn group_timeline_rows(
+    rows: Vec<supermessage_core::dto::TimelineRow>,
+) -> Vec<supermessage_core::dto::TimelineRow> {
+    supermessage_core::timeline_grouping::group_rows(rows)
 }
 
 /// Folds `inputs` through a fresh turn book, for previews and fixtures — see

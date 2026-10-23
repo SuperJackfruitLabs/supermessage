@@ -32,9 +32,9 @@ use crate::commands::{
     roster_agent_directory, roster_filter_chips, roster_filter_empty_state, roster_filter_from_key,
     roster_filter_key, roster_filter_sections, roster_hidden_invitations, roster_needs_you_inbox,
     roster_row, roster_sections, roster_state, search_messages, send_gate_decision, send_message,
-    send_reply, set_typing, space_display_name, space_select, spaces_list, timeline_paginate_back,
-    timeline_resync, timeline_subscribe, toggle_reaction, turn, turn_duration_label,
-    turn_record_label, turn_status_word, typing_view,
+    send_reply, set_hidden_events, set_typing, space_display_name, space_select, spaces_list,
+    timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction, turn,
+    turn_duration_label, turn_record_label, turn_status_word, typing_view,
 };
 use crate::commands_session::{
     account, blocked_users, direct_room_with, ignore_user, known_people, people_label,
@@ -307,6 +307,7 @@ pub fn run() {
             room_cast,
             typing_view,
             has_sent,
+            set_hidden_events,
             acknowledgement,
             member_avatar,
             attachment_stage,

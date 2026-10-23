@@ -77,6 +77,23 @@ public final class Session {
         live = LiveStore(turns: client)
         staged = StagedAttachment(client: client)
         safety = SafetyStore(defaults: defaults)
+        safety.hiddenEventsDidChange = { [weak self] _ in self?.pushHiddenEvents() }
+    }
+
+    /// The last push of the hidden set; the next waits for it, so two quick
+    /// reports reach the core in the order they were made (each push is the
+    /// whole set, and a stale one landing last would unhide a row).
+    @ObservationIgnored private var hiddenPush: Task<Void, Never>?
+
+    /// Hand the core the events this device has hidden. At every sign-in (the
+    /// core forgets the set when an account starts) and whenever it grows.
+    private func pushHiddenEvents() {
+        let ids = Array(safety.hiddenEvents)
+        let previous = hiddenPush
+        hiddenPush = Task { [client] in
+            await previous?.value
+            await client.setHiddenEvents(eventIds: ids)
+        }
     }
 
     /// A session on the app's one core — the same one a notification action
@@ -135,6 +152,7 @@ public final class Session {
                 let restored = try await client.restoreSession(sink: pump)
                 phase = restored ? .signedIn : .signedOut
                 if restored {
+                    pushHiddenEvents()
                     beginDraining()
                     await load()
                 }
@@ -145,6 +163,7 @@ public final class Session {
                 }
                 streamsDeferred = restored
                 phase = restored ? .signedIn : .signedOut
+                if restored { pushHiddenEvents() }
                 // The reader opened the app while the restore ran: the
                 // foreground's `scenePhaseChanged` found no session to start
                 // then, so start it now.
@@ -174,6 +193,7 @@ public final class Session {
                 phase = .signedOut
                 return
             }
+            pushHiddenEvents()
             beginDraining()
             await load()
         } catch {
@@ -201,6 +221,7 @@ public final class Session {
             try await client.login(
                 homeserver: homeserver, username: username, password: password, sink: pump)
             phase = .signedIn
+            pushHiddenEvents()
             beginDraining()
             await load()
             setUpRecoveryIfNeeded()
