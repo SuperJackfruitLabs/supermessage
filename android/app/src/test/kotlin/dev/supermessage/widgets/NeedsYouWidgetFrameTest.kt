@@ -63,11 +63,40 @@ class NeedsYouWidgetFrameTest {
             }
             val density = context.resources.displayMetrics.density
             val root = views.apply(context, FrameLayout(context))
+            // Real clipping: draw the content with all the room it wants and find where it ends,
+            // then ask that it end inside the bucket with the widget's own bottom padding left.
+            // (A measured height would do, but Glance's weights make an unbounded measure lie.)
+            val bucketPx = (size.height.value * density).toInt()
+            val tall = bucketPx * 3
+            val widthPx = (size.width.value * density).toInt()
+            root.measure(
+                View.MeasureSpec.makeMeasureSpec(widthPx, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(tall, View.MeasureSpec.EXACTLY),
+            )
+            root.layout(0, 0, widthPx, tall)
+            val probe = android.graphics.Bitmap.createBitmap(widthPx, tall, android.graphics.Bitmap.Config.ARGB_8888)
+            root.draw(android.graphics.Canvas(probe))
+            val ground = probe.getPixel(widthPx / 2, tall - 1)
+            val inset = (8 * density).toInt()
+            val bottom = (tall - 1 downTo 0).first { y ->
+                (3 * inset until widthPx - 3 * inset).any { x -> probe.getPixel(x, y) != ground }
+            } + 1
+            println("EXTENT $name dark=$dark ${bottom / density}dp of ${size.height.value}dp")
+            org.junit.Assert.assertTrue(
+                "$name${if (dark) " dark" else ""} is clipped or flush with the bottom edge: content ends at " +
+                    "${bottom / density}dp of ${size.height.value}dp, which leaves under 8dp of padding",
+                bottom + inset <= bucketPx,
+            )
             root.measure(
                 View.MeasureSpec.makeMeasureSpec((size.width.value * density).toInt(), View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec((size.height.value * density).toInt(), View.MeasureSpec.EXACTLY),
             )
             root.layout(0, 0, root.measuredWidth, root.measuredHeight)
+            // The header is the one text that may not be cut ("Need..."): it is the widget's name.
+            texts(root).filter { it.text.toString() == "Needs you" }.forEach { header ->
+                org.junit.Assert.assertEquals("$name: the header is on one line", 1, header.layout.lineCount)
+                org.junit.Assert.assertEquals("$name: the header is cut short", 0, header.layout.getEllipsisCount(0))
+            }
             val bitmap = android.graphics.Bitmap.createBitmap(root.width, root.height, android.graphics.Bitmap.Config.ARGB_8888)
             // The launcher's own wallpaper is not ours; a neutral ground shows the widget's edge.
             bitmap.eraseColor(if (dark) 0xFF000000.toInt() else 0xFF808080.toInt())
@@ -75,6 +104,10 @@ class NeedsYouWidgetFrameTest {
             bitmap.captureRoboImage("src/test/previews/NeedsYouWidget$name${if (dark) "Dark" else ""}.png")
         }
     }
+
+    private fun texts(view: View): List<android.widget.TextView> =
+        (view as? android.widget.TextView)?.let { listOf(it) }.orEmpty() +
+            ((view as? android.view.ViewGroup)?.let { g -> (0 until g.childCount).flatMap { texts(g.getChildAt(it)) } }.orEmpty())
 
     private fun decisions(n: Int) = (1..n).forEach { i ->
         runBlocking {
@@ -110,17 +143,17 @@ class NeedsYouWidgetFrameTest {
         runBlocking {
             feed.apply(listOf(WidgetFixtures.row("!a:hs", "Atlas", NOW - 3 * 3_600_000, "hello")), emptyList(), NOW)
         }
-        frame("AllClear", NeedsYouWidget.MEDIUM)
+        frame("AllClear", NeedsYouWidget.WIDE)
     }
 
     @Test
     fun signedOut() {
         runBlocking { feed.signedOut() }
-        frame("SignedOut", NeedsYouWidget.MEDIUM)
+        frame("SignedOut", NeedsYouWidget.WIDE)
     }
 
     @Test
-    fun waiting() = frame("Waiting", NeedsYouWidget.MEDIUM)
+    fun waiting() = frame("Waiting", NeedsYouWidget.WIDE)
 
     @Test
     fun small() {
@@ -137,12 +170,48 @@ class NeedsYouWidgetFrameTest {
     @Test
     fun noInlineOptions() {
         runBlocking { feed.apply(WidgetFixtures.open()) }
-        frame("OpenToAnswer", NeedsYouWidget.MEDIUM)
+        frame("OpenToAnswer", NeedsYouWidget.WIDE)
     }
 
     @Test
     fun fontScaleTwo() {
         decisions(3)
         frame("TextTwo", NeedsYouWidget.LARGE, fontScale = 2f)
+    }
+
+    @Test
+    fun mediumWithTwo() {
+        decisions(3)
+        frame("MediumTwo", NeedsYouWidget.MEDIUM)
+    }
+
+    @Test
+    fun wideWithOne() {
+        decisions(3)
+        frame("WideOne", NeedsYouWidget.WIDE)
+    }
+
+    @Test
+    fun mediumTextTwo() {
+        decisions(3)
+        frame("MediumTextTwo", NeedsYouWidget.MEDIUM, fontScale = 2f)
+    }
+
+    @Test
+    fun wideTextTwo() {
+        decisions(3)
+        frame("WideTextTwo", NeedsYouWidget.WIDE, fontScale = 2f)
+    }
+
+    @Test
+    fun smallTextTwo() {
+        decisions(3)
+        frame("SmallTextTwo", NeedsYouWidget.SMALL, fontScale = 2f)
+    }
+
+    @Test
+    fun smallTextOnePointFive() {
+        decisions(3)
+        frame("SmallTextOnePointFive", NeedsYouWidget.SMALL, fontScale = 1.5f)
     }
 }

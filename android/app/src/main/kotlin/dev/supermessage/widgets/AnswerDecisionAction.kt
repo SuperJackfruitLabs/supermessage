@@ -3,6 +3,7 @@ package dev.supermessage.widgets
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import android.os.SystemClock
 import androidx.glance.GlanceId
 import androidx.glance.action.ActionParameters
@@ -75,7 +76,13 @@ internal object AnswerFromWidget {
         poster: (String?) -> Poster = { id -> Poster(AndroidPoster(context, accountId = id)::post) },
     ): WidgetAnswering.Outcome? {
         if (locked()) {
-            open(decisionIntent(context, roomId, eventId))
+            // Starting an Activity from here can be refused (background-start rules, no handler):
+            // that must not crash the callback, and nothing was owed to be sent.
+            try {
+                open(decisionIntent(context, roomId, eventId))
+            } catch (e: RuntimeException) {
+                Log.w("AnswerFromWidget", "could not open the decision from the widget", e)
+            }
             return null
         }
         val expected = account()

@@ -178,22 +178,65 @@ class NeedsYouWidgetTest {
         }
     }
 
+    private suspend fun threeDecisions() = (1..3).forEach { i ->
+        feed.apply(WidgetFixtures.permission(event = "\$q$i", room = "!room$i:hs", question = "Question $i?", at = NOW - MINUTE + i * 1_000L))
+    }
+
+    /** The buckets the launcher is actually given are the only sizes tested here. */
     @Test
-    fun mediumListsTwoWhenTheyFitAndFewerWhenTheyDoNot() = runBlocking {
-        (1..3).forEach { i ->
-            feed.apply(WidgetFixtures.permission(event = "\$q$i", room = "!room$i:hs", question = "Question $i?", at = NOW - MINUTE + i * 1_000L))
-        }
-        show(DpSize(250.dp, 200.dp)) {
+    fun theBucketsAreTheSizesTheLauncherPicksFrom() {
+        assertEquals(
+            listOf(DpSize(110.dp, 110.dp), DpSize(250.dp, 110.dp), DpSize(250.dp, 180.dp), DpSize(250.dp, 250.dp)),
+            listOf(NeedsYouWidget.SMALL, NeedsYouWidget.WIDE, NeedsYouWidget.MEDIUM, NeedsYouWidget.LARGE),
+        )
+        assertEquals(listOf(1, 1, 2, 3), listOf(NeedsYouWidget.SMALL, NeedsYouWidget.WIDE, NeedsYouWidget.MEDIUM, NeedsYouWidget.LARGE).map(::listLimit))
+    }
+
+    @Test
+    fun theFitStepsDownFromButtonsToTheQuestionAloneAsTheTextGrows() {
+        fun fit(bucket: DpSize, fontScale: Float) =
+            cardsThatFit(listLimit(bucket), 3, bucket.height, fontScale, compact = bucket.width < NeedsYouWidget.WIDE.width)
+        assertEquals(CardFit(1, false, CardMode.FULL), fit(NeedsYouWidget.SMALL, 1f))
+        assertEquals(CardFit(1, true, CardMode.BARE), fit(NeedsYouWidget.SMALL, 1.5f))
+        assertEquals(CardFit(1, false, CardMode.FULL), fit(NeedsYouWidget.WIDE, 1f))
+        assertEquals(CardFit(1, true, CardMode.TEXT), fit(NeedsYouWidget.LARGE, 2f))
+        assertEquals(CardFit(2, false, CardMode.BARE), fit(NeedsYouWidget.MEDIUM, 2f))
+    }
+
+    @Test
+    fun mediumListsTwoAndTheRestAreCounted() = runBlocking {
+        threeDecisions()
+        // 4x3 lands in MEDIUM: two cards with their buttons and "1 more", as iOS's medium.
+        assertEquals(CardFit(2, true, CardMode.FULL), cardsThatFit(listLimit(NeedsYouWidget.MEDIUM), 3, NeedsYouWidget.MEDIUM.height, 1f))
+        show(NeedsYouWidget.MEDIUM) {
             onNode(text("Question 3?")).assertExists()
             onNode(text("Question 2?")).assertExists()
             assertAbsent("Question 1?")
             onNode(text("1 more in the app")).assertExists()
+            onAllNodes(text("Allow once")).assertCountEquals(2)
         }
-        // The declared medium is 110dp high: one card and the rest counted.
-        show(NeedsYouWidget.MEDIUM) {
+    }
+
+    @Test
+    fun wideShowsOneCardAndACardIsWorthMoreThanTheMoreLine() = runBlocking {
+        threeDecisions()
+        // 4x2 is 110dp: one card; the "N more" line would crop it, so it is dropped.
+        show(NeedsYouWidget.WIDE) {
             onNode(text("Question 3?")).assertExists()
             assertAbsent("Question 2?")
-            onNode(text("2 more in the app")).assertExists()
+            assertAbsent("2 more in the app")
+            onNode(text("Allow once")).assertExists()
+        }
+    }
+
+    @Test
+    fun aCardSaysHowLongAgoTheWayIosDoes() = runBlocking {
+        feed.apply(WidgetFixtures.permission(at = NOW - 4 * MINUTE))
+        show { onNode(text("4 min")).assertExists() }
+        feed.apply(WidgetFixtures.permission(event = "\$old", room = "!old:hs", question = "Old?", at = NOW - 130 * MINUTE))
+        show {
+            onNode(text("2 hr")).assertExists()
+            onNode(text("4 min")).assertExists()
         }
     }
 
@@ -249,16 +292,42 @@ class NeedsYouWidgetTest {
     }
 
     @Test
-    fun atFontScaleTwoTheHeaderIsNeverCropped() = runBlocking {
-        (1..3).forEach { i ->
-            feed.apply(WidgetFixtures.permission(event = "\$q$i", room = "!room$i:hs", question = "Question $i?", at = NOW - MINUTE + i * 1_000L))
-        }
-        show(fontScale = 2f) {
+    fun atFontScaleTwoLargeKeepsTheHeaderAndOneCardWithoutButtons() = runBlocking {
+        threeDecisions()
+        show(NeedsYouWidget.LARGE, fontScale = 2f) {
             onNode(text("Needs you")).assertExists()
             onNode(text("3")).assertExists()
             onNode(text("Question 3?")).assertExists()
-            assertAbsent("Question 1?")
+            assertAbsent("Question 2?")
             onNode(text("2 more in the app")).assertExists()
+            // Not even one card with its buttons fits: the question, and a tap to open it.
+            onNode(text("Open to answer")).assertExists()
+            assertAbsent("Allow once")
         }
+    }
+
+    @Test
+    fun atFontScaleTwoMediumAndSmallDropTheButtonsRatherThanCropThem() = runBlocking {
+        threeDecisions()
+        // Twice the text in 180dp cannot hold an agent line and buttons: two questions alone.
+        show(NeedsYouWidget.MEDIUM, fontScale = 2f) {
+            onNode(text("Needs you")).assertExists()
+            onNode(text("Question 3?")).assertExists()
+            onNode(text("Question 2?")).assertExists()
+            assertAbsent("Hermes")
+            assertAbsent("Allow once")
+        }
+        // In 110dp not even two: the question alone.
+        listOf(NeedsYouWidget.WIDE, NeedsYouWidget.SMALL).forEach { bucket ->
+            show(bucket, fontScale = 2f) {
+                onNode(text("Needs you")).assertExists()
+                onNode(text("Question 3?")).assertExists()
+                assertAbsent("Hermes")
+                assertAbsent("Allow once")
+                assertAbsent("Question 2?")
+            }
+        }
+        // At the normal size the same buckets keep them.
+        show(NeedsYouWidget.SMALL) { onNode(text("Allow once")).assertExists() }
     }
 }

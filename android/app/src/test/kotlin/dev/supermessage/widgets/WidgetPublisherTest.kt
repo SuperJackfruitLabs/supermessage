@@ -142,4 +142,24 @@ class WidgetPublisherTest {
         h.calls()
         assertEquals("the core said reload", 1, h.redraws.count { it })
     }
+
+    @Test(timeout = 60_000)
+    fun anOldActivityStoppingItsWatchLeavesTheNewActivitysRunning() = runTest(UnconfinedTestDispatcher()) {
+        val h = harness(backgroundScope)
+        val session = dev.supermessage.kit.Session(
+            dev.supermessage.kit.CoreClient(dev.supermessage.kit.StubCore(), kotlinx.coroutines.Dispatchers.Unconfined),
+            backgroundScope,
+        )
+        val phases = MutableStateFlow(Phase.SIGNED_IN)
+        // A recreation: the new Activity watches first, then the old one is destroyed.
+        val old = h.coordinator.watch(phases, session, backgroundScope)
+        val new = h.coordinator.watch(phases, session, backgroundScope)
+        old.stop()
+        phases.value = Phase.SIGNED_OUT
+        assertEquals("the new watch still feeds the widgets", listOf("signedOut"), h.calls())
+        new.stop()
+        phases.value = Phase.SIGNED_IN
+        phases.value = Phase.SIGNED_OUT
+        assertEquals("a stopped watch feeds nothing", listOf("signedOut"), h.calls())
+    }
 }

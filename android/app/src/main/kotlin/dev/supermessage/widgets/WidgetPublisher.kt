@@ -125,11 +125,14 @@ internal class WidgetPublisher(
      * Activity, so a change after it stops still lands). Stopped by [stopWatching]; the
      * Activity calls both, and a recreation's second `watch` re-reads the same phase,
      * which changes nothing here.
+     *
+     * Returns the handle that stops **this** watch only: a recreated Activity's `watch` runs
+     * before the old one's `onDestroy`, and the old one stopping must not cancel the new feed.
      */
     @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
-    fun watch(phases: StateFlow<Session.Phase>, session: Session, scope: CoroutineScope) {
+    fun watch(phases: StateFlow<Session.Phase>, session: Session, scope: CoroutineScope): Watch {
         stopWatching()
-        watching = listOf(
+        val jobs = listOf(
             phases.onEach(::phaseChanged).launchIn(scope),
             phases.onEach { phase -> stamp(phase, session) }.launchIn(scope),
             session.rooms.rooms.sample(FEED_THROTTLE_MS).onEach(::roomsChanged).launchIn(scope),
@@ -145,6 +148,16 @@ internal class WidgetPublisher(
                 .onEach { (room, step) -> liveChanged(room, step) }
                 .launchIn(scope),
         )
+        watching = jobs
+        return Watch(jobs)
+    }
+
+    /** One `watch`'s jobs. [stop] cancels them, and clears the publisher's record only if they are still its current ones. */
+    inner class Watch internal constructor(private val jobs: List<Job>) {
+        fun stop() {
+            jobs.forEach { it.cancel() }
+            if (watching === jobs) watching = emptyList()
+        }
     }
 
     private suspend fun stamp(phase: Session.Phase, session: Session) {

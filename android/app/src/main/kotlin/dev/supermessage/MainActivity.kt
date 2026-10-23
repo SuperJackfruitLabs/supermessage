@@ -132,11 +132,12 @@ class MainActivity : ComponentActivity() {
         // the process's scope so a change after the Activity stops still lands.
         AppCore.observeProcess(this)
         val publisher = AppCore.widgetPublisher(this)
-        publisher.watch(model.session.phase, model.session, AppCore.scope)
+        val watch = publisher.watch(model.session.phase, model.session, AppCore.scope)
         lifecycle.addObserver(
             object : DefaultLifecycleObserver {
                 override fun onDestroy(owner: LifecycleOwner) {
-                    publisher.stopWatching()
+                    // This Activity's own watch only: a recreation's new one is already running.
+                    watch.stop()
                 }
             },
         )

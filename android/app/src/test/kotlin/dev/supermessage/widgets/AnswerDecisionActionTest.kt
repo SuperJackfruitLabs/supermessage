@@ -103,6 +103,23 @@ class AnswerDecisionActionTest {
     }
 
     @Test
+    fun aRefusedActivityStartOnALockedDeviceDoesNotCrashTheCallback() = runBlocking {
+        feed.apply(WidgetFixtures.gate())
+        keyguard.setKeyguardLocked(true)
+        // Background-start rules, or no handler: the platform throws.
+        val result = AnswerFromWidget.run(
+            app, "!b:hs", "\$g", "approve",
+            open = { throw android.content.ActivityNotFoundException("refused") },
+            feed = feed,
+            core = { core },
+            account = { "@me:x" },
+            reload = {},
+        )
+        assertNull(result)
+        assertTrue("nothing was sent", core.calls.isEmpty())
+    }
+
+    @Test
     fun anotherAccountsSessionSendsNothing() = runBlocking {
         feed.apply(WidgetFixtures.gate())
         keyguard.setKeyguardLocked(false)

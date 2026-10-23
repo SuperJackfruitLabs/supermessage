@@ -4,7 +4,6 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import dev.supermessage.AppCore
 
 /**
  * The Needs you widget's provider.
@@ -18,16 +17,17 @@ class NeedsYouWidgetReceiver : GlanceAppWidgetReceiver() {
 
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
-        AppCore.widgetRedraw(context).arm()
+        armOffMain(context)
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
-        AppCore.widgetRedraw(context).arm()
+        armOffMain(context)
     }
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        AppCore.widgetRedraw(context).cancelAll()
+        // The other widget may still be placed: arm() cancels only when none is.
+        armOffMain(context)
     }
 }

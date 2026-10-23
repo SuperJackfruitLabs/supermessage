@@ -31,8 +31,6 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
 import dev.supermessage.R
-import dev.supermessage.kit.RelativeTime
-import java.time.Instant
 import uniffi.supermessage_core.WidgetDecisionView
 import uniffi.supermessage_core.WidgetOption
 
@@ -69,12 +67,15 @@ internal fun WidgetDecisionCard(
     compact: Boolean,
     /** Buttons under the question rather than beside the name: the small widget, and large text. */
     stacked: Boolean = compact,
+    /** What the room allows: the buttons, or (large text in a small bucket) less, with a tap to open. */
+    mode: CardMode = CardMode.FULL,
 ) {
+    val buttons = mode == CardMode.FULL
     val decision = item.decision
     val owed = decision.answered == null
     val palette = cardPalette(owed)
     val tag = cardTag(owed, decision.eventId)
-    val showButtons = owed && item.buttons.isNotEmpty()
+    val showButtons = owed && buttons && item.buttons.isNotEmpty()
     val context = LocalContext.current
     // The text is a link to the card in the app; the buttons inside it answer in place.
     val open = GlanceModifier.clickable(
@@ -82,7 +83,7 @@ internal fun WidgetDecisionCard(
     )
     val body: @Composable () -> Unit = {
         Column(modifier = GlanceModifier.fillMaxWidth().then(open)) {
-            Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (mode != CardMode.BARE) Row(modifier = GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     decision.agent,
                     style = TextStyle(
@@ -94,7 +95,7 @@ internal fun WidgetDecisionCard(
                 )
                 Spacer(GlanceModifier.width(4.dp))
                 Text(
-                    RelativeTime.label(decision.askedAtMs, Instant.ofEpochMilli(nowMs)),
+                    WidgetAge.since(decision.askedAtMs.toLong(), nowMs),
                     style = TextStyle(color = WidgetColors.contentFaint, fontSize = 10.sp),
                     maxLines = 1,
                 )
@@ -105,10 +106,12 @@ internal fun WidgetDecisionCard(
                 decision.question,
                 style = TextStyle(color = WidgetColors.content, fontSize = 12.sp),
                 // The small widget gives its height to the stacked buttons; iOS's 3 lines when there are none.
-                maxLines = if (compact && showButtons) 1 else if (compact) 3 else 2,
+                maxLines = if (mode == CardMode.BARE || (compact && showButtons)) 1 else if (compact) 3 else 2,
             )
             val answered = decision.answered
-            if (answered != null) {
+            if (mode == CardMode.BARE) {
+                // The question alone: the whole card is the tap that opens it.
+            } else if (answered != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Image(
                         provider = ImageProvider(R.drawable.ic_widget_sent),
@@ -123,14 +126,14 @@ internal fun WidgetDecisionCard(
                         maxLines = 1,
                     )
                 }
-            } else if (item.buttons.isEmpty()) {
+            } else if (item.buttons.isEmpty() || !buttons) {
                 Text(
                     WidgetCopy.OPEN_TO_ANSWER,
                     style = TextStyle(color = WidgetColors.contentMuted, fontSize = 10.sp),
                 )
             }
             if (showButtons && stacked) {
-                Spacer(GlanceModifier.size(2.dp))
+                Spacer(GlanceModifier.size(1.dp))
                 DecisionButtons(item, compact = true)
             }
         }
@@ -165,7 +168,7 @@ private fun DecisionButtons(item: WidgetDecisionView, compact: Boolean) {
     val buttons: @Composable () -> Unit = {
         item.buttons.forEachIndexed { index, option ->
             if (index > 0) {
-                if (compact) Spacer(GlanceModifier.size(2.dp)) else Spacer(GlanceModifier.width(6.dp))
+                if (compact) Spacer(GlanceModifier.size(1.dp)) else Spacer(GlanceModifier.width(6.dp))
             }
             DecisionButton(option, decision.roomId, decision.eventId, compact)
         }

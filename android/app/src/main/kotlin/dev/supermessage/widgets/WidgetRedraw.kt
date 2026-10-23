@@ -155,3 +155,22 @@ class WidgetRedrawReceiver : BroadcastReceiver() {
         }
     }
 }
+
+/**
+ * Arms [WidgetRedraw] from a provider callback without touching the disk or the core on the
+ * main thread (the callbacks run there): `arm` reads the snapshot and asks the core when the
+ * next frame is. The broadcast is held open ([BroadcastReceiver.goAsync]) until it is done,
+ * so the process is not stopped half way. `goAsync` is null outside a real broadcast (a test
+ * calling the callback directly), where there is nothing to hold.
+ */
+internal fun BroadcastReceiver.armOffMain(context: Context) {
+    val pending = goAsync()
+    val app = context.applicationContext
+    AppCore.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        try {
+            AppCore.widgetRedraw(app).arm()
+        } finally {
+            pending?.finish()
+        }
+    }
+}
