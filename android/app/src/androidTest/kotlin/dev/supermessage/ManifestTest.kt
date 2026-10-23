@@ -60,6 +60,20 @@ class ManifestTest {
         )
     }
 
+    /** Voice messages record from the microphone; without it `MediaRecorder` cannot start. */
+    @Test
+    fun declaresRecordAudio() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val declared = context.packageManager
+            .getPackageInfo(context.packageName, PackageManager.GET_PERMISSIONS)
+            .requestedPermissions
+            .orEmpty()
+        assertTrue(
+            "android.permission.RECORD_AUDIO is not declared. Declared: ${declared.joinToString()}",
+            declared.contains(android.Manifest.permission.RECORD_AUDIO),
+        )
+    }
+
     /**
      * No component may run in a second process (the controller's note from
      * the Task 1 review): a second process loads a second native library and

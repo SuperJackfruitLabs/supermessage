@@ -333,12 +333,59 @@ class StagedAttachmentTest {
         job.cancel()
     }
 
+    @Test
+    fun `markVoiceMarksTheStagedFileForItsRoom`() = runTest {
+        val fake = FakeCore(stageResult = { stagedFile("tok-v") })
+        val staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/Voice message.ogg", roomId = "!a:x")
+
+        val marked = staged.markVoice(durationMs = 4_250, waveform = listOf(0.1f, 0.9f), roomId = "!a:x")
+
+        assertTrue(marked)
+        assertEquals(listOf(MarkCall("!a:x", "tok-v", 4_250uL, listOf(0.1f, 0.9f))), fake.marks)
+    }
+
+    @Test
+    fun `markVoiceForAnotherRoomDoesNothing`() = runTest {
+        val fake = FakeCore(stageResult = { stagedFile("tok-v") })
+        val staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/Voice message.ogg", roomId = "!a:x")
+
+        assertFalse(staged.markVoice(durationMs = 4_250, waveform = emptyList(), roomId = "!b:x"))
+        assertTrue("the core was not asked", fake.marks.isEmpty())
+    }
+
+    @Test
+    fun `markVoiceWithNothingStagedDoesNothing`() = runTest {
+        val fake = FakeCore()
+        val staged = StagedAttachment(client(fake))
+        assertFalse(staged.markVoice(durationMs = 4_250, waveform = emptyList(), roomId = "!a:x"))
+        assertTrue(fake.marks.isEmpty())
+    }
+
+    @Test
+    fun `a refusal of the mark is reported as not marked`() = runTest {
+        val fake = FakeCore(stageResult = { stagedFile("tok-v") }).also { it.refuseMark = true }
+        val staged = StagedAttachment(client(fake))
+        staged.stage(path = "/tmp/Voice message.ogg", roomId = "!a:x")
+        assertFalse(staged.markVoice(durationMs = 1_000, waveform = emptyList(), roomId = "!a:x"))
+    }
+
+    private data class MarkCall(val roomId: String, val token: String, val durationMs: ULong, val waveform: List<Float>)
+
     private class FakeCore(
         private val stageResult: () -> StagedFile = { throw NotImplementedError() },
         private val sendResult: (() -> AttachmentSendOutcome)? = null,
     ) : StubCore() {
         val discardedTokens = mutableListOf<String>()
         val sentTokens = mutableListOf<Pair<String, String>>()
+        val marks = mutableListOf<MarkCall>()
+        var refuseMark = false
+
+        override fun attachmentMarkVoice(roomId: String, token: String, durationMs: ULong, waveform: List<Float>) {
+            if (refuseMark) throw IllegalStateException("refused")
+            marks += MarkCall(roomId, token, durationMs, waveform)
+        }
 
         override fun attachmentDiscard(token: String) {
             discardedTokens.add(token)
