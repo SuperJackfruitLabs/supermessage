@@ -57,13 +57,14 @@ class SupermessagePushServiceTest {
     private open class Recording(
         val decided: NotificationDto? = null,
         val restores: Boolean = true,
+        val userId: String = ME,
     ) : StubCore() {
         val calls: MutableList<String> = Collections.synchronizedList(mutableListOf())
         override fun restoreSessionQuietly(): Boolean {
             calls += "restore"
             return restores
         }
-        override fun account(): AccountDto = AccountDto(userId = "@me:x", homeserver = "https://x")
+        override fun account(): AccountDto = AccountDto(userId = userId, homeserver = "https://x")
         override fun notificationFor(roomId: String, eventId: String): NotificationDto {
             calls += "notificationFor $roomId $eventId"
             return decided ?: throw IllegalStateException("could not fetch")
@@ -106,17 +107,28 @@ class SupermessagePushServiceTest {
         installWidgets(Widgets())
     }
 
+    /** The pusher's account, on disk, as the registrar stamps it: what each push is checked against. */
+    private val owner = AppCore.pushOwner(app)
+
+    @Before
+    fun signedInAsMe() {
+        owner.account = ME
+    }
+
     @After
     fun forget() {
         AppCore.installForTest(null)
         AppCore.installWidgetsForTest(null)
         AppCore.coordinator = null
         SupermessagePushService.onDecided = {}
+        owner.account = null
         manager.cancelAll()
     }
 
     private fun push(room: String = "!r:x", event: String = "\$e1") =
         """{"notification":{"event_id":"$event","room_id":"$room","counts":{"unread":2}}}""".toByteArray()
+
+    private fun parsed(room: String = "!r:x", event: String = "\$e1") = MatrixPush(room, event, unread = null)
 
     private fun decided(
         category: NotificationCategory = NotificationCategory.MESSAGE,
@@ -132,15 +144,16 @@ class SupermessagePushServiceTest {
     )
 
     /**
-     * Delivers [bytes] the way the job does: the worker's own `doWork`, built by
+     * Delivers a push the way the job does: the worker's own `doWork`, built by
      * WorkManager's test helper (no scheduler involved, so nothing can wait on
-     * one). The service's hand-off is tested separately below.
+     * one), with the account it was stamped with when it came in. The
+     * service's hand-off is tested separately below.
      */
-    private fun deliver(core: Recording, bytes: ByteArray = push()) {
+    private fun deliver(core: Recording, push: MatrixPush = parsed(), stampedFor: String? = ME) {
         AppCore.installForTest(core)
         SupermessagePushService.onDecided = { decidedSeen += it }
         val worker = TestListenableWorkerBuilder<PushWorker>(app)
-            .setInputData(androidx.work.Data.Builder().putByteArray(PushWorker.KEY_PUSH, bytes).build())
+            .setInputData(PushWorker.input(push, stampedFor))
             .build()
         runBlocking { worker.doWork() }
     }
@@ -167,6 +180,39 @@ class SupermessagePushServiceTest {
         assertEquals(1, infos.size)
         // Handed over, not done: the worker's executor is held, so it has not run.
         assertTrue(infos.single().state in setOf(androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.RUNNING))
+        assertTrue("tagged, so a sign-out cancels it", PushWorker.TAG in infos.single().tags)
+    }
+
+    /**
+     * A body over WorkManager's 10 KB `Data` limit used to throw out of
+     * `onMessage` and take the app down. Only the ids go to the job now, so a
+     * padded body is still a push; an id longer than Matrix allows is none.
+     */
+    @Test
+    fun aBodyOverTenKilobytesNeverCrashesAndStillReachesTheJob() {
+        val held = java.util.ArrayDeque<Runnable>()
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            app, Configuration.Builder().setExecutor { held.add(it) }.setTaskExecutor(SynchronousExecutor()).build(),
+        )
+        AppCore.installForTest(Recording(decided()))
+        val service = Robolectric.buildService(SupermessagePushService::class.java).create().get()
+        val padding = "x".repeat(12_000)
+        val padded = """{"notification":{"event_id":"${'$'}big","room_id":"!r:x","pad":"$padding"}}""".toByteArray()
+
+        service.onMessage(PushMessage(padded, false), INSTANCE_DEFAULT)
+
+        val infos = WorkManager.getInstance(app).getWorkInfosForUniqueWork("push:!r:x:\$big").get()
+        assertEquals("the push is queued, not lost", 1, infos.size)
+
+        val longRoom = "!" + "r".repeat(MatrixPush.MAX_ID_LENGTH) + ":x"
+        val tooLong = """{"notification":{"event_id":"${'$'}long","room_id":"$longRoom"}}""".toByteArray()
+        service.onMessage(PushMessage(tooLong, false), INSTANCE_DEFAULT)
+        assertEquals(
+            "an id longer than Matrix allows is no push",
+            0,
+            WorkManager.getInstance(app).getWorkInfosForUniqueWork("push:$longRoom:\$long").get().size,
+        )
+        assertEquals(null, shown("\$long"))
     }
 
     @Test
@@ -174,7 +220,7 @@ class SupermessagePushServiceTest {
         val core = Recording(decided())
         AppCore.installForTest(core)
         val worker = TestListenableWorkerBuilder<PushWorker>(app)
-            .setInputData(androidx.work.Data.Builder().putByteArray(PushWorker.KEY_PUSH, push()).build())
+            .setInputData(PushWorker.input(parsed(), ME))
             .build()
 
         val result = runBlocking { worker.doWork() }
@@ -288,12 +334,79 @@ class SupermessagePushServiceTest {
         val core = Recording(decided())
         deliver(core)
         assertEquals(listOf("restore", "notificationFor !r:x \$e1"), core.calls.toList())
+    }
 
-        manager.cancelAll()
+    /**
+     * I1: a push queued for this account that runs after sign-out (WorkManager
+     * re-runs work after process death, and out-of-quota work can wait out
+     * Doze) posts nothing, not even "New message": no one is signed in to tell.
+     */
+    @Test
+    fun aQueuedPushThatRunsAfterSignOutPostsNothing() {
+        owner.account = null // the sign-out cleared it
         val signedOut = Recording(decided(), restores = false)
-        deliver(signedOut)
+        deliver(signedOut, stampedFor = ME)
         assertEquals("no session: nothing to fetch with", listOf("restore"), signedOut.calls.toList())
-        assertEquals("New message", text(shown()!!, Notification.EXTRA_TEXT))
+        assertEquals(emptyList<Notification>(), shadowOf(manager).allNotifications)
+
+        // A session that ended with no sign-out this process saw (revoked
+        // while the app was dead): the owner is still stamped, but nothing
+        // restores, so there is still no one to tell.
+        owner.account = ME
+        val revoked = Recording(decided(), restores = false)
+        deliver(revoked, stampedFor = ME)
+        assertEquals(listOf("restore"), revoked.calls.toList())
+        assertEquals(emptyList<Notification>(), shadowOf(manager).allNotifications)
+    }
+
+    /** I1: A's push, run once B has signed in, posts nothing: not B's note, not "New message" under B. */
+    @Test
+    fun aPushForAccountAPostsNothingOnceBIsSignedIn() {
+        owner.account = "@b:x" // B registered its own pusher
+        val asB = Recording(decided(), userId = "@b:x")
+        deliver(asB, stampedFor = "@a:x")
+        assertEquals("A's push is not fetched as B", listOf("restore"), asB.calls.toList())
+        assertEquals(emptyList<Notification>(), shadowOf(manager).allNotifications)
+        assertEquals("nor handed to the widgets", 0, decidedSeen.size)
+
+        // Nor when what was asked for cannot be had: that was B's generic note before.
+        val asBUnfetchable = Recording(decided = null, userId = "@b:x")
+        deliver(asBUnfetchable, stampedFor = "@a:x")
+        assertEquals(emptyList<Notification>(), shadowOf(manager).allNotifications)
+    }
+
+    /** A push that came when no account had a pusher is no one's. */
+    @Test
+    fun aPushStampedForNoAccountPostsNothingAndTouchesNoCore() {
+        val core = Recording(decided())
+        deliver(core, stampedFor = null)
+        assertEquals(emptyList<String>(), core.calls.toList())
+        assertEquals(emptyList<Notification>(), shadowOf(manager).allNotifications)
+    }
+
+    /** I1: signed out while the push was being worked: the sign-out withdrew everything, and this stays down. */
+    @Test(timeout = 15_000)
+    fun aPushUnderWayWhenSignOutLandsPostsNothing() {
+        val gate = CountDownLatch(1)
+        val asking = CountDownLatch(1)
+        val core = object : Recording(decided()) {
+            override fun notificationFor(roomId: String, eventId: String): NotificationDto {
+                asking.countDown()
+                gate.await()
+                return super.notificationFor(roomId, eventId)
+            }
+        }
+        AppCore.installForTest(core)
+        try {
+            val job = deliverPush(app, parsed(), owner = ME)
+            assertTrue("the core was asked", asking.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            owner.account = null // sign-out
+            gate.countDown()
+            runBlocking { job.join() }
+            assertEquals(emptyList<Notification>(), shadowOf(manager).allNotifications)
+        } finally {
+            gate.countDown()
+        }
     }
 
     @Test(timeout = 15_000)
@@ -306,17 +419,45 @@ class SupermessagePushServiceTest {
             }
         }
         AppCore.installForTest(core)
-        val began = System.currentTimeMillis()
-        runBlocking { deliverPush(app, push(), budgetMs = 300).join() }
-        assertTrue("gave up inside the budget", System.currentTimeMillis() - began < 5_000)
-        assertEquals("New message", text(shown()!!, Notification.EXTRA_TEXT))
-        gate.countDown()
+        try {
+            val began = System.currentTimeMillis()
+            runBlocking { deliverPush(app, parsed(), owner = ME, budgetMs = 300).join() }
+            assertTrue("gave up inside the budget", System.currentTimeMillis() - began < 5_000)
+            assertEquals("New message", text(shown()!!, Notification.EXTRA_TEXT))
+        } finally {
+            gate.countDown()
+        }
+    }
+
+    /** Past the budget before the account was known: there is no account to say "New message" for. */
+    @Test(timeout = 15_000)
+    fun aPushThatTakesTooLongBeforeItsAccountIsKnownPostsNothing() {
+        val gate = CountDownLatch(1)
+        val core = object : Recording(decided()) {
+            override fun restoreSessionQuietly(): Boolean {
+                gate.await()
+                return super.restoreSessionQuietly()
+            }
+        }
+        AppCore.installForTest(core)
+        try {
+            runBlocking { deliverPush(app, parsed(), owner = ME, budgetMs = 300).join() }
+            assertEquals(emptyList<Notification>(), shadowOf(manager).allNotifications)
+        } finally {
+            gate.countDown()
+        }
     }
 
     @Test
     fun anythingButAMatrixPushPostsNothing() {
-        deliver(Recording(decided()), "hello".toByteArray())
+        AppCore.installForTest(Recording(decided()))
+        enqueuePush(app, "hello".toByteArray())
         assertEquals(emptyList<Notification>(), shadowOf(manager).allNotifications)
+    }
+
+
+    private companion object {
+        const val ME = "@me:x"
     }
 
     private fun message(eventId: String, at: Long) = TimelineRow(

@@ -318,8 +318,10 @@ class RosterTest {
     fun aChipIsAReadableHeight() {
         val dp = compose.density.density
         chipped(listOf(sectionOf("Alpha" to 0)))
-        val short = compose.onNodeWithTag("chip-all").fetchSemanticsNode().boundsInRoot.height
-        assertTrue("a chip is a readable height: ${short / dp}dp", short / dp >= 24f)
+        val touch = compose.onNodeWithTag("chip-all").fetchSemanticsNode().boundsInRoot.height
+        val drawn = compose.onNodeWithTag("chip-drawn-all", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot.height
+        assertTrue("a chip is touched at 48dp: ${touch / dp}dp", touch / dp >= 47.5f)
+        assertTrue("and drawn at iOS's 28dp: ${drawn / dp}dp", kotlin.math.abs(drawn / dp - 28f) <= 1f)
     }
 
     @Test

@@ -8,6 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -72,7 +73,7 @@ class PullToRefreshTest {
 
     private fun show(core: Core) {
         val session = Session(
-            client = CoreClient(core = core, dispatcher = Dispatchers.IO),
+            client = CoreClient(core = core, dispatcher = Dispatchers.IO, resumeOn = Dispatchers.Main.immediate),
             scope = CoroutineScope(Dispatchers.Unconfined),
         )
         val file = File.createTempFile("pull", ".preferences_pb")
@@ -117,6 +118,27 @@ class PullToRefreshTest {
         pull("needs-you-list", core)
         compose.onNodeWithTag("destination-agents").performSemanticsAction(SemanticsActions.OnClick)
         compose.waitUntil(5_000) { compose.onAllNodesWithTag("agents-list").fetchSemanticsNodes().isNotEmpty() }
+        pull("agents-list", core)
+    }
+
+    /** iOS puts `.refreshable` on the list with the overlay over it, so "all caught up" can be pulled. */
+    @Test
+    fun pullingAnAllCaughtUpInboxReseeds() {
+        val core = Core(emptyList())
+        show(core)
+        compose.onNodeWithTag("destination-needs-you").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("needs-you-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("caught-up").assertIsDisplayed()
+        pull("needs-you-list", core)
+    }
+
+    @Test
+    fun pullingAnEmptyAgentsViewReseeds() {
+        val core = Core(emptyList())
+        show(core)
+        compose.onNodeWithTag("destination-agents").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("agents-list").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("no-agents").assertIsDisplayed()
         pull("agents-list", core)
     }
 }

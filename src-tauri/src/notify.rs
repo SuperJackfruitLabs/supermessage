@@ -227,6 +227,9 @@ mod xdg {
         /// replace. Only posts take it; neither the listener nor `withdraw_all` does.
         posting: Mutex<()>,
         sender: ActionSender,
+        /// Posts that have begun (tests wait on it to know one is queued).
+        #[cfg(test)]
+        started: std::sync::atomic::AtomicUsize,
     }
 
     fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -275,6 +278,8 @@ mod xdg {
                 state: Arc::new(Mutex::new(State::default())),
                 posting: Mutex::new(()),
                 sender,
+                #[cfg(test)]
+                started: Default::default(),
             }
         }
 
@@ -292,6 +297,19 @@ mod xdg {
         #[cfg(test)]
         pub fn offers_actions(&self) -> bool {
             self.ready()
+        }
+
+        /// How many posts have begun.
+        #[cfg(test)]
+        pub fn started(&self) -> usize {
+            self.started.load(std::sync::atomic::Ordering::SeqCst)
+        }
+
+        /// A sink onto this poster's own bookkeeping, as the backend would be given.
+        #[cfg(test)]
+        pub fn sink(&self) -> SignalSink {
+            let (state, sender) = (Arc::clone(&self.state), self.sender.clone());
+            Arc::new(move |signal| on_signal(&state, &sender, signal))
         }
 
         /// How many notes are remembered.
@@ -332,17 +350,20 @@ mod xdg {
 
     impl Poster for XdgPoster {
         fn post(&self, note: &PostedNote) -> Result<(), String> {
+            // Read before anything can make this post wait (the subscription, a post ahead
+            // of it): a sign-out that lands meanwhile moves it, and the note is then
+            // closed instead of remembered, so no old account's text outlives its sign-out.
+            let generation = lock(&self.state).generation;
+            #[cfg(test)]
+            self.started
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let buttons = self.ready();
             let _posting = lock(&self.posting);
-            let (replaces, generation) = {
-                let state = lock(&self.state);
-                let replaces = state
-                    .known
-                    .iter()
-                    .find(|k| k.note_id == note.id)
-                    .map(|k| k.server_id);
-                (replaces, state.generation)
-            };
+            let replaces = lock(&self.state)
+                .known
+                .iter()
+                .find(|k| k.note_id == note.id)
+                .map(|k| k.server_id);
             // Sent with the state unlocked. A press on this note cannot come back before
             // the reply does (nobody can press a note within one round trip), and holding
             // the lock here would park the listener behind the server's reply: with zbus's
@@ -394,6 +415,9 @@ mod xdg {
         "/org/freedesktop/Notifications",
         "org.freedesktop.Notifications",
     );
+
+    /// The bus's error for a well-known name nobody owns.
+    const NAME_HAS_NO_OWNER: &str = "org.freedesktop.DBus.Error.NameHasNoOwner";
 
     /// The message bus itself: its name (which is also its interface) and object path.
     const DBUS: (&str, &str) = ("org.freedesktop.DBus", "/org/freedesktop/DBus");
@@ -451,15 +475,37 @@ mod xdg {
             connection.call_method(Some(destination), path, Some(interface), method, body)
         }
 
-        /// The unique name that owns the server's well-known name now, if any.
-        fn name_owner(connection: &zbus::blocking::Connection) -> Option<String> {
+        /// Whether a session bus could be reached at all (opens the connection on first use).
+        pub fn has_session_bus(&self) -> bool {
+            self.connection().is_some()
+        }
+
+        /// Whether anyone owns the well-known `name` on the session bus now (the bus's own
+        /// `NameHasOwner`), on this backend's connection and bounded by its timeout. Blocks for
+        /// one round trip: never call it on the main thread.
+        pub fn name_has_owner(&self, name: &str) -> zbus::Result<bool> {
+            let connection = self
+                .connection()
+                .ok_or_else(|| zbus::Error::Failure("no session bus".into()))?;
             let (bus, path) = DBUS;
             connection
-                .call_method(Some(bus), path, Some(bus), "GetNameOwner", &(BUS.0,))
-                .ok()?
+                .call_method(Some(bus), path, Some(bus), "NameHasOwner", &(name,))?
                 .body()
-                .deserialize::<String>()
-                .ok()
+                .deserialize::<bool>()
+        }
+
+        /// The unique name that owns the server's well-known name now: `Ok(None)` when
+        /// the bus says nobody does (the server starts on the first note), an error for
+        /// any other failure (a timeout, a refusal), which says nothing about an owner.
+        fn name_owner(connection: &zbus::blocking::Connection) -> zbus::Result<Option<String>> {
+            let (bus, path) = DBUS;
+            match connection.call_method(Some(bus), path, Some(bus), "GetNameOwner", &(BUS.0,)) {
+                Ok(reply) => reply.body().deserialize::<String>().map(Some),
+                Err(zbus::Error::MethodError(name, ..)) if name.as_str() == NAME_HAS_NO_OWNER => {
+                    Ok(None)
+                }
+                Err(e) => Err(e),
+            }
         }
     }
 
@@ -522,7 +568,25 @@ mod xdg {
     pub(super) fn owner_changed(
         owner: &Mutex<ServerOwner>,
         message: &zbus::message::Message,
-    ) -> Option<Signal> {
+        on_change: &dyn Fn(Signal),
+    ) {
+        let Some(new) = new_owner(message) else {
+            return;
+        };
+        let mut owner = lock(owner);
+        owner.heard_change = true;
+        if owner.name.is_some() && owner.name != new {
+            // A panicking sink must not leave the old owner recorded.
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                on_change(Signal::ServerChanged)
+            }));
+        }
+        owner.name = new;
+    }
+
+    /// Who owns the server's name now, if `message` is the bus saying so: `Some(None)`
+    /// for nobody.
+    fn new_owner(message: &zbus::message::Message) -> Option<Option<String>> {
         let header = message.header();
         let (bus, _) = DBUS;
         if header.sender()?.as_str() != bus
@@ -535,14 +599,7 @@ mod xdg {
             .body()
             .deserialize::<(String, String, String)>()
             .ok()?;
-        if name != BUS.0 {
-            return None;
-        }
-        let new = (!new.is_empty()).then_some(new);
-        let mut owner = lock(owner);
-        owner.heard_change = true;
-        let previous = std::mem::replace(&mut owner.name, new);
-        (previous.is_some() && previous != owner.name).then_some(Signal::ServerChanged)
+        (name == BUS.0).then_some((!new.is_empty()).then_some(new))
     }
 
     /// Hands what `read` makes of each message to `sink`, on a thread of its own. The
@@ -606,6 +663,7 @@ mod xdg {
             let owner = Arc::new(Mutex::new(ServerOwner::default()));
             let heard = Arc::clone(&owner);
             let followed = Arc::clone(&owner);
+            let forget = Arc::clone(&sink);
             if !(drain(
                 "notification-signals",
                 signals,
@@ -614,14 +672,31 @@ mod xdg {
             ) && drain(
                 "notification-owner",
                 changes,
-                move |m| owner_changed(&followed, m),
+                move |m| {
+                    owner_changed(&followed, m, &*forget);
+                    None
+                },
                 sink,
             )) {
                 return false;
             }
             // Asked only once both queues are being drained, so no burst of signals can
             // hold the reply up.
-            let current = Self::name_owner(connection);
+            let current = match Self::name_owner(connection) {
+                Ok(current) => current,
+                // Asked once more: a transient failure must not leave every press
+                // unattributable while buttons are offered.
+                Err(first) => match Self::name_owner(connection) {
+                    Ok(current) => current,
+                    Err(second) => {
+                        tracing::warn!(
+                            %first, %second,
+                            "could not learn who serves notifications; posting without buttons"
+                        );
+                        return false;
+                    }
+                },
+            };
             let mut owner = lock(&owner);
             if !owner.heard_change {
                 owner.name = current;
@@ -1133,6 +1208,39 @@ mod tests {
             );
         }
 
+        #[test]
+        fn a_post_queued_before_sign_out_leaves_nothing_behind() {
+            let (poster, server, _rx) = poster(true);
+            let poster = Arc::new(poster);
+            let (release, held) = std::sync::mpsc::channel();
+            *server.held.lock().unwrap() = Some(held);
+            let first = std::thread::spawn({
+                let poster = Arc::clone(&poster);
+                move || poster.post(&note("$a", vec![]))
+            });
+            while server.shown.lock().unwrap().is_empty() {
+                std::thread::yield_now();
+            }
+            // $b is queued behind $a, for the account about to sign out.
+            let second = std::thread::spawn({
+                let poster = Arc::clone(&poster);
+                move || poster.post(&note("$b", vec![]))
+            });
+            while poster.started() < 2 {
+                std::thread::yield_now();
+            }
+            poster.withdraw_all();
+            release.send(()).unwrap();
+            first.join().unwrap().unwrap();
+            second.join().unwrap().unwrap();
+            assert_eq!(poster.remembered(), 0, "neither note outlives the sign-out");
+            let closed = server.closed.lock().unwrap().clone();
+            assert!(
+                closed.contains(&101) && closed.contains(&102),
+                "$a and the queued $b are both closed: {closed:?}"
+            );
+        }
+
         /// Runs `f` on its own thread; `None` if it has not returned within `limit`, so a
         /// regression fails the test instead of hanging it.
         fn within<T: Send + 'static>(
@@ -1273,6 +1381,16 @@ mod tests {
             );
         }
 
+        /// What `owner_changed` reports for `message`, as the signals it handed on.
+        fn followed(owner: &std::sync::Mutex<ServerOwner>, m: zbus::message::Message) -> usize {
+            let heard = std::sync::atomic::AtomicUsize::new(0);
+            owner_changed(owner, &m, &|signal| {
+                assert_eq!(signal, Signal::ServerChanged);
+                heard.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            });
+            heard.into_inner()
+        }
+
         #[test]
         fn the_server_is_followed_across_a_restart() {
             const BUS: &str = "org.freedesktop.DBus";
@@ -1280,20 +1398,17 @@ mod tests {
             let owner = std::sync::Mutex::new(ServerOwner::of(":1.7"));
 
             assert_eq!(
-                owner_changed(&owner, &owner_change(":1.99", NAME, ":1.7", ":1.99")),
-                None,
+                followed(&owner, owner_change(":1.99", NAME, ":1.7", ":1.99")),
+                0,
                 "only the bus says who owns a name"
             );
             assert_eq!(
-                owner_changed(&owner, &owner_change(BUS, "org.example.Other", "", ":1.5")),
-                None
+                followed(&owner, owner_change(BUS, "org.example.Other", "", ":1.5")),
+                0
             );
             assert_eq!(owner.lock().unwrap().name(), Some(":1.7"));
 
-            assert_eq!(
-                owner_changed(&owner, &owner_change(BUS, NAME, ":1.7", ":1.8")),
-                Some(Signal::ServerChanged)
-            );
+            assert_eq!(followed(&owner, owner_change(BUS, NAME, ":1.7", ":1.8")), 1);
             assert_eq!(owner.lock().unwrap().name(), Some(":1.8"));
             assert_eq!(
                 from_server(&owner, &from(":1.7", "ActionInvoked", &(4, "approve"))),
@@ -1303,24 +1418,66 @@ mod tests {
             assert!(from_server(&owner, &from(":1.8", "ActionInvoked", &(4, "approve"))).is_some());
 
             assert_eq!(
-                owner_changed(&owner, &owner_change(BUS, NAME, ":1.8", "")),
-                Some(Signal::ServerChanged),
+                followed(&owner, owner_change(BUS, NAME, ":1.8", "")),
+                1,
                 "the server went away"
             );
             assert_eq!(owner.lock().unwrap().name(), None);
             assert_eq!(
-                owner_changed(&owner, &owner_change(BUS, NAME, "", ":1.9")),
-                None,
+                followed(&owner, owner_change(BUS, NAME, "", ":1.9")),
+                0,
                 "a server starting where there was none had shown nothing"
             );
             assert_eq!(owner.lock().unwrap().name(), Some(":1.9"));
+        }
+
+        #[test]
+        fn a_press_on_the_new_servers_note_cannot_slip_in_before_the_old_notes_are_forgotten() {
+            let (poster, server, mut rx) = poster(true);
+            poster.post(&note("$a", vec![])).unwrap();
+            let id = server.last_id();
+            let owner = Arc::new(std::sync::Mutex::new(ServerOwner::of(":1.7")));
+            let sink = poster.sink();
+            let (started_tx, started_rx) = std::sync::mpsc::channel();
+            let change = std::thread::spawn({
+                let owner = Arc::clone(&owner);
+                move || {
+                    owner_changed(
+                        &owner,
+                        &owner_change(
+                            "org.freedesktop.DBus",
+                            "org.freedesktop.Notifications",
+                            ":1.7",
+                            ":1.8",
+                        ),
+                        &|signal| {
+                            // The window: the change is under way, the notes not yet forgotten.
+                            started_tx.send(()).unwrap();
+                            std::thread::sleep(Duration::from_millis(300));
+                            sink(signal);
+                        },
+                    );
+                }
+            });
+            started_rx.recv().unwrap();
+            // The new server's first signal recycles the id of the old server's note.
+            if let Some(Signal::Action { id, action }) =
+                from_server(&owner, &from(":1.8", "ActionInvoked", &(id, "default")))
+            {
+                poster.sink()(Signal::Action { id, action });
+            }
+            change.join().unwrap();
+            assert!(
+                rx.try_recv().is_err(),
+                "a click on another app's note must not open a room"
+            );
         }
 
         /// The real [`SessionBusBackend`] against a notification server on a private
         /// socket (D-Bus peer to peer), which answers as a bus and a server would.
         mod peer {
             use super::super::super::xdg::SessionBusBackend;
-            use std::collections::HashMap;
+            use std::collections::{HashMap, VecDeque};
             use std::os::unix::net::UnixStream;
             use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
             use std::sync::{Arc, Mutex};
@@ -1331,6 +1488,8 @@ mod tests {
 
             struct Notifications {
                 hung: Arc<AtomicBool>,
+                /// How many calls the hung server has taken and is holding.
+                held: Arc<AtomicU32>,
                 next: AtomicU32,
             }
 
@@ -1349,6 +1508,7 @@ mod tests {
                     _expire_timeout: i32,
                 ) -> u32 {
                     if self.hung.load(Ordering::SeqCst) {
+                        self.held.fetch_add(1, Ordering::SeqCst);
                         std::future::pending::<()>().await;
                     }
                     match replaces_id {
@@ -1368,18 +1528,49 @@ mod tests {
                 }
             }
 
-            struct Bus;
+            /// What the fake bus answers to a `GetNameOwner`.
+            #[derive(Clone, Copy)]
+            pub enum OwnerReply {
+                /// Fails the way a timeout or a refusal would.
+                Failed,
+                /// The bus's own "nobody owns that name".
+                NoOwner,
+            }
+
+            struct Bus {
+                /// Answers taken in turn; once spent, the server is owned by [`OWNER`].
+                script: Arc<Mutex<VecDeque<OwnerReply>>>,
+                /// What `NameHasOwner` answers: whether the name is owned, or `None` to fail.
+                has_owner: Arc<Mutex<Option<bool>>>,
+            }
 
             #[zbus::interface(name = "org.freedesktop.DBus")]
             impl Bus {
-                fn get_name_owner(&self, _name: String) -> String {
-                    OWNER.into()
+                fn name_has_owner(&self, _name: String) -> zbus::fdo::Result<bool> {
+                    (*self.has_owner.lock().unwrap())
+                        .ok_or_else(|| zbus::fdo::Error::Failed("no".into()))
+                }
+
+                fn get_name_owner(&self, _name: String) -> zbus::fdo::Result<String> {
+                    match self.script.lock().unwrap().pop_front() {
+                        None => Ok(OWNER.into()),
+                        Some(OwnerReply::Failed) => Err(zbus::fdo::Error::Failed("no".into())),
+                        Some(OwnerReply::NoOwner) => {
+                            Err(zbus::fdo::Error::NameHasNoOwner("nobody".into()))
+                        }
+                    }
                 }
             }
 
             pub struct Peer {
                 /// While set, the server takes every call and never answers it.
                 pub hung: Arc<AtomicBool>,
+                /// How many `Notify` calls the hung server is holding.
+                pub held: Arc<AtomicU32>,
+                /// What `GetNameOwner` answers next; set before the first call.
+                pub owner_script: Arc<Mutex<VecDeque<OwnerReply>>>,
+                /// What `NameHasOwner` answers; `None` fails the call.
+                pub has_owner: Arc<Mutex<Option<bool>>>,
                 server: std::thread::JoinHandle<zbus::blocking::Connection>,
             }
 
@@ -1388,9 +1579,17 @@ mod tests {
             pub fn start(timeout: Duration) -> (SessionBusBackend, Peer) {
                 let (client, server) = UnixStream::pair().unwrap();
                 let hung = Arc::new(AtomicBool::new(false));
+                let held = Arc::new(AtomicU32::new(0));
                 let notifications = Notifications {
                     hung: Arc::clone(&hung),
+                    held: Arc::clone(&held),
                     next: AtomicU32::new(0),
+                };
+                let owner_script = Arc::new(Mutex::new(VecDeque::new()));
+                let has_owner = Arc::new(Mutex::new(Some(true)));
+                let bus = Bus {
+                    script: Arc::clone(&owner_script),
+                    has_owner: Arc::clone(&has_owner),
                 };
                 let server = std::thread::spawn(move || {
                     zbus::blocking::connection::Builder::async_io_unix_stream(server)
@@ -1399,7 +1598,7 @@ mod tests {
                         .p2p()
                         .serve_at("/org/freedesktop/Notifications", notifications)
                         .unwrap()
-                        .serve_at("/org/freedesktop/DBus", Bus)
+                        .serve_at("/org/freedesktop/DBus", bus)
                         .unwrap()
                         .build()
                         .unwrap()
@@ -1415,7 +1614,16 @@ mod tests {
                     }),
                     timeout,
                 );
-                (backend, Peer { hung, server })
+                (
+                    backend,
+                    Peer {
+                        hung,
+                        held,
+                        owner_script,
+                        has_owner,
+                        server,
+                    },
+                )
             }
 
             impl Peer {
@@ -1458,13 +1666,14 @@ mod tests {
 
         #[test]
         fn a_server_that_never_answers_costs_one_timeout_and_stops_nothing_else() {
-            const TIMEOUT: Duration = Duration::from_millis(800);
+            const TIMEOUT: Duration = Duration::from_millis(2000);
             let (backend, peer) = peer::start(TIMEOUT);
             let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
             let poster = Arc::new(XdgPoster::new(Arc::new(backend), tx));
-            for id in ["$a", "$b", "$c"] {
+            for id in ["$a", "$b", "$c", "$e", "$f"] {
                 poster.post(&note(id, vec![])).unwrap();
             }
+            let held = Arc::clone(&peer.held);
             let (server, hung) = peer.connected();
             hung.store(true, std::sync::atomic::Ordering::SeqCst);
 
@@ -1473,6 +1682,12 @@ mod tests {
                 let poster = Arc::clone(&poster);
                 move || poster.post(&note("$d", vec![]))
             });
+            // The press is sent only once the server is wedged on $d's Notify, so the post is
+            // certainly waiting when it comes.
+            assert!(
+                eventually(|| held.load(std::sync::atomic::Ordering::SeqCst) > 0),
+                "the server holds $d's Notify"
+            );
             // The server is wedged on $d's Notify, but its signals still come.
             peer::emit(
                 &server,
@@ -1488,8 +1703,9 @@ mod tests {
             });
             assert!(heard, "a press is heard while a post waits on the server");
             assert!(
-                !posting.is_finished(),
-                "heard before the post gave up, not after"
+                started.elapsed() < TIMEOUT,
+                "heard before the post's call timed out, not after: {:?}",
+                started.elapsed()
             );
 
             let posted = within(TIMEOUT * 5, move || posting.join().unwrap());
@@ -1504,10 +1720,117 @@ mod tests {
             });
             assert!(withdrawn.is_some(), "quit's withdraw_all returns");
             assert!(
-                started.elapsed() < TIMEOUT * 2,
-                "after one timeout, not one per note: {:?}",
+                started.elapsed() < TIMEOUT * 3,
+                "after one timeout, not one per note (five would take five): {:?}",
                 started.elapsed()
             );
+        }
+
+        /// The tray's watcher probe over the real backend and a fake bus: an owner means the
+        /// tray can be seen, no owner means it cannot, and a failed call keeps it available.
+        #[test]
+        fn the_status_notifier_watcher_probe_reads_the_bus() {
+            use crate::tray::{probe_watcher, WatcherProbe};
+            for (answer, expected) in [
+                (Some(true), WatcherProbe::Owned),
+                (Some(false), WatcherProbe::NoOwner),
+                (None, WatcherProbe::Failed),
+            ] {
+                let (backend, peer) = peer::start(Duration::from_secs(5));
+                *peer.has_owner.lock().unwrap() = answer;
+                assert_eq!(
+                    probe_watcher(&backend),
+                    expected,
+                    "the bus answered {answer:?}"
+                );
+                drop(peer.connected());
+            }
+        }
+
+        /// With no session bus at all the probe reads the tray as unavailable, and a timeout on a
+        /// live bus does not: the real backend over a connection that cannot be opened.
+        #[test]
+        fn with_no_session_bus_the_probe_reports_no_tray() {
+            use crate::tray::{probe_watcher, WatcherProbe};
+            let backend = SessionBusBackend::over(
+                Box::new(|| Err(zbus::Error::Failure("no bus".into()))),
+                Duration::from_millis(100),
+            );
+            assert_eq!(probe_watcher(&backend), WatcherProbe::NoOwner);
+        }
+
+        /// A poster over the fake bus whose `GetNameOwner` answers follow `script`.
+        fn poster_with_owner_script(
+            script: &[peer::OwnerReply],
+        ) -> (
+            XdgPoster,
+            peer::Peer,
+            tokio::sync::mpsc::UnboundedReceiver<super::super::ActionTaken>,
+        ) {
+            let (backend, peer) = peer::start(Duration::from_secs(5));
+            peer.owner_script
+                .lock()
+                .unwrap()
+                .extend(script.iter().copied());
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            (XdgPoster::new(Arc::new(backend), tx), peer, rx)
+        }
+
+        #[test]
+        fn a_failed_owner_lookup_is_asked_again() {
+            let (poster, peer, mut rx) = poster_with_owner_script(&[peer::OwnerReply::Failed]);
+            assert!(poster.offers_actions(), "the second ask answered");
+            poster.post(&note("$a", vec![])).unwrap();
+            let (server, _hung) = peer.connected();
+            peer::emit(
+                &server,
+                peer::OWNER,
+                NOTIFICATIONS,
+                "ActionInvoked",
+                &(1u32, "default"),
+            );
+            assert!(
+                eventually(|| rx.try_recv().is_ok()),
+                "and the press is heard"
+            );
+        }
+
+        #[test]
+        fn when_the_owner_cannot_be_learned_no_buttons_are_offered() {
+            let (poster, _peer, _rx) =
+                poster_with_owner_script(&[peer::OwnerReply::Failed, peer::OwnerReply::Failed]);
+            assert!(
+                !poster.offers_actions(),
+                "buttons whose presses would all be dropped are not offered"
+            );
+        }
+
+        #[test]
+        fn a_server_not_running_yet_is_not_a_failed_lookup() {
+            let (poster, peer, mut rx) = poster_with_owner_script(&[peer::OwnerReply::NoOwner]);
+            assert!(
+                poster.offers_actions(),
+                "nobody owning the name is an answer"
+            );
+            poster.post(&note("$a", vec![])).unwrap();
+            let (server, _hung) = peer.connected();
+            peer::emit(
+                &server,
+                "org.freedesktop.DBus",
+                ("/org/freedesktop/DBus", "org.freedesktop.DBus"),
+                "NameOwnerChanged",
+                &("org.freedesktop.Notifications", "", peer::OWNER),
+            );
+            // The match is heard before the press is, or the press would be dropped.
+            std::thread::sleep(Duration::from_millis(100));
+            peer::emit(
+                &server,
+                peer::OWNER,
+                NOTIFICATIONS,
+                "ActionInvoked",
+                &(1u32, "default"),
+            );
+            assert!(eventually(|| rx.try_recv().is_ok()));
         }
 
         #[test]

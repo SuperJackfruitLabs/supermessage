@@ -3,6 +3,7 @@ package dev.supermessage
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,6 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,7 +51,7 @@ fun FilterChips(
         modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = 16.dp)
             .testTag("filter-chips"),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -70,36 +72,44 @@ private fun FilterChip(chip: RosterFilterChip, isSelected: Boolean, onClick: () 
     val colors = SupermessageTheme.colors
     val key = RosterArrangement.filterKey(chip.filter)
     val textColor = if (isSelected) colors.accentContent else colors.content
-    Surface(
-        shape = CircleShape,
-        color = if (isSelected) colors.accent else colors.surfaceRaised,
-        border = if (isSelected) null else BorderStroke(1.dp, colors.border),
-        modifier = Modifier
+    // Drawn at iOS's 28dp, touched at 48dp: the node, and so the hit area, is the outer box.
+    Box(
+        Modifier
             .selectable(selected = isSelected, role = Role.Tab, onClick = onClick)
             .semantics { contentDescription = "${chip.title}, ${chip.count}" }
-            .testTag("chip-$key"),
+            .testTag("chip-$key")
+            // After the semantics, so the touch target is the enlarged box and the chip is drawn inside it.
+            .minimumInteractiveComponentSize(),
+        contentAlignment = Alignment.Center,
     ) {
-        Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Surface(
+            shape = CircleShape,
+            color = if (isSelected) colors.accent else colors.surfaceRaised,
+            border = if (isSelected) null else BorderStroke(1.dp, colors.border),
+            modifier = Modifier.testTag("chip-drawn-$key"),
         ) {
-            Text(
-                chip.title,
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                color = textColor,
-                maxLines = 1,
-            )
-            if (chip.filter != RosterFilter.ALL && chip.count > 0u) {
+            Row(
+                Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    "${chip.count}",
-                    style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                    chip.title,
+                    style = MaterialTheme.typography.bodySmall,
                     fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (isSelected) colors.accentContent else colors.contentMuted,
+                    color = textColor,
                     maxLines = 1,
-                    modifier = Modifier.testTag("chip-count-$key"),
                 )
+                if (chip.filter != RosterFilter.ALL && chip.count > 0u) {
+                    Text(
+                        "${chip.count}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFeatureSettings = "tnum"),
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) colors.accentContent else colors.contentMuted,
+                        maxLines = 1,
+                        modifier = Modifier.testTag("chip-count-$key"),
+                    )
+                }
             }
         }
     }

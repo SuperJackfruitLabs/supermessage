@@ -19,9 +19,11 @@ from scripts.tokens.emit_kotlin import emit_kotlin  # noqa: E402
 from scripts.tokens.emit_mark import (  # noqa: E402
     emit_android_colors,
     emit_android_foreground,
+    emit_android_mark,
     emit_android_monochrome,
     emit_logo_svg,
 )
+from scripts.tokens.emit_rust import emit_rust  # noqa: E402
 from scripts.tokens.emit_swift import emit_swift  # noqa: E402
 from scripts.tokens.model import TokenError, load  # noqa: E402
 
@@ -38,6 +40,7 @@ def main() -> int:
 
     outputs = {
         REPO / "src" / "lib" / "tokens.css": emit_app_css(tokens),
+        REPO / "src-tauri" / "src" / "tokens.rs": emit_rust(tokens),
         REPO
         / "apple"
         / "Supermessage"
@@ -79,6 +82,7 @@ def main() -> int:
     outputs[res / "values" / "generated_theme_colors.xml"] = emit_android_colors(tokens)
     outputs[res / "drawable" / "ic_launcher_foreground.xml"] = emit_android_foreground(tokens)
     outputs[res / "drawable" / "ic_launcher_monochrome.xml"] = emit_android_monochrome(tokens)
+    outputs[res / "drawable" / "mark.xml"] = emit_android_mark(tokens)
 
     for path, content in outputs.items():
         path.parent.mkdir(parents=True, exist_ok=True)

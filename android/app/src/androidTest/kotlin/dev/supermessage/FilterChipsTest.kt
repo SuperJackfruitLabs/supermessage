@@ -131,15 +131,21 @@ class FilterChipsTest {
             val node = compose.onNodeWithTag(tag).fetchSemanticsNode()
             assertTrue("$tag has a height", node.size.height > 0)
         }
-        // Each word is a single line: the text nodes are the chips' children.
-        val titles = compose.onNodeWithTag("chip-unread", useUnmergedTree = true)
-            .fetchSemanticsNode().children.flatMap { it.children + it }
-            .filter { it.config.getOrNull(SemanticsActions.GetTextLayoutResult) != null }
-        assertTrue(titles.isNotEmpty())
-        for (node in titles) {
-            val results = mutableListOf<TextLayoutResult>()
-            node.config[SemanticsActions.GetTextLayoutResult].action!!.invoke(results)
-            assertEquals(1, results.single().lineCount)
+        // Nothing is cut: each chip's words sit wholly inside the chip that is drawn around them.
+        for (key in listOf("all", "unread")) {
+            val drawn = compose.onNodeWithTag("chip-drawn-$key", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+            val words = compose.onNodeWithTag("chip-drawn-$key", useUnmergedTree = true)
+                .fetchSemanticsNode().children.flatMap { it.children + it }
+                .filter { it.config.getOrNull(SemanticsActions.GetTextLayoutResult) != null }
+            assertTrue("chip-$key has words", words.isNotEmpty())
+            for (w in words) {
+                val b = w.boundsInRoot
+                assertTrue(
+                    "chip-$key: $b inside $drawn",
+                    b.left >= drawn.left - 0.5f && b.right <= drawn.right + 0.5f &&
+                        b.top >= drawn.top - 0.5f && b.bottom <= drawn.bottom + 0.5f,
+                )
+            }
         }
     }
 }

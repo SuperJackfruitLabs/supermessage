@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Inbox
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Icon
 import androidx.compose.ui.Alignment
@@ -90,6 +88,8 @@ fun Roster(
     onFilter: (RosterFilter) -> Unit = {},
     /** Whether the roster has been read at all: an unread roster is not an empty account. */
     loaded: Boolean = true,
+    /** The core's count of invitations withheld from [sections] (`RosterArrangement.hiddenInvitations`). */
+    waitingInvitations: Int = invitations.size,
 ) {
     // The chips count the whole arrangement, so "Unread 2" stays 2 once it is chosen.
     val chips = remember(sections) { RosterArrangement.filterChips(sections) }
@@ -157,7 +157,7 @@ fun Roster(
                     ContentUnavailable(
                         title = "No rooms yet",
                         description = "Rooms appear here as they sync.",
-                        icon = Icons.Filled.Inbox,
+                        icon = Glyphs.InboxFilled,
                         modifier = Modifier.testTag("roster-empty-none"),
                     )
                 }
@@ -170,7 +170,7 @@ fun Roster(
                     ContentUnavailable(
                         title = words.title,
                         description = words.description,
-                        icon = Icons.Filled.FilterList,
+                        icon = Glyphs.FilterList,
                         modifier = Modifier.testTag("roster-empty-filter"),
                         action = {
                             TextButton(
@@ -185,7 +185,7 @@ fun Roster(
                 {
                     ContentUnavailable(
                         title = "Nothing but invitations",
-                        description = "${invitations.size} waiting — open Invitations above.",
+                        description = "$waitingInvitations waiting — open Invitations above.",
                         icon = Icons.Filled.Email,
                         modifier = Modifier.testTag("roster-empty-invitations"),
                     )

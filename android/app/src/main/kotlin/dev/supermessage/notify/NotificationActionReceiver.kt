@@ -44,7 +44,8 @@ import uniffi.supermessage_ffi.notificationResponse
  *   twice.
  * - **The budget counts from the broadcast**, not from the send: building a
  *   cold core happens inside it. A send that outruns it may still land, so
- *   the reader is told "wasn't sent" only once it has definitely failed.
+ *   the reader is told "wasn't sent" only once it has definitely failed, and
+ *   only while the note's account is still signed in.
  */
 class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -106,15 +107,20 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 val left = deadline - clock()
                 val sent = if (left > 0) withTimeoutOrNull(left) { work.await() } else null
                 val failed = answerFailedNotification(roomOf(response))
+                // Another account's note is dropped without a word; and once
+                // its account has signed out (sign-out withdrew everything),
+                // nothing goes up for it.
+                suspend fun tell() {
+                    if (!guarded.refusedOtherAccount && stillSignedInAs(client, account)) poster.postFailure(failed)
+                }
                 when (sent) {
-                    // Another account's note is dropped without a word.
-                    false -> if (!guarded.refusedOtherAccount) poster.post(failed)
+                    false -> tell()
                     true -> Unit
                     null -> {
                         // Still under way, and it may yet land: say so only if it fails.
                         scope.launch {
                             try {
-                                if (!work.await() && !guarded.refusedOtherAccount) poster.post(failed)
+                                if (!work.await()) tell()
                             } finally {
                                 release()
                             }
@@ -123,10 +129,19 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     }
                 }
             }
-            is NotificationResponse.Open -> AndroidPoster.noteFromExtras(intent)?.let { poster.post(it) }
+            is NotificationResponse.Open -> AndroidPoster.noteFromExtras(intent)?.let { poster.postAgain(it) }
             NotificationResponse.Ignore -> Unit
         }
         return false
+    }
+
+    /** The account the note was for is the one signed in, still; anything unknown is no. */
+    private suspend fun stillSignedInAs(client: LazyCoreAnswering, account: String?): Boolean = try {
+        account != null && client.restoreSessionQuietly() && client.account().userId == account
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        false
     }
 
     private fun roomOf(response: NotificationResponse.Answer): String = when (val a = response.answer) {

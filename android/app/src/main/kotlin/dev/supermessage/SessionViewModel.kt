@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.supermessage.kit.CoreClient
+import dev.supermessage.kit.NavigationRequests
 import dev.supermessage.kit.Session
 import dev.supermessage.kit.notify.NotificationCoordinator
 import dev.supermessage.notify.AndroidPoster
@@ -53,6 +54,12 @@ class SessionViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope,
         HiddenEventsPreferences(app),
     )
+
+    /**
+     * Rooms asked for from outside (a `supermessage://` link). Held here, not in the Activity, so
+     * a link that has not been shown yet survives the Activity being recreated.
+     */
+    val requests = NavigationRequests()
 
     /**
      * Deliberately empty beyond `super.onCleared()`. See this class's own

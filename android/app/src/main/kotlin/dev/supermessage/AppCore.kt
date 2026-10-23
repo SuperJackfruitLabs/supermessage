@@ -2,6 +2,8 @@ package dev.supermessage
 
 import android.content.Context
 import androidx.annotation.VisibleForTesting
+import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -10,6 +12,7 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import dev.supermessage.kit.notify.NotificationCoordinator
 import dev.supermessage.kit.widgets.WidgetFeed
 import dev.supermessage.kit.widgets.WidgetWriting
+import dev.supermessage.notify.PushOwner
 import dev.supermessage.notify.PushRegistrar
 import dev.supermessage.widgets.FileSnapshotStore
 import dev.supermessage.widgets.WidgetAccountStamp
@@ -51,9 +54,14 @@ object AppCore {
 
     /**
      * For work that outlives any Activity (a receiver's answer, a push). It
-     * never cancels: the process ending is its end.
+     * never cancels: the process ending is its end. A failure in one piece of
+     * work is logged, not thrown: a background push or answer must never take
+     * the process down.
      */
-    val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val scope: CoroutineScope = CoroutineScope(
+        SupervisorJob() + Dispatchers.Default +
+            CoroutineExceptionHandler { _, e -> Log.e("supermessage", "background work failed", e) },
+    )
 
     /**
      * The live notification coordinator, while a [SessionViewModel] holds
@@ -76,6 +84,7 @@ object AppCore {
             registrar ?: PushRegistrar(
                 core = { core(app) },
                 unregisterDistributor = { UnifiedPush.unregister(app, INSTANCE_DEFAULT) },
+                owner = pushOwner(app),
             ).also { registrar = it }
         }
     }
@@ -184,6 +193,9 @@ object AppCore {
      */
     @Volatile
     internal var decisionAnswered: (roomId: String, eventId: String, optionId: String) -> Unit = { _, _, _ -> }
+
+    /** Which account the pusher is for, on disk: the registrar sets it, each push is stamped with it. */
+    internal fun pushOwner(context: Context): PushOwner = PushOwner.Preferences(context)
 
     fun core(context: Context): CoreInterface {
         built?.let { return it }

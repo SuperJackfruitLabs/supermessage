@@ -117,6 +117,5 @@ class ProcessWidgetsTest {
         MutableStateFlow(Phase.STARTING),
         permissionLauncher = { screen.hashCode() },
         askForPush = { screen.hashCode() },
-        pushSignedOut = { screen.hashCode() },
     )
 }

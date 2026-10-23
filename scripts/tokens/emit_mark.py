@@ -166,7 +166,7 @@ def _vector(body: str, extra_ns: str = "") -> str:
     )
 
 
-def emit_android_foreground(tokens: Tokens) -> str:
+def _coloured_body() -> str:
     blue, coral = _ellipse_path(BLUE), _ellipse_path(CORAL)
     body = (
         _gradient_path(blue, "blue")
@@ -187,7 +187,31 @@ def emit_android_foreground(tokens: Tokens) -> str:
             + _gradient_path(BLUE_TAIL, "overlap")
             + "        </group>\n"
         )
-    return _vector(body, '\n    xmlns:aapt="http://schemas.android.com/aapt"')
+    return body
+
+
+def emit_android_foreground(tokens: Tokens) -> str:
+    return _vector(_coloured_body(), '\n    xmlns:aapt="http://schemas.android.com/aapt"')
+
+
+def emit_android_mark(tokens: Tokens) -> str:
+    """The mark alone, for the welcome screen: the logo's own box as the
+    viewport, with none of the adaptive icon's safe-zone margin. The shapes
+    are the foreground's, so the two cannot drift apart."""
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        + GENERATED_XML
+        + '<vector xmlns:android="http://schemas.android.com/apk/res/android"\n'
+        '    xmlns:aapt="http://schemas.android.com/aapt"\n'
+        f'    android:width="{VIEW_W}dp"\n'
+        f'    android:height="{VIEW_H}dp"\n'
+        f'    android:viewportWidth="{VIEW_W}"\n'
+        f'    android:viewportHeight="{VIEW_H}">\n'
+        f'    <group android:translateY="{-VIEW_Y}">\n'
+        + _coloured_body()
+        + "    </group>\n"
+        "</vector>\n"
+    )
 
 
 def emit_android_monochrome(tokens: Tokens) -> str:

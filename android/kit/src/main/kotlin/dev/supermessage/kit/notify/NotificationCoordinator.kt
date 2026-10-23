@@ -48,7 +48,11 @@ class NotificationCoordinator(
     @Volatile
     private var generation = 0
 
-    val notified: Set<String> get() = _notified.toSet()
+    /**
+     * A copy. A push reads it from another thread while a timeline run adds
+     * to it, so every touch of the set holds its monitor.
+     */
+    val notified: Set<String> get() = synchronized(_notified) { _notified.toSet() }
 
     val context: NotificationContext
         get() = NotificationContext(
@@ -94,11 +98,11 @@ class NotificationCoordinator(
         if (now() < catchUpUntilMs) timelineSinceMs = maxOf(timelineSinceMs, now())
         if (roomId == null) return@withLock
         val notes = notificationsForTimeline(
-            roomId, roomName, rows, timelineSinceMs.toULong(), _notified.toList(), context,
+            roomId, roomName, rows, timelineSinceMs.toULong(), synchronized(_notified) { _notified.toList() }, context,
         )
         // Recorded whether or not the room's setting lets them through:
         // "not delivered" is an answer too (`PlatformCoordinator.swift:245-248`).
-        for (note in notes) note.eventId?.let { _notified.add(it) }
+        synchronized(_notified) { for (note in notes) note.eventId?.let { _notified.add(it) } }
         deliver(notes)
     }
 
@@ -108,7 +112,7 @@ class NotificationCoordinator(
         previousRooms = emptyList()
         timelineRoomId = null
         timelineSinceMs = 0
-        _notified.clear()
+        synchronized(_notified) { _notified.clear() }
         catchUpUntilMs = 0
         modes.clear()
         remotePush = false

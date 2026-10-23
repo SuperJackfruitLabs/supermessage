@@ -5,13 +5,14 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
-import androidx.lifecycle.ViewModelProvider
+import androidx.activity.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import dev.supermessage.notify.PlatformCoordinator
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -70,6 +72,8 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.supermessage.kit.AppLink
+import dev.supermessage.kit.NavigationRequests
 import dev.supermessage.kit.RosterArrangement
 import dev.supermessage.kit.RosterChoice
 import dev.supermessage.kit.Session
@@ -108,9 +112,14 @@ class MainActivity : ComponentActivity() {
 
     private var coordinator: PlatformCoordinator? = null
 
+    private val model: SessionViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val model = ViewModelProvider(this)[SessionViewModel::class.java]
+        // A recreated Activity is handed the Intent it was first started with: that link (or
+        // notification tap) was already taken, or is still held by the view model, so it is not
+        // asked for again.
+        if (savedInstanceState == null) takeLink(intent)
         model.startNotifications()
         // Start and stop of the Activity are the app coming forward and going
         // away (iOS `scenePhase`); the notification lifecycle follows them.
@@ -125,7 +134,6 @@ class MainActivity : ComponentActivity() {
             session = model.session,
             permissionLauncher = { notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) },
             askForPush = { askForPush(this, registrar) },
-            pushSignedOut = registrar::signedOut,
         ).also { coordinator = it }
         // The widgets' snapshot is the process's, not this Activity's: the recap follows the
         // app's real foreground (so a recreation does not restart it), and the feed runs on
@@ -179,11 +187,52 @@ class MainActivity : ComponentActivity() {
                     // the one place in the tree that has one to give it.
                     val prefs = remember { RosterPreferences(applicationContext.rosterDataStore) }
 
-                    AppRoot(session = vm.session, prefs = prefs, appearance = appearance)
+                    val firstRun = remember { FirstRunPreferences(applicationContext.rosterDataStore) }
+                    // Only on a fresh launch: a rotation must not queue the demo again.
+                    if (savedInstanceState == null) {
+                        LaunchedEffect(Unit) { applyDebugLaunch(intent, firstRun) }
+                    }
+
+                    AppRoot(
+                        session = vm.session,
+                        prefs = prefs,
+                        appearance = appearance,
+                        firstRun = firstRun,
+                        requests = vm.requests,
+                    )
                 }
             }
         }
     }
+
+    /**
+     * A link, or a notification tap, while the app is running: the manifest's singleTask delivers
+     * both here. A tap is the same `supermessage://open?room=` link (`AndroidPoster.openRoomUri`).
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        takeLink(intent)
+    }
+
+    /**
+     * `supermessage://open?room=` (a link, or a notification's tap) becomes a request for that
+     * room; anything else does nothing. A room the roster does not list is AppRoot's to refuse.
+     */
+    private fun takeLink(intent: Intent?) {
+        val room = linkedRoom(intent) ?: return
+        model.requests.request(room)
+    }
+}
+
+/**
+ * The room a launch [intent] links to, if it is a `supermessage://open?room=` link that has not
+ * been followed before. Reopening the app from Recents relaunches the task with the Intent that
+ * first started it: a link already followed, flagged `FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY`.
+ */
+internal fun linkedRoom(intent: Intent?): String? {
+    if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
+    return intent.data?.toString()?.let(AppLink::roomId)
 }
 
 /** Edge to edge, with bar icons for the scheme in force rather than the phone's. */
@@ -210,7 +259,16 @@ private fun ComponentActivity.applySystemBars(dark: Boolean) {
  * already reaches `AndroidSecretStore.rawForTest`.
  */
 @Composable
-internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: AppearancePreferences? = null) {
+internal fun AppRoot(
+    session: Session,
+    prefs: RosterPreferences,
+    appearance: AppearancePreferences? = null,
+    /** The welcome and the first-run demo; `null` is no onboarding at all (a test not about it). */
+    firstRun: FirstRunPreferences? = null,
+    /** Rooms asked for from outside; `null` is none (a test not about links). */
+    requests: NavigationRequests? = null,
+) {
+    val requests = requests ?: remember { NavigationRequests() }
     val phase by session.phase.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
         if (phase == Session.Phase.STARTING) session.start()
@@ -283,6 +341,21 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
     // Which of the four places the list pane shows. Per session, saved across a
     // rotation, and back to Chats on sign-out so the next account never opens on
     // the last one's Needs you.
+    // A link made before sign-in waits for it; one still pending when the account signs out was the
+    // last account's and is dropped (Review Focus 1).
+    var wasSignedIn by remember { mutableStateOf(false) }
+    // A link that named a room the roster does not list, until the reader dismisses the notice.
+    var unavailableLink by remember { mutableStateOf(false) }
+    LaunchedEffect(phase) {
+        if (phase == Session.Phase.SIGNED_IN) {
+            wasSignedIn = true
+        } else if (phase == Session.Phase.SIGNED_OUT && wasSignedIn) {
+            wasSignedIn = false
+            requests.clear()
+            unavailableLink = false
+        }
+    }
+
     var destination by rememberSaveable(session) { mutableStateOf(Destination.CHATS) }
     // The search term lives here, not in the panel: the list pane is recomposed on
     // the way back from a result, and the term has to be there when it is.
@@ -310,8 +383,39 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
     // sign-in, and the alternative was an account whose backup could never be
     // opened by anyone, silently.
     val newRecoveryKey by session.newRecoveryKey.collectAsStateWithLifecycle()
+    val recoverySettled by session.recoverySettled.collectAsStateWithLifecycle()
+
+    // The first-run demo, over the signed-in shell, once the first sign-in's recovery key has been
+    // shown and put away (`RootView.swift:89-139`). Composed before the key's dialog so the key
+    // draws above it, should it still arrive.
+    if (firstRun != null) {
+        val demoPending by firstRun.demoPending.collectAsStateWithLifecycle(initialValue = false)
+        val demoSeen by firstRun.demoSeen.collectAsStateWithLifecycle(initialValue = true)
+        // Gone as soon as the reader finishes, not when the write lands: a write that fails (a full
+        // disk) must neither keep them in the demo nor take the app down.
+        var demoFinished by remember { mutableStateOf(false) }
+        if (phase == Session.Phase.SIGNED_IN && demoPending && !demoSeen && !demoFinished && newRecoveryKey == null && recoverySettled) {
+            FirstRunDemoScreen(
+                onFinish = {
+                    demoFinished = true
+                    scope.launch {
+                        try {
+                            firstRun.finishDemo()
+                        } catch (e: java.io.IOException) {
+                            // Not written: the demo comes back on the next launch, which is all it costs.
+                        }
+                    }
+                },
+            )
+        }
+    }
     newRecoveryKey?.let { key ->
         NewRecoveryKeyDialog(key = key, onDone = session::clearNewRecoveryKey)
+    }
+
+    // A link to a room the roster does not list, in iOS's words (`RoomScreen.swift:61-63`).
+    if (unavailableLink) {
+        RoomUnavailableDialog(onDismiss = { unavailableLink = false })
     }
 
     // Reactive, not a one-time snapshot: collectAsStateWithLifecycle
@@ -382,6 +486,23 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
                 session.rooms.select(roomId)
                 scope.launch { session.open(roomId) }
                 openDetail()
+            }
+            // A room asked for from outside, honoured once the roster is there: always in Chats, so
+            // Back lands somewhere that lists it (PhoneShell.swift:72-80).
+            //
+            // A room the roster does not list (left, or in another space) is not opened, and the core
+            // is not asked: iOS never calls `open` for one (`RoomScreen.swift:51-64`). Whatever the
+            // reader has open stays open, and nothing is left subscribed; they are told instead.
+            val asked by requests.pending.collectAsStateWithLifecycle()
+            LaunchedEffect(asked, phase, loaded) {
+                if (asked == null || phase != Session.Phase.SIGNED_IN || !loaded) return@LaunchedEffect
+                val roomId = requests.consume() ?: return@LaunchedEffect
+                if (rooms.any { it.room.id == roomId }) {
+                    destination = Destination.CHATS
+                    openRoom(roomId)
+                } else {
+                    unavailableLink = true
+                }
             }
             val railed = LocalNavigationRail.current
             Column(Modifier.fillMaxSize()) {
@@ -581,33 +702,33 @@ internal fun AppRoot(session: Session, prefs: RosterPreferences, appearance: App
             session.closeRoom()
         },
         signedOutContent = {
-            LoginScreen(
-                homeserver = homeserverField.value,
-                onHomeserverChange = homeserverField::onChange,
-                failure = failure,
-                busy = busy,
-                onSignIn = { username, password ->
-                    // busy lives here, not in Session: it
-                    // guards this form against a double tap,
-                    // it is not part of what Session itself
-                    // tracks (see Session.kt's own
-                    // `phase`/`failure`, neither of which
-                    // serves that purpose while a sign-in is
-                    // in flight).
-                    scope.launch {
-                        busy = true
-                        try {
-                            session.signIn(
-                                homeserver = homeserverField.value,
-                                username = username,
-                                password = password,
-                            )
-                        } finally {
-                            busy = false
+            SignedOutContent(firstRun = firstRun) {
+                LoginScreen(
+                    homeserver = homeserverField.value,
+                    onHomeserverChange = homeserverField::onChange,
+                    failure = failure,
+                    busy = busy,
+                    onSignIn = { username, password ->
+                        // busy lives here, not in Session: it guards this form against a double
+                        // tap, it is not part of what Session itself tracks.
+                        scope.launch {
+                            busy = true
+                            try {
+                                session.signIn(
+                                    homeserver = homeserverField.value,
+                                    username = username,
+                                    password = password,
+                                )
+                                // Only an interactive sign-in that got in queues the demo; a restored
+                                // session never does (`LoginView.swift:115-126`).
+                                if (session.phase.value == Session.Phase.SIGNED_IN) firstRun?.setDemoPending(true)
+                            } finally {
+                                busy = false
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         },
     )
 }
@@ -627,6 +748,20 @@ internal sealed class ExtraPanel {
     object NewRoom : ExtraPanel()
     data class RoomInfo(val roomId: String) : ExtraPanel()
     object Account : ExtraPanel()
+}
+
+/** "Room unavailable" for a link to a room the roster does not list; the reader stays where they were. */
+@Composable
+internal fun RoomUnavailableDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        modifier = Modifier.testTag("room-unavailable"),
+        onDismissRequest = onDismiss,
+        title = { Text("Room unavailable") },
+        text = { Text("It may have been left or removed.") },
+        confirmButton = {
+            TextButton(modifier = Modifier.testTag("room-unavailable-ok"), onClick = onDismiss) { Text("OK") }
+        },
+    )
 }
 
 /** A destination's own title, for the ones that do not draw one themselves (`NeedsYouView.swift:50`, `AgentsView.swift:49`). */

@@ -76,6 +76,9 @@ internal fun RosterPane(
             .filter { it.row.affordance == RoomAffordance.RESPOND_TO_INVITATION }
     }
 
+    // How many the core withholds from the sections: what "Nothing but invitations" counts.
+    val waiting = remember(rooms) { RosterArrangement.hiddenInvitations(rooms, showsInvitations = false) }
+
     // What the last swipe learned, per sign-in: a new session starts empty.
     val known = remember(session) { mutableStateMapOf<String, KnownSettings>() }
     val colors = SupermessageTheme.colors
@@ -110,6 +113,7 @@ internal fun RosterPane(
         Roster(
             sections = sections,
             invitations = invitations,
+            waitingInvitations = waiting,
             invitationsOpen = invitationsOpen,
             onToggleInvitations = { invitationsOpen = !invitationsOpen },
             now = now,

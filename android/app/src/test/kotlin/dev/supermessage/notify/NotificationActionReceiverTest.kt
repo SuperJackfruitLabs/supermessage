@@ -143,6 +143,9 @@ class NotificationActionReceiverTest {
         assertNotNull("posted again for the reader to tap", back)
         assertEquals("Lyra", back.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
         assertEquals(listOf("Approve", "Request changes", "Reject"), back.actions.map { it.title.toString() })
+        // Review Minor 4: announced once already; posted again without the sound and the heads-up.
+        assertEquals("silent", Notification.GROUP_ALERT_SUMMARY, back.groupAlertBehavior)
+        assertEquals(null, back.sound)
     }
 
     @Test
@@ -169,6 +172,23 @@ class NotificationActionReceiverTest {
         assertEquals("Your answer wasn't sent", failed.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
         assertEquals("Open the conversation to answer it there.", failed.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
         assertEquals("only the failure notice is up", 1, others().size)
+    }
+
+    /**
+     * Controller ruling: amber means a pending decision and nothing else
+     * (docs/design-language.md), and a failure is not one. iOS posts it as
+     * every other notification, with no accent (`LocalNotifier.postFailure`),
+     * so here it goes on the Messages channel with the default colour, though
+     * the core files it under Decision.
+     */
+    @Test
+    fun theFailureNoticeIsNeverAmber() {
+        install(Recording(refuses = true))
+        press(note(NotificationCategory.GATE), "Approve")
+        val failed = checkNotNull(failureNotice())
+        assertEquals("messages", failed.channelId)
+        assertEquals(Notification.COLOR_DEFAULT, failed.color)
+        assertEquals("its tap still opens the room", "supermessage://open?room=%21r%3Ax", shadowOf(failed.contentIntent).savedIntent.data.toString())
     }
 
     @Test
@@ -264,6 +284,38 @@ class NotificationActionReceiverTest {
         gated.release()
         scope.settle()
         assertNotNull("it definitely failed, so the reader is told", failureNotice())
+    }
+
+    /**
+     * Sign-out withdraws everything (RF5), so an answer still under way at
+     * sign-out that then fails does not put "wasn't sent" up afterwards for
+     * the account that left (whole-branch review, lifecycle walk-through).
+     */
+    @Test(timeout = 15_000)
+    fun aLateFailureAfterSignOutSaysNothing() {
+        val gate = CountDownLatch(1)
+        val core = object : Recording(refuses = true) {
+            @Volatile var signedOut = false
+            private val restoreCount = java.util.concurrent.atomic.AtomicInteger()
+            override fun restoreSessionQuietly(): Boolean {
+                calls += "restore"
+                // The answer's own restore is held past the budget; the check after it is not.
+                if (restoreCount.getAndIncrement() == 0) {
+                    gate.await()
+                    return true
+                }
+                return !signedOut
+            }
+        }
+        install(core)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val intent = intentFor(note(NotificationCategory.PERMISSION), "Allow once")
+        runBlocking { NotificationActionReceiver().handle(app, intent, scope, budgetMs = 200).join() }
+        core.signedOut = true
+        gate.countDown()
+        scope.settle()
+        assertEquals("it was tried, and refused", listOf("permission !r:x allow_once"), core.sent())
+        assertNull("its account left: nothing goes up", failureNotice())
     }
 
     @Test(timeout = 15_000)

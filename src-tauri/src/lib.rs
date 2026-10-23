@@ -27,6 +27,11 @@ mod notify;
 // Only Linux reports a press (see `notify::PluginPoster`), so elsewhere nothing calls in.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod notify_actions;
+// The tray is desktop-only (Tauri has no tray on mobile), and the tokens are only its dot.
+#[cfg(desktop)]
+mod tokens;
+#[cfg(desktop)]
+mod tray;
 
 use crate::commands::{
     acknowledgement, agent_avatar_style, agent_avatar_variants, attachment_discard,
@@ -47,7 +52,7 @@ use crate::commands::{
 };
 use crate::commands_notify::{
     notification_clear_all, notification_delivers, notification_permission, notification_post,
-    notifications_for_focused, notifications_for_roster, send_gate_decision_to,
+    notifications_for_focused, notifications_for_roster, send_gate_decision_to, turn_card,
 };
 use crate::commands_session::{
     account, blocked_users, direct_room_with, ignore_user, known_people, people_label,
@@ -196,6 +201,20 @@ pub fn run() {
 
     let builder = tauri::Builder::default();
 
+    // A second launch reveals this app instead of starting another process. First in the chain,
+    // as the plugin asks, so the second process exits before it opens a store or (in a debug
+    // build) starts the WebDriver server below. Debug, e2e and release copies share the one
+    // instance, as they share the data directory (AGENTS.md, "Driving the real UI").
+    //
+    // Upstream limits, on Linux (`tauri-plugin-single-instance` 2.5.2): its two blocking D-Bus
+    // calls (the second process's `ExecuteCallback`, and `release_name` at exit) have no method
+    // timeout, and an unparsable `DBUS_SESSION_BUS_ADDRESS` panics at start-up (a missing bus
+    // only means no single instance).
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        tray::reveal_running_app(app);
+    }));
+
     // The embedded WebDriver server, so this app's UI can be driven and its
     // DOM read without a human at the keyboard — the only way to test what a
     // row actually renders as, which is the whole symptom of the timeline bug
@@ -255,6 +274,13 @@ pub fn run() {
             if let WindowEvent::DragDrop(DragDropEvent::Drop { paths, .. }) = event {
                 host::on_files_dropped(window.app_handle(), paths.clone());
             }
+            // With "keep running in the tray" on (and a tray to come back by), closing hides the
+            // window; the process, sync and notifications carry on. Otherwise the close goes
+            // through and the app exits with its last window.
+            #[cfg(desktop)]
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                tray::handle_close_requested(window, api);
+            }
         })
         .setup(|app| {
             // `tauri.conf.json`'s `main` window has `create: false` — that
@@ -305,10 +331,12 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             {
                 let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                let poster: Arc<dyn notify::Poster> = Arc::new(notify::XdgPoster::new(
-                    Arc::new(notify::SessionBusBackend::new()),
-                    tx,
-                ));
+                // One session-bus connection: the notifier's, also asked by the tray whether
+                // anything shows it (`tray::refresh_tray_host`).
+                let bus = Arc::new(notify::SessionBusBackend::new());
+                let poster: Arc<dyn notify::Poster> =
+                    Arc::new(notify::XdgPoster::new(Arc::clone(&bus) as _, tx));
+                app.manage(bus);
                 app.manage(poster);
                 app.manage(notify::ActionInbox::new(rx));
                 spawn_action_consumer(app.handle().clone());
@@ -319,10 +347,27 @@ pub fn run() {
                     Arc::new(notify::PluginPoster::new(app.handle().clone()));
                 app.manage(poster);
             }
+            // The tray: a menu with the Needs you line and the way back into the app. Absent,
+            // with a log line, where the desktop cannot show one.
+            #[cfg(desktop)]
+            {
+                app.manage(tray::CloseBehaviour::default());
+                app.manage(tray::TrayHost::default());
+                tray::install(app.handle());
+                // Whether anything shows the tray (Linux): asked once now, off the main thread,
+                // and again whenever the page sends the setting.
+                #[cfg(target_os = "linux")]
+                {
+                    let handle = app.handle().clone();
+                    std::thread::spawn(move || tray::refresh_tray_host(&handle));
+                }
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             attention::set_attention,
+            #[cfg(desktop)]
+            tray::window_close_behaviour,
             attachment_stage_recording,
             attachment_mark_voice,
             voice_recording_spec,
@@ -351,6 +396,7 @@ pub fn run() {
             notifications_for_focused,
             notification_delivers,
             notification_post,
+            turn_card,
             send_gate_decision_to,
             connection_state,
             login,
@@ -429,6 +475,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
+            // A Dock click with no window showing brings the window back (it may be hidden in
+            // the tray).
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = event {
+                tray::Shell::show_window(app);
+            }
             // Notifications belong to the running app; none should outlive it.
             if let tauri::RunEvent::Exit = event {
                 if let Some(poster) = tauri::Manager::try_state::<Arc<dyn notify::Poster>>(app) {
