@@ -5,6 +5,10 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import androidx.compose.ui.semantics.SemanticsActions
@@ -40,9 +44,10 @@ class RoomRowTest {
         role: String? = null,
         runtime: RuntimeDto? = null,
         initial: String = "G",
+        id: String = "!a:x",
     ): RoomRow = RoomRow(
         room = RoomSummary(
-            id = "!a:x", name = name, avatarUrl = null, unread = unread, lastMessage = null,
+            id = id, name = name, avatarUrl = null, unread = unread, lastMessage = null,
             lastMessageIsOwn = false, lastMessageNamesSender = false, lastEventType = null,
             lastActivityMs = null, runtime = runtime, membership = Membership.JOINED,
         ),
@@ -221,5 +226,136 @@ class RoomRowTest {
                 node.config.getOrNull(SemanticsActions.OnClick)?.label == "About Ganesha"
             }
         ).assertExists()
+    }
+
+    private val tile = uniffi.supermessage_ffi.agentAvatarVariants()[0]
+
+    private fun under(tag: String) = androidx.compose.ui.test.hasTestTag(tag).and(
+        androidx.compose.ui.test.hasAnyAncestor(androidx.compose.ui.test.hasTestTag("avatar")),
+    )
+
+    @Test
+    fun anAgentsRowHasItsTileBadgeAndDot() {
+        compose.setContent {
+            RoomRow(row(), null, AgentState.ACTIVE, "2m", describesAgent = true, style = tile)
+        }
+        compose.onNode(under("agent-badge"), useUnmergedTree = true).assertIsDisplayed()
+        compose.onNode(under("state-dot"), useUnmergedTree = true).assertIsDisplayed()
+        val description = compose.onNodeWithTag("avatar").fetchSemanticsNode()
+            .config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)
+        assertEquals(listOf("Agent, active"), description)
+    }
+
+    @Test
+    fun aPersonsRowHasNoBadge() {
+        compose.setContent {
+            RoomRow(row(), null, AgentState.IDLE, "2m", describesAgent = false)
+        }
+        compose.onNodeWithTag("agent-badge", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("state-dot", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun theRowIsTwoLines() {
+        compose.setContent {
+            RoomRow(
+                row(
+                    runtime = RuntimeDto(harness = "claude-code", host = "foundry"),
+                    preview = RoomPreview(text = "a long preview ".repeat(20), pending = false),
+                ),
+                null, AgentState.ACTIVE, "2m", describesAgent = true, style = tile,
+            )
+        }
+        compose.onNodeWithText("claude-code", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("foundry", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("active", ignoreCase = true).assertDoesNotExist()
+        val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onNodeWithTag("row-preview").fetchSemanticsNode().config
+            .getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(results)
+        assertEquals(1, results.single().lineCount)
+    }
+
+    @Test
+    fun quietDrawsNoDot() {
+        compose.setContent {
+            RoomRow(row(), null, AgentState.QUIET, "3d", describesAgent = true, style = tile)
+        }
+        compose.onNodeWithTag("state-dot", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("agent-badge", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun aPeopleRoomShowsOnlyANeedsYouDot() {
+        var state by androidx.compose.runtime.mutableStateOf(AgentState.IDLE)
+        compose.setContent {
+            RoomRow(row(), null, state, "2m", describesAgent = false)
+        }
+        compose.onNodeWithTag("state-dot", useUnmergedTree = true).assertDoesNotExist()
+        compose.runOnUiThread { state = AgentState.NEEDS_YOU }
+        compose.waitForIdle()
+        compose.onNodeWithTag("state-dot", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun theStateDotCanBeTurnedOff() {
+        compose.setContent {
+            RoomRow(row(), null, AgentState.ACTIVE, "2m", showsState = false, describesAgent = true, style = tile)
+        }
+        compose.onNodeWithTag("state-dot", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun theAvatarOpensInfo() {
+        var opened = 0
+        compose.setContent {
+            RoomRow(row(name = "Atlas"), null, AgentState.ACTIVE, "2m", style = tile, onOpenInfo = { opened++ })
+        }
+        compose.onNode(
+            SemanticsMatcher("About Atlas") { it.config.getOrNull(SemanticsActions.OnClick)?.label == "About Atlas" },
+        ).performClick()
+        assertEquals(1, opened)
+    }
+
+    @Test
+    fun noPreviewShowsTheRole() {
+        compose.setContent {
+            RoomRow(row(preview = null, role = "Reviews the code"), null, AgentState.IDLE, "2m")
+        }
+        compose.onNodeWithText("Reviews the code").assertIsDisplayed()
+    }
+
+    @Test
+    fun twoLinesFitAtFontScaleTwo() {
+        compose.setContent {
+            val base = androidx.compose.ui.platform.LocalDensity.current
+            androidx.compose.runtime.CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(base.density, 2f),
+            ) {
+                androidx.compose.foundation.layout.Box(
+                    androidx.compose.ui.Modifier.requiredWidth(411.dp),
+                ) {
+                    RoomRow(
+                        row(
+                            name = "A long agent name that will not fit on one line", unread = 120uL,
+                            preview = RoomPreview(text = "a long preview ".repeat(20), pending = false),
+                            affordance = RoomAffordance.RESPOND_TO_INVITATION,
+                        ),
+                        null, AgentState.NEEDS_YOU, "2m", style = tile,
+                    )
+                }
+            }
+        }
+        for (text in listOf("A long agent name that will not fit on one line")) {
+            val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            compose.onNodeWithText(text).fetchSemanticsNode().config
+                .getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(results)
+            assertEquals(1, results.single().lineCount)
+        }
+        val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+        compose.onNodeWithTag("row-preview").fetchSemanticsNode().config
+            .getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(results)
+        assertEquals(1, results.single().lineCount)
+        compose.onNodeWithTag("unread-badge").assertIsDisplayed()
+        compose.onNodeWithText("99+").assertIsDisplayed()
     }
 }
