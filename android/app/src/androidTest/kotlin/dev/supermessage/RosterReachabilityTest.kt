@@ -549,6 +549,8 @@ class RosterReachabilityTest {
             roomInfoResult = { infoOf(it, 4uL) },
         )
         typeAndSend(fake, haptics)
+        // The send runs off the UI thread; waitForIdle does not wait for it (it failed once as `expected [hello there] but was []`).
+        compose.waitUntil(5_000) { fake.sent.isNotEmpty() && haptics.played.isNotEmpty() }
         assertEquals(listOf("hello there"), fake.sent)
         assertEquals(listOf(androidx.compose.ui.hapticfeedback.HapticFeedbackType.ContextClick), haptics.played)
     }
