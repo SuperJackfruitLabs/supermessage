@@ -774,6 +774,30 @@ impl Core {
         self.session.has_sent(&room_id)
     }
 
+    /// What the dock above the composer says, from the core's own rows and its
+    /// own "sent this session" — see `core::acknowledgement::for_focused`. The
+    /// host sends no rows. `None` when the focused room is not `room_id` (the
+    /// room changed under the ask, so there is nothing to say about this one);
+    /// `NotReady` when no room is focused.
+    pub fn acknowledgement(
+        &self,
+        room_id: String,
+        addressee: Option<String>,
+        agent_ids: Vec<String>,
+        typing_agents: Vec<String>,
+        turn_in_progress: bool,
+    ) -> Result<Option<supermessage_core::acknowledgement::Acknowledgement>, FfiError> {
+        let asked = self.block(supermessage_core::acknowledgement::for_focused(
+            &self.session.focused_timeline(),
+            &room_id,
+            addressee.as_deref(),
+            &agent_ids,
+            &typing_agents,
+            turn_in_progress,
+        ));
+        Ok(nothing_when_room_changed(asked)?)
+    }
+
     /// The events the reader hid on this device. The focused timeline groups
     /// as if those rows were absent and marks them `hidden`; the host keeps
     /// the ids and pushes the full set at sign-in and whenever it changes.
@@ -1629,6 +1653,20 @@ pub fn report_reason_remaining(reason: String) -> i64 {
     supermessage_core::safety::report_reason_remaining(&reason)
 }
 
+/// A dock asked about a room that is no longer the focused one has nothing to
+/// say: `Ok(None)`, never a stale room's acknowledgement. Other errors stay.
+fn nothing_when_room_changed(
+    asked: supermessage_core::error::CoreResult<
+        Option<supermessage_core::acknowledgement::Acknowledgement>,
+    >,
+) -> supermessage_core::error::CoreResult<Option<supermessage_core::acknowledgement::Acknowledgement>>
+{
+    match asked {
+        Err(supermessage_core::error::CoreError::RoomChanged { .. }) => Ok(None),
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod options_tests {
     use super::*;
@@ -1686,5 +1724,39 @@ mod options_tests {
         assert_eq!(settle_data_dir(&opts), root.join("group"));
         opts.legacy_data_dir = None;
         assert_eq!(settle_data_dir(&opts), root.join("group"));
+    }
+}
+
+#[cfg(test)]
+mod acknowledgement_tests {
+    use super::*;
+    use supermessage_core::error::CoreError;
+
+    /// Mutation seen failing: `Ok(None)` without asking (or swallowing every
+    /// error) fails the `NotReady` match.
+    #[test]
+    fn acknowledgement_without_a_focused_room_is_not_ready() {
+        let dir = std::env::temp_dir().join(format!("sm-ffi-ack-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let core = Core::new(dir.to_string_lossy().into_owned());
+        assert!(matches!(
+            core.acknowledgement("!r:x".into(), Some("Atlas".into()), vec![], vec![], false),
+            Err(FfiError::NotReady)
+        ));
+    }
+
+    /// Mutation seen failing: passing the `RoomChanged` error through fails
+    /// the first assertion.
+    #[test]
+    fn a_room_changed_ask_reads_as_nothing() {
+        let changed = Err(CoreError::RoomChanged {
+            requested: "!b:x".into(),
+            focused: "!a:x".into(),
+        });
+        assert!(matches!(nothing_when_room_changed(changed), Ok(None)));
+        assert!(matches!(
+            nothing_when_room_changed(Err(CoreError::NotReady)),
+            Err(CoreError::NotReady)
+        ));
     }
 }

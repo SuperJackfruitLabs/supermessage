@@ -1157,6 +1157,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1190,6 +1192,8 @@ internal interface UniffiLib : Library {
     ): Pointer
     fun uniffi_supermessage_ffi_fn_method_core_account(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferAccountDto.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_acknowledgement(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`addressee`: RustBuffer.ByValue,`agentIds`: RustBuffer.ByValue,`typingAgents`: RustBuffer.ByValue,`turnInProgress`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_agent_avatar(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_attachment_discard(`ptr`: Pointer,`token`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1650,6 +1654,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_account(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_acknowledgement(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_agent_avatar(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_attachment_discard(
@@ -1972,6 +1978,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_account() != 48469.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_acknowledgement() != 40306.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_agent_avatar() != 5049.toShort()) {
@@ -2638,6 +2647,15 @@ public interface CoreInterface {
     fun `account`(): AccountDto
     
     /**
+     * What the dock above the composer says, from the core's own rows and its
+     * own "sent this session" — see `core::acknowledgement::for_focused`. The
+     * host sends no rows. `None` when the focused room is not `room_id` (the
+     * room changed under the ask, so there is nothing to say about this one);
+     * `NotReady` when no room is focused.
+     */
+    fun `acknowledgement`(`roomId`: kotlin.String, `addressee`: kotlin.String?, `agentIds`: List<kotlin.String>, `typingAgents`: List<kotlin.String>, `turnInProgress`: kotlin.Boolean): Acknowledgement?
+    
+    /**
      * The agent behind an agent's room, with its avatar's bytes and the
      * file they are cached in, for the fleet Live Activity.
      */
@@ -3230,6 +3248,26 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_account(
         it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * What the dock above the composer says, from the core's own rows and its
+     * own "sent this session" — see `core::acknowledgement::for_focused`. The
+     * host sends no rows. `None` when the focused room is not `room_id` (the
+     * room changed under the ask, so there is nothing to say about this one);
+     * `NotReady` when no room is focused.
+     */
+    @Throws(FfiException::class)override fun `acknowledgement`(`roomId`: kotlin.String, `addressee`: kotlin.String?, `agentIds`: List<kotlin.String>, `typingAgents`: List<kotlin.String>, `turnInProgress`: kotlin.Boolean): Acknowledgement? {
+            return FfiConverterOptionalTypeAcknowledgement.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_acknowledgement(
+        it, FfiConverterString.lower(`roomId`),FfiConverterOptionalString.lower(`addressee`),FfiConverterSequenceString.lower(`agentIds`),FfiConverterSequenceString.lower(`typingAgents`),FfiConverterBoolean.lower(`turnInProgress`),_status)
 }
     }
     )

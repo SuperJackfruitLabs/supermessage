@@ -575,6 +575,15 @@ public protocol CoreProtocol : AnyObject {
     func account() throws  -> AccountDto
     
     /**
+     * What the dock above the composer says, from the core's own rows and its
+     * own "sent this session" — see `core::acknowledgement::for_focused`. The
+     * host sends no rows. `None` when the focused room is not `room_id` (the
+     * room changed under the ask, so there is nothing to say about this one);
+     * `NotReady` when no room is focused.
+     */
+    func acknowledgement(roomId: String, addressee: String?, agentIds: [String], typingAgents: [String], turnInProgress: Bool) throws  -> Acknowledgement?
+    
+    /**
      * The agent behind an agent's room, with its avatar's bytes and the
      * file they are cached in, for the fleet Live Activity.
      */
@@ -1164,6 +1173,25 @@ public static func withSecretStore(dataDir: String, store: HostSecretStore) -> C
 open func account()throws  -> AccountDto {
     return try  FfiConverterTypeAccountDto_lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_account(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * What the dock above the composer says, from the core's own rows and its
+     * own "sent this session" — see `core::acknowledgement::for_focused`. The
+     * host sends no rows. `None` when the focused room is not `room_id` (the
+     * room changed under the ask, so there is nothing to say about this one);
+     * `NotReady` when no room is focused.
+     */
+open func acknowledgement(roomId: String, addressee: String?, agentIds: [String], typingAgents: [String], turnInProgress: Bool)throws  -> Acknowledgement? {
+    return try  FfiConverterOptionTypeAcknowledgement.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_acknowledgement(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterOptionString.lower(addressee),
+        FfiConverterSequenceString.lower(agentIds),
+        FfiConverterSequenceString.lower(typingAgents),
+        FfiConverterBool.lower(turnInProgress),$0
     )
 })
 }
@@ -5682,6 +5710,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_account() != 48469) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_acknowledgement() != 40306) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_agent_avatar() != 5049) {

@@ -28,10 +28,37 @@ struct TimelineView: View {
     @State private var isAwayFromNewest = false
     /// Who is in the room: its agents, and who the header names (D11).
     @State private var cast: RoomCast?
-    /// The room the core last said the reader has sent into since signing in
-    /// (the core owns it), or `nil`. Keyed by room so an answer about one room
-    /// is never read as an answer about another while the next one loads.
-    @State private var sentInRoom: String?
+    /// What the core last said the dock reads, and for which room. Keyed by
+    /// room so an answer about one room is never shown in another while the
+    /// next one loads.
+    @State private var dock: DockAnswer?
+
+    private struct DockAnswer: Equatable {
+        let roomId: String
+        let acknowledgement: Acknowledgement?
+    }
+
+    /// Everything the dock's answer depends on. A change to any of it asks the
+    /// core again; a delivered send's echo bumps the revision, so the core's
+    /// "sent this session" is read again exactly when it may have changed.
+    private struct DockKey: Hashable {
+        let roomId: String?
+        let revision: UInt64
+        let castRoomId: String?
+        let addressee: String?
+        let agentIds: [String]
+        let typingAgents: [String]
+        let inProgress: Bool
+    }
+
+    private var dockKey: DockKey {
+        DockKey(
+            roomId: timeline.roomId, revision: timeline.revision,
+            castRoomId: cast?.roomId, addressee: cast?.addressee,
+            agentIds: cast?.agentIds ?? [],
+            typingAgents: session.typing.typingAgents,
+            inProgress: session.live.inProgress)
+    }
 
     /// What re-marks the room read: a change to the history, or the reader
     /// coming back to the newest end after being away.
@@ -124,9 +151,10 @@ struct TimelineView: View {
                 // Above the composer: the acknowledgement for an agent, the
                 // typing line for people. Both are pills that float, like the
                 // capsule under them, rather than a grey bar across the page.
-                // Each is asked of the core once per evaluation: the
-                // acknowledgement hands it the whole timeline.
-                let ack = self.acknowledgement
+                // Each is read once per evaluation. The acknowledgement is the
+                // core's answer about its own timeline, fetched below; it is
+                // `nil` until the core has answered for this room.
+                let ack = dock?.roomId == timeline.roomId ? dock?.acknowledgement : nil
                 let typingLine = session.typing.line
                 VStack(alignment: .leading, spacing: 4) {
                     if let ack {
@@ -145,13 +173,7 @@ struct TimelineView: View {
                 .animation(.snappy(duration: 0.22), value: typingLine)
             }
             .task(id: timeline.roomId) { await loadCast() }
-            // A delivered send's echo bumps the revision, so this is asked
-            // again exactly when the answer may have changed.
-            .task(id: "\(timeline.roomId ?? "")-\(timeline.revision)") {
-                if let roomId = timeline.roomId {
-                    sentInRoom = await session.hasSent(in: roomId) ? roomId : nil
-                }
-            }
+            .task(id: dockKey) { await loadDock() }
             // Success when a turn finishes in the room on screen (M2) — only
             // on the change to finished, never when a room opens onto a turn
             // that had already ended. Opening restores the record in two
@@ -178,16 +200,22 @@ struct TimelineView: View {
     }
 
     /// What the dock says: "Sent to Atlas" → "Atlas is on it…" → nothing.
-    /// The rules are the core's (`acknowledgement`); this only gathers the facts.
-    private var acknowledgement: Acknowledgement? {
-        guard let roomId = timeline.roomId else { return nil }
+    /// The rules, the rows and "sent this session" are the core's; this only
+    /// gathers the facts it cannot know.
+    private func loadDock() async {
+        guard let roomId = timeline.roomId else {
+            dock = nil
+            return
+        }
         let known = cast?.roomId == roomId
-        return SupermessageFFI.acknowledgement(
-            rows: timeline.items, addressee: known ? cast?.addressee : nil,
+        let answer = await session.acknowledgement(
+            in: roomId, addressee: known ? cast?.addressee : nil,
             agentIds: known ? cast?.agentIds ?? [] : [],
-            sentThisSession: sentInRoom == roomId,
             typingAgents: session.typing.typingAgents,
             turnInProgress: session.live.inProgress)
+        // The room may have changed while the core was answering.
+        guard !Task.isCancelled, timeline.roomId == roomId else { return }
+        dock = DockAnswer(roomId: roomId, acknowledgement: answer)
     }
 
     private func loadCast() async {

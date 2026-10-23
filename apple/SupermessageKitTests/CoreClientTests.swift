@@ -48,4 +48,22 @@ struct CoreClientTests {
         #expect(path.contains("Application Support"))
         #expect(path.hasSuffix("supermessage"))
     }
+
+    @Test("the dock is asked of the core with no rows, and is not ready with no focused room")
+    @MainActor
+    func theDockIsAskedOfTheCoreWithNoRows() async {
+        // The call's signature carries no `TimelineRow`: the core reads its
+        // own focused timeline. With no room focused it answers `NotReady`,
+        // which `Session.acknowledgement` reads as "nothing to say".
+        let client = CoreClient(dataDirectory: CoreClient.dataDirectory())
+        do {
+            _ = try await client.acknowledgement(
+                roomId: "!r:example.org", addressee: "Atlas", agentIds: [],
+                typingAgents: [], turnInProgress: false)
+            Issue.record("a core with no focused room answered the dock")
+        } catch FfiError.NotReady {
+        } catch {
+            Issue.record("expected NotReady, got \(error)")
+        }
+    }
 }

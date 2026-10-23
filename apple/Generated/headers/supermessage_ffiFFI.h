@@ -327,6 +327,11 @@ void*_Nonnull uniffi_supermessage_ffi_fn_constructor_core_with_secret_store(Rust
 RustBuffer uniffi_supermessage_ffi_fn_method_core_account(void*_Nonnull ptr, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ACKNOWLEDGEMENT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_ACKNOWLEDGEMENT
+RustBuffer uniffi_supermessage_ffi_fn_method_core_acknowledgement(void*_Nonnull ptr, RustBuffer room_id, RustBuffer addressee, RustBuffer agent_ids, RustBuffer typing_agents, int8_t turn_in_progress, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_AGENT_AVATAR
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_AGENT_AVATAR
 RustBuffer uniffi_supermessage_ffi_fn_method_core_agent_avatar(void*_Nonnull ptr, RustBuffer room_id, RustCallStatus *_Nonnull out_status
@@ -1530,6 +1535,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_widget_signed_out(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ACCOUNT
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ACCOUNT
 uint16_t uniffi_supermessage_ffi_checksum_method_core_account(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ACKNOWLEDGEMENT
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_ACKNOWLEDGEMENT
+uint16_t uniffi_supermessage_ffi_checksum_method_core_acknowledgement(void
     
 );
 #endif
