@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   M7 Android Task 3. The Agents widget: medium and large only (AgentsWidget.swift:14). The
-  sizes it is drawn at (wide 250x110, medium 250x150, large 250x250 dp) are
+  sizes it is drawn at (wide 250x110, medium 250x180, large 250x250 dp) are
   AgentsWidget.sizeMode; these are the least and the most the launcher may give it.
   updatePeriodMillis is Android's shortest (30 min): the second backstop under WidgetRedraw's
   periodic work.

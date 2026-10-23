@@ -58,7 +58,6 @@ internal object WidgetFrames {
             val bottom = (tall - 1 downTo 0).first { y ->
                 (3 * inset until widthPx - 3 * inset).any { x -> probe.getPixel(x, y) != ground }
             } + 1
-            println("EXTENT $name dark=$dark ${bottom / density}dp of ${size.height.value}dp")
             org.junit.Assert.assertTrue(
                 "$name${if (dark) " dark" else ""} is clipped or flush with the bottom edge: content ends at " +
                     "${bottom / density}dp of ${size.height.value}dp, which leaves under 8dp of padding",

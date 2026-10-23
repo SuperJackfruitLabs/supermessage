@@ -64,7 +64,7 @@ class AgentsWidget : GlanceAppWidget() {
 
     companion object {
         val WIDE = DpSize(250.dp, 110.dp)
-        val MEDIUM = DpSize(250.dp, 160.dp)
+        val MEDIUM = DpSize(250.dp, 180.dp)
         val LARGE = DpSize(250.dp, 250.dp)
     }
 }

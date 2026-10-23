@@ -161,11 +161,28 @@ class WidgetRedrawReceiver : BroadcastReceiver() {
  * main thread (the callbacks run there): `arm` reads the snapshot and asks the core when the
  * next frame is. The broadcast is held open ([BroadcastReceiver.goAsync]) until it is done,
  * so the process is not stopped half way. `goAsync` is null outside a real broadcast (a test
- * calling the callback directly), where there is nothing to hold.
+ * calling the callback directly) and after Glance took it: the WorkManager job holds the work then.
  */
+/** The WorkManager job that holds an arm no broadcast holds; replaced by a test. */
+internal var armHold: (Context) -> Unit = { app ->
+    runCatching {
+        androidx.work.WorkManager.getInstance(app).enqueueUniqueWork(
+            ARM_WORK,
+            androidx.work.ExistingWorkPolicy.KEEP,
+            androidx.work.OneTimeWorkRequestBuilder<WidgetRefreshWorker>().build(),
+        )
+    }
+}
+
+internal const val ARM_WORK = "widget-arm"
+
 internal fun BroadcastReceiver.armOffMain(context: Context) {
+    // Glance's own `onReceive` may already have taken the broadcast's PendingResult
+    // (`goAsync` hands it out once, then returns null). Then nothing of ours holds the process,
+    // so the arm also goes to WorkManager (unique, one at a time), whose job redraws and arms.
     val pending = goAsync()
     val app = context.applicationContext
+    if (pending == null) armHold(app)
     AppCore.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
         try {
             AppCore.widgetRedraw(app).arm()

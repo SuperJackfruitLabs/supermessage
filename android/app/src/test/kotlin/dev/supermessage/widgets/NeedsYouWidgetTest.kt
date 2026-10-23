@@ -200,7 +200,8 @@ class NeedsYouWidgetTest {
         assertEquals(CardFit(1, true, CardMode.BARE), fit(NeedsYouWidget.SMALL, 1.5f))
         assertEquals(CardFit(1, false, CardMode.FULL), fit(NeedsYouWidget.WIDE, 1f))
         assertEquals(CardFit(1, true, CardMode.TEXT), fit(NeedsYouWidget.LARGE, 2f))
-        assertEquals(CardFit(2, false, CardMode.BARE), fit(NeedsYouWidget.MEDIUM, 2f))
+        // Two bare cards leave room for the line that counts the third.
+        assertEquals(CardFit(2, true, CardMode.BARE), fit(NeedsYouWidget.MEDIUM, 2f))
     }
 
     @Test

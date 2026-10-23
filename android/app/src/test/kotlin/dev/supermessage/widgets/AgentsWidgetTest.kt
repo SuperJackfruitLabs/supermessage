@@ -269,7 +269,7 @@ class AgentsWidgetTest {
     @Test
     fun theBucketsAreTheSizesTheLauncherPicksFrom() {
         assertEquals(
-            listOf(DpSize(250.dp, 110.dp), DpSize(250.dp, 160.dp), DpSize(250.dp, 250.dp)),
+            listOf(DpSize(250.dp, 110.dp), DpSize(250.dp, 180.dp), DpSize(250.dp, 250.dp)),
             listOf(AgentsWidget.WIDE, AgentsWidget.MEDIUM, AgentsWidget.LARGE),
         )
         assertEquals(listOf(3, 3, 6), listOf(AgentsWidget.WIDE, AgentsWidget.MEDIUM, AgentsWidget.LARGE).map(::recapLimit))

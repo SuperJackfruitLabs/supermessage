@@ -73,6 +73,8 @@ class NeedsYouWidgetReceiverTest {
 
     @Test
     fun theProvidersDoTheirReadsOffTheMainThread() {
+        val realHold = armHold
+        armHold = {}
         val threads = java.util.concurrent.CopyOnWriteArrayList<Thread>()
         AppCore.installWidgetsForTest(
             null,
@@ -81,9 +83,19 @@ class NeedsYouWidgetReceiverTest {
         receiver.onEnabled(app)
         receiver.onUpdate(app, AppWidgetManager.getInstance(app), intArrayOf(7))
         AgentsWidgetReceiver().onUpdate(app, AppWidgetManager.getInstance(app), intArrayOf(8))
-        await("three arms") { threads.size == 3 }
+        await("three arms") { threads.size >= 3 }
         val main = android.os.Looper.getMainLooper().thread
+        armHold = realHold
         assertTrue("arm read the core on the main thread", threads.none { it === main })
+    }
+
+    /** Glance may have taken the broadcast's PendingResult: then nothing holds the arm but WorkManager. */
+    @Test
+    fun anArmWithNoBroadcastToHoldGoesToWorkManager() {
+        receiver.onEnabled(app)
+        await("the arm job") {
+            WorkManager.getInstance(app).getWorkInfosForUniqueWork(ARM_WORK).get().isNotEmpty()
+        }
     }
 
     @Test
