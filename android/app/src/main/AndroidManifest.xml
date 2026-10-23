@@ -106,5 +106,22 @@
         <receiver
             android:name=".widgets.WidgetRedrawReceiver"
             android:exported="false" />
+
+        <!--
+          M7 Android Task 2. The Needs you widget. Exported, as a widget provider must be (the
+          launcher sends APPWIDGET_UPDATE); Glance's own receiver for the buttons is merged in
+          by the library and is not exported.
+        -->
+        <receiver
+            android:name=".widgets.NeedsYouWidgetReceiver"
+            android:label="@string/needs_you_widget_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/needs_you_widget_info" />
+        </receiver>
     </application>
 </manifest>

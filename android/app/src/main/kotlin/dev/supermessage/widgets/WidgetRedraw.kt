@@ -18,9 +18,11 @@ import dev.supermessage.AppCore
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.launch
 
-/** The widgets that exist, so a redraw reaches each. The Needs you and Agents widgets register theirs. */
+/** The widgets that exist, so a redraw reaches each. */
 object WidgetRegistry {
-    private val registered = CopyOnWriteArrayList<GlanceAppWidget>()
+    // A redraw can start a cold process (an alarm, the periodic work) in which no provider has
+    // run, so the widgets this app has are known here, not only registered by their receivers.
+    private val registered = CopyOnWriteArrayList<GlanceAppWidget>(listOf(NeedsYouWidget()))
 
     fun register(widget: GlanceAppWidget) {
         if (registered.none { it::class == widget::class }) registered += widget

@@ -151,7 +151,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
  * a cold process) on the first call, inside the answer's own work and off
  * every cooperative thread.
  */
-private class LazyCoreAnswering(private val core: () -> CoreInterface) : NotificationAnswering {
+internal class LazyCoreAnswering(private val core: () -> CoreInterface) : NotificationAnswering {
     @Volatile
     private var client: CoreClient? = null
 

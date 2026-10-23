@@ -4,6 +4,7 @@ import dev.supermessage.kit.Session
 import dev.supermessage.notify.FEED_THROTTLE_MS
 import dev.supermessage.kit.widgets.WidgetWriting
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.sample
+import kotlinx.coroutines.withContext
 import uniffi.supermessage_core.RoomRow
 import uniffi.supermessage_core.TimelineRow
 import uniffi.supermessage_core.WidgetLiveTurn
@@ -42,6 +44,8 @@ import uniffi.supermessage_core.WidgetLiveTurn
 internal class WidgetPublisher(
     private val queue: WidgetWriteQueue,
     private val now: () -> Long = System::currentTimeMillis,
+    /** Whose snapshot this is, kept for a widget's button to check ([WidgetAccountStamp]). */
+    private val account: WidgetAccountStamp? = null,
 ) {
     // Callers are the main thread (the process lifecycle) and the flows' scope; one
     // lock keeps what a write captures and the order it is queued in together.
@@ -127,6 +131,7 @@ internal class WidgetPublisher(
         stopWatching()
         watching = listOf(
             phases.onEach(::phaseChanged).launchIn(scope),
+            phases.onEach { phase -> stamp(phase, session) }.launchIn(scope),
             session.rooms.rooms.sample(FEED_THROTTLE_MS).onEach(::roomsChanged).launchIn(scope),
             combine(session.timeline.roomId, session.timeline.items) { id, rows -> id to rows }
                 .sample(FEED_THROTTLE_MS)
@@ -140,6 +145,15 @@ internal class WidgetPublisher(
                 .onEach { (room, step) -> liveChanged(room, step) }
                 .launchIn(scope),
         )
+    }
+
+    private suspend fun stamp(phase: Session.Phase, session: Session) {
+        val stamp = account ?: return
+        when (phase) {
+            Session.Phase.SIGNED_IN -> session.account()?.userId?.let { withContext(Dispatchers.IO) { stamp.write(it) } }
+            Session.Phase.SIGNED_OUT -> withContext(Dispatchers.IO) { stamp.clear() }
+            Session.Phase.STARTING -> Unit
+        }
     }
 
     fun stopWatching() {

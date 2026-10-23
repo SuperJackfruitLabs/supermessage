@@ -199,8 +199,14 @@ internal class AndroidPoster(
             )
         }
 
-        /** `supermessage://open?room=<id>`; a Matrix id holds `!` and `:`, so it is a query item, encoded. */
-        fun openRoomUri(roomId: String): Uri =
-            Uri.parse("supermessage://open?room=" + URLEncoder.encode(roomId, "UTF-8"))
+        /**
+         * `supermessage://open?room=<id>[&event=<id>]`; a Matrix id holds `!` and `:`, so each is
+         * a query item, encoded. With [eventId] it opens the decision card (iOS `AppLink.decision`).
+         */
+        fun openRoomUri(roomId: String, eventId: String? = null): Uri =
+            Uri.parse(
+                "supermessage://open?room=" + URLEncoder.encode(roomId, "UTF-8") +
+                    (eventId?.let { "&event=" + URLEncoder.encode(it, "UTF-8") } ?: ""),
+            )
     }
 }

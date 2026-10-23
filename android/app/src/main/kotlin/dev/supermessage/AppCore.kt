@@ -12,6 +12,7 @@ import dev.supermessage.kit.widgets.WidgetFeed
 import dev.supermessage.kit.widgets.WidgetWriting
 import dev.supermessage.notify.PushRegistrar
 import dev.supermessage.widgets.FileSnapshotStore
+import dev.supermessage.widgets.WidgetAccountStamp
 import dev.supermessage.widgets.WidgetPublisher
 import dev.supermessage.widgets.WidgetRedraw
 import dev.supermessage.widgets.WidgetWriteQueue
@@ -94,6 +95,18 @@ object AppCore {
     @Volatile
     private var processObserved = false
 
+    @Volatile
+    private var widgetAccount: WidgetAccountStamp? = null
+
+    /** Whose decisions the widgets' snapshot holds (a widget's button checks it). */
+    internal fun widgetAccount(context: Context): WidgetAccountStamp {
+        widgetAccount?.let { return it }
+        val app = context.applicationContext
+        return synchronized(lock) {
+            widgetAccount ?: WidgetAccountStamp.inside(app.filesDir).also { widgetAccount = it }
+        }
+    }
+
     /**
      * The one writer of the widgets' snapshot (`filesDir/widgets/snapshot.json`):
      * the roster, the open room, every push and every widget button merge
@@ -136,6 +149,7 @@ object AppCore {
                     written = { reload -> widgetRedraw(app).after(reload) },
                     scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
                 ),
+                account = widgetAccount(app),
             ).also {
                 widgetPublisher = it
                 decisionAnswered = it::decisionAnswered
@@ -195,6 +209,7 @@ object AppCore {
             widgetWriting = writing
             widgetRedraw = redraw
             widgetPublisher = null
+            widgetAccount = null
             processObserved = false
         }
     }
