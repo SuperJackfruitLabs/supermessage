@@ -33,6 +33,7 @@ import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RichInline
 import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
+import uniffi.supermessage_core.TurnEnding
 import uniffi.supermessage_core.TurnStep
 
 /**
@@ -79,7 +80,7 @@ class MotionAndHapticsTest {
                 Timeline(
                     rows = listOf(message(1)), revision = 0uL, typingLine = null,
                     isPaginating = false, canPaginate = false, onPaginate = {}, onMarkRead = {},
-                    liveAnswer = null, liveThought = "thinking", liveFinished = finished,
+                    liveSummary = if (finished) ended(TurnEnding.DONE) else inProgress(), liveThought = "thinking",
                 )
             }
         }
@@ -101,7 +102,7 @@ class MotionAndHapticsTest {
                 Timeline(
                     rows = listOf(message(1)), revision = 0uL, typingLine = null,
                     isPaginating = false, canPaginate = false, onPaginate = {}, onMarkRead = {},
-                    liveAnswer = null, liveThought = "thinking", liveFinished = true,
+                    liveSummary = ended(TurnEnding.DONE), liveThought = "thinking",
                 )
             }
         }
@@ -121,12 +122,31 @@ class MotionAndHapticsTest {
                 Timeline(
                     rows = listOf(message(1)), revision = 0uL, typingLine = null,
                     isPaginating = false, canPaginate = false, onPaginate = {}, onMarkRead = {},
-                    liveAnswer = answer, liveFinished = false,
+                    liveAnswer = answer,
                 )
             }
         }
         compose.waitForIdle()
         answer = null
+        compose.waitForIdle()
+        assertEquals(emptyList<HapticFeedbackType>(), haptics.played)
+    }
+
+    /** Owner ruling: a turn the core gave up on did not succeed, so no success haptic. */
+    @Test
+    fun aTurnTheCoreGaveUpOnPlaysNoSuccessHaptic() {
+        var summary by mutableStateOf(inProgress())
+        compose.setContent {
+            CompositionLocalProvider(LocalHapticFeedback provides haptics, LocalReduceMotion provides true) {
+                Timeline(
+                    rows = listOf(message(1)), revision = 0uL, typingLine = null,
+                    isPaginating = false, canPaginate = false, onPaginate = {}, onMarkRead = {},
+                    liveSummary = summary,
+                )
+            }
+        }
+        compose.waitForIdle()
+        summary = ended(TurnEnding.TIMED_OUT)
         compose.waitForIdle()
         assertEquals(emptyList<HapticFeedbackType>(), haptics.played)
     }
@@ -155,11 +175,12 @@ class MotionAndHapticsTest {
         compose.setContent {
             CompositionLocalProvider(LocalReduceMotion provides reduce) {
                 Box(Modifier.requiredWidth(411.dp)) {
-                    LiveTurn(
-                        answer = null,
+                    LiveTurnCard(
+                        summary = inProgress(),
+                        steps = emptyList<TurnStep>(),
                         thought = "A long line of reasoning that wraps onto several lines. ".repeat(6),
-                        tools = emptyList<TurnStep>(),
-                        finished = false,
+                        answer = null,
+                        name = "Atlas",
                     )
                 }
             }
@@ -183,14 +204,19 @@ class MotionAndHapticsTest {
         assertEquals(settled, afterOneFrame)
     }
 
+    /**
+     * The card sits in the list, so its disclosures fade and never animate
+     * height (a height animation there is a resize the history would follow).
+     */
     @Test
-    fun reasoningAnimatesWhenNotReduced() {
+    fun reasoningNeverAnimatesItsHeight() {
         showReasoning(reduce = false)
         compose.mainClock.advanceTimeByFrame()
         val afterOneFrame = reasoningHeight()
         compose.mainClock.advanceTimeBy(1_000)
         val settled = reasoningHeight()
-        assertTrue("one frame in: $afterOneFrame, settled: $settled", afterOneFrame < settled)
+        assertTrue("settled height $settled", settled > 0)
+        assertEquals(settled, afterOneFrame)
     }
 
     // ── Arrival and placement on the timeline ───────────────────────────
@@ -207,8 +233,8 @@ class MotionAndHapticsTest {
                     Timeline(
                         rows = rows(), revision = revision(), typingLine = null,
                         isPaginating = false, canPaginate = false, onPaginate = {}, onMarkRead = {},
+                        liveSummary = if (streaming) inProgress() else null,
                         liveAnswer = if (streaming) "writing a reply" else null,
-                        liveFinished = false,
                     )
                 }
             }

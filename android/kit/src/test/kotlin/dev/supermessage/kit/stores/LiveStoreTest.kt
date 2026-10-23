@@ -263,6 +263,33 @@ class LiveStoreTest {
     }
 
     @Test
+    fun aGapThatArrivesWhileTheRecordIsBeingFetchedIsLookedAtAgain() = runTest {
+        val live = LiveStore(this)
+        val upToC = fold(room, tool("a"), tool("b", at = 2_000uL), tool("c", at = 3_000uL)).at(1uL, 4uL)
+        val upToE = fold(
+            room, tool("a"), tool("b", at = 2_000uL), tool("c", at = 3_000uL), tool("d", at = 4_000uL),
+            tool("e", at = 5_000uL),
+        ).at(1uL, 6uL)
+        val inFlight = CompletableDeferred<TurnSnapshot?>()
+        var asked = 0
+        live.focus(room) {
+            asked += 1
+            when (asked) { 1 -> null; 2 -> inFlight.await(); else -> upToE }
+        }
+
+        live.apply(update(upToC, index = 2))
+        testScheduler.advanceUntilIdle()
+        // The re-fetch is under way; step e lands past a gap too (d is missing).
+        live.apply(update(upToE, index = 4))
+        // The answer was taken before step e existed.
+        inFlight.complete(upToC)
+        testScheduler.advanceUntilIdle()
+
+        assertEquals("the second gap must ask again", 3, asked)
+        assertEquals(listOf("a", "b", "c", "d", "e"), live.steps.value.map { it.id })
+    }
+
+    @Test
     fun aSkippedStepDoesNotAdvanceTheRevision() {
         val live = store()
         val snap = fold(room, tool("a"), tool("b", at = 2_000uL)).at(1uL, 0uL)

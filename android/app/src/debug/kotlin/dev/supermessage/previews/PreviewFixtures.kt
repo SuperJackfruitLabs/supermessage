@@ -36,7 +36,9 @@ import uniffi.supermessage_core.SearchResultDto
 import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.ToolPhase
+import uniffi.supermessage_core.TurnEnding
 import uniffi.supermessage_core.TurnStep
+import uniffi.supermessage_core.TurnSummary
 import uniffi.supermessage_core.VoiceNoteTranscript
 import uniffi.supermessage_core.VoiceReplyPlayer
 import uniffi.supermessage_ffi.groupTimelineRows
@@ -940,6 +942,31 @@ object PreviewFixtures {
                 output = null, seq = 1uL, hasDetail = false,
             ),
         )
+
+    /**
+     * The core's summary of a turn, as the cards are drawn from it. Times are
+     * from zero, so a still frame reads the same however late it is taken.
+     */
+    fun turn(
+        startedAtMs: Long = 0L,
+        lastActivityMs: Long = 8_000L,
+        endedBy: TurnEnding? = null,
+        totalSteps: Int = 0,
+        completedSteps: Int = 0,
+        failedStep: String? = null,
+        currentStepTitle: String = "Starting",
+        stepIsTool: Boolean = false,
+        recordLabel: String? = null,
+        hasThought: Boolean = false,
+        answering: Boolean = false,
+    ) = TurnSummary(
+        roomId = "!room:example.org", turnId = 1uL, revision = 1uL,
+        inProgress = endedBy == null, endedBy = endedBy,
+        startedAtMs = startedAtMs.toULong(), endedAtMs = endedBy?.let { lastActivityMs.toULong() },
+        lastActivityMs = lastActivityMs.toULong(), answering = answering, hasThought = hasThought,
+        totalSteps = totalSteps.toUInt(), completedSteps = completedSteps.toUInt(), failedStep = failedStep,
+        currentStepTitle = currentStepTitle, stepIsTool = stepIsTool, recordLabel = recordLabel, agentId = null,
+    )
 
     const val LIVE_THOUGHT = "Checking whether the roster is already sorted."
     const val LIVE_ANSWER = "It is sorted by pending first, then by last activity."

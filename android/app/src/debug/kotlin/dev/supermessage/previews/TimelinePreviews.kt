@@ -193,10 +193,15 @@ internal fun TimelineLive() {
             canPaginate = false,
             onPaginate = {},
             onMarkRead = {},
-            liveAnswer = PreviewFixtures.LIVE_ANSWER,
+            liveSummary = PreviewFixtures.turn(
+                totalSteps = 3, completedSteps = 1, failedStep = "write src/lib/tokens.css",
+                currentStepTitle = "regenerate every design-token target", stepIsTool = true, hasThought = true,
+            ),
+            liveSteps = PreviewFixtures.liveTools,
             liveThought = PreviewFixtures.LIVE_THOUGHT,
-            liveTools = PreviewFixtures.liveTools,
-            liveFinished = false,
+            liveAnswer = PreviewFixtures.LIVE_ANSWER,
+            liveName = "Atlas",
+            liveNowMs = { 12_000L },
         )
     }
 }

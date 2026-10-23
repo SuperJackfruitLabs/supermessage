@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -155,6 +156,7 @@ fun TimelineRow(
     onReact: ((String) -> Unit)? = null,
     onDecide: (suspend (GateAnswer) -> Boolean)? = null,
     decisionAnswers: DecisionAnswers? = null,
+    prelude: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // "Who to name, already chosen ... Chosen by the list, which can see
@@ -180,6 +182,7 @@ fun TimelineRow(
                 faceUri = faceUri,
                 loadFace = loadFace,
                 onReact = onReact,
+                prelude = prelude,
                 modifier = modifier,
             )
 
@@ -409,6 +412,7 @@ private fun MessageBlock(
     faceUri: (mxcUri: String) -> String?,
     loadFace: suspend (mxcUri: String) -> Unit,
     onReact: ((String) -> Unit)? = null,
+    prelude: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val isOwn = row.item.isOwn
@@ -447,6 +451,10 @@ private fun MessageBlock(
             // this.
             EditedMarker()
         }
+
+        // A finished turn's record, between the header and the answer
+        // (`TimelineRowView.swift:308-314`).
+        prelude?.let { it(); Spacer(Modifier.height(6.dp)) }
 
         row.replyQuote?.let { ReplyQuoteBlock(it, onTap = onQuoteTap) }
 

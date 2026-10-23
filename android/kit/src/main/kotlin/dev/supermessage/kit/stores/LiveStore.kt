@@ -111,6 +111,9 @@ class LiveStore(private val scope: CoroutineScope? = null) {
     private var refetch: (suspend (String) -> TurnSnapshot?)? = null
     private var resync: Job? = null
 
+    /** A step with a gap before it arrived while a re-fetch was in flight. */
+    private var gapDuringResync = false
+
     // -- Who ---------------------------------------------------------------
 
     /**
@@ -223,14 +226,20 @@ class LiveStore(private val scope: CoroutineScope? = null) {
         val room = roomId ?: return
         val fetch = refetch ?: return
         val launcher = scope ?: return
-        if (resync?.isActive == true) return
+        if (resync?.isActive == true) {
+            // The answer on its way may predate this step: look again when it lands.
+            gapDuringResync = true
+            return
+        }
         val asked = generation
+        gapDuringResync = false
         resync = launcher.launch {
             val snapshot = fetch(room)
             // Left the room meanwhile: the answer is for the last visit.
             if (asked != generation) return@launch
             resync = null
             restore(snapshot)
+            if (gapDuringResync && parked.isNotEmpty()) requestResync()
         }
     }
 
@@ -345,6 +354,7 @@ class LiveStore(private val scope: CoroutineScope? = null) {
         parked.clear()
         resync?.cancel()
         resync = null
+        gapDuringResync = false
         placedRevision = null
     }
 

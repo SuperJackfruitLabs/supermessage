@@ -50,6 +50,8 @@ import uniffi.supermessage_core.RichInline
 import uniffi.supermessage_core.SystemKind
 import uniffi.supermessage_core.TimelineItemDto
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
+import uniffi.supermessage_core.TurnEnding
+import uniffi.supermessage_core.TurnSummary
 import uniffi.supermessage_ffi.groupTimelineRows
 
 /**
@@ -74,12 +76,14 @@ class TimelineTest {
         reactions: List<ReactionDto> = emptyList(),
         quotes: String? = null,
         readBy: List<String> = emptyList(),
+        senderName: String = "Sender",
+        edited: Boolean = false,
     ): TimelineRowDto {
         val item = TimelineItemDto(
             id = id, eventId = id, kind = "message", msgtype = "m.text", detail = null,
             sender = "@a:x", senderDisplayName = null, senderAvatar = null, body = body,
             formattedBody = null, media = null, customPayload = null, timestampMs = timestampMs,
-            isOwn = isOwn, sendState = null, edited = false,
+            isOwn = isOwn, sendState = null, edited = edited,
             replyTo = quotes?.let {
                 ReplyToDto(eventId = it, available = true, sender = "@a:x", senderDisplayName = "Sender", excerpt = "quoted", label = null)
             },
@@ -92,7 +96,7 @@ class TimelineTest {
                 blocks = listOf(RichBlock.Paragraph(inlines = listOf(RichInline.Text(body.orEmpty())))),
                 voice = null,
             ),
-            senderName = "Sender",
+            senderName = senderName,
             senderShort = "Sender",
             senderInitial = "?",
             membershipVerb = null,
@@ -719,8 +723,8 @@ class TimelineTest {
         rows: List<TimelineRowDto>,
         onReply: (TimelineRowDto) -> Unit = {},
         onSwipeReply: (TimelineRowDto) -> Unit = {},
+        liveSummary: TurnSummary? = null,
         liveAnswer: String? = null,
-        liveFinished: Boolean = false,
     ) {
         compose.setContent {
             CompositionLocalProvider(LocalReduceMotion provides true) {
@@ -729,7 +733,7 @@ class TimelineTest {
                         rows = rows, revision = 0uL, typingLine = null, isPaginating = false,
                         canPaginate = false, onPaginate = {}, onMarkRead = {},
                         onReply = onReply, onSwipeReply = onSwipeReply,
-                        liveAnswer = liveAnswer, liveFinished = liveFinished,
+                        liveSummary = liveSummary, liveAnswer = liveAnswer,
                     )
                 }
             }
@@ -835,7 +839,7 @@ class TimelineTest {
 
     @Test
     fun theJumpLandsOnTheRightRowBesideALiveTurn() {
-        showQuoting(quoting("r10"), liveAnswer = "thinking")
+        showQuoting(quoting("r10"), liveSummary = inProgress(), liveAnswer = "thinking")
         quoteIn("row-r39").performClick()
         compose.waitForIdle()
         assertCentred("row-r10")
@@ -843,9 +847,132 @@ class TimelineTest {
 
     @Test
     fun theJumpLandsOnTheRightRowBelowAFinishedLiveTurn() {
-        showQuoting(quoting("r10"), liveAnswer = "done", liveFinished = true)
+        showQuoting(quoting("r10"), liveSummary = ended(TurnEnding.DONE, "2 steps"))
         quoteIn("row-r39").performClick()
         compose.waitForIdle()
         assertCentred("row-r10")
+    }
+
+    // --- The activity card and the record ---------------------------------
+
+    private fun showTurn(
+        rows: () -> List<TimelineRowDto>,
+        summary: () -> TurnSummary?,
+        revision: () -> ULong = { 0uL },
+        answer: () -> String? = { null },
+        name: String = "Atlas",
+    ) {
+        compose.setContent {
+            CompositionLocalProvider(LocalReduceMotion provides true) {
+                Box(Modifier.requiredWidth(411.dp)) {
+                    Timeline(
+                        rows = rows(), revision = revision(), typingLine = null, isPaginating = false,
+                        canPaginate = false, onPaginate = {}, onMarkRead = {},
+                        liveSummary = summary(), liveAnswer = answer(), liveName = name,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun peer(id: String, ts: ULong) = row(id = id, body = "peer $id", timestampMs = ts)
+
+    private fun recordIn(rowTag: String) =
+        compose.onNode(hasTestTag("what-i-did") and hasAnyAncestor(hasTestTag(rowTag)), useUnmergedTree = true)
+
+    @Test
+    fun aTurnInProgressIsOneCardAtTheBottom() {
+        showTurn({ ascendingRows(3) }, { inProgress() })
+        compose.waitForIdle()
+        compose.onAllNodesWithTag("live-turn").assertCountEquals(1)
+        val card = compose.onNodeWithTag("live-turn").fetchSemanticsNode().boundsInRoot
+        for (id in listOf("1", "2", "3")) {
+            val row = compose.onNodeWithTag("row-$id").fetchSemanticsNode().boundsInRoot
+            assertTrue("card top ${card.top} must be below row $id bottom ${row.bottom}", card.top >= row.bottom - 1f)
+        }
+    }
+
+    @Test
+    fun aFinishedTurnHasNoCardAndItsRecordIsInTheAnswer() {
+        // The reader's own message came last, after the agent's answer: the
+        // record still belongs to the answer, not to the newest row.
+        val rows = listOf(
+            peer("a", 1_000uL),
+            row(id = "b", body = "mine", timestampMs = 2_000uL, isOwn = true),
+            peer("c", 3_000uL),
+            row(id = "d", body = "mine again", timestampMs = 4_000uL, isOwn = true),
+        )
+        showTurn({ rows }, { ended(TurnEnding.DONE, recordLabel = "2 steps") })
+        compose.waitForIdle()
+        compose.onNodeWithTag("live-turn").assertDoesNotExist()
+        compose.onAllNodesWithTag("what-i-did", useUnmergedTree = true).assertCountEquals(1)
+        recordIn("row-c").assertExists()
+        recordIn("row-a").assertDoesNotExist()
+        compose.onNodeWithText("2 steps", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun theRecordMovesToTheNewestAnswer() {
+        var rows by mutableStateOf(listOf(peer("a", 1_000uL), peer("c", 3_000uL)))
+        var revision by mutableStateOf(0uL)
+        showTurn({ rows }, { ended(TurnEnding.DONE, recordLabel = "2 steps") }, { revision })
+        compose.waitForIdle()
+        recordIn("row-c").assertExists()
+        rows = rows + peer("d", 4_000uL)
+        revision++
+        compose.waitForIdle()
+        recordIn("row-d").assertExists()
+        compose.onAllNodesWithTag("what-i-did", useUnmergedTree = true).assertCountEquals(1)
+    }
+
+    @Test
+    fun aTurnWithNoRecordLabelDrawsNoRecord() {
+        showTurn({ listOf(peer("a", 1_000uL)) }, { ended(TurnEnding.DONE, recordLabel = null) })
+        compose.waitForIdle()
+        compose.onNodeWithTag("what-i-did", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun theCardNamesTheRoomsAgent() {
+        showTurn({ ascendingRows(2) }, { inProgress() }, name = "Atlas")
+        compose.waitForIdle()
+        compose.onNodeWithText("Atlas").assertIsDisplayed()
+    }
+
+    /** RF1: a bridge that only edits its progress message starts no turn, so no card and no record. */
+    @Test
+    fun aBridgeThatOnlyEditsItsProgressMessageShowsNoCard() {
+        val rows = listOf(
+            peer("a", 1_000uL),
+            row(id = "p", body = "🔎 Searching files…", timestampMs = 2_000uL, edited = true, senderName = "bridge"),
+        )
+        showTurn({ rows }, { null })
+        compose.waitForIdle()
+        compose.onNodeWithTag("live-turn").assertDoesNotExist()
+        compose.onNodeWithTag("what-i-did", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    /** RF1: a turn the core ended with a reply leaves its record, and the card goes. */
+    @Test
+    fun aTurnTheCoreEndedByAReplyLeavesTheRecord() {
+        var summary by mutableStateOf<TurnSummary?>(inProgress())
+        val rows = listOf(peer("a", 1_000uL))
+        showTurn({ rows }, { summary })
+        compose.waitForIdle()
+        compose.onNodeWithTag("live-turn").assertIsDisplayed()
+        summary = ended(TurnEnding.REPLY, recordLabel = "1 step")
+        compose.waitForIdle()
+        compose.onNodeWithTag("live-turn").assertDoesNotExist()
+        compose.onNodeWithText("1 step", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun theRecordMakesTheAnswerRowTallerNotTheListMove() {
+        val rows = listOf(peer("a", 1_000uL), peer("c", 3_000uL))
+        showTurn({ rows }, { ended(TurnEnding.DONE, recordLabel = "2 steps") })
+        compose.waitForIdle()
+        val record = compose.onNodeWithTag("what-i-did", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val bubble = compose.onNode(hasTestTag("bubble") and hasAnyAncestor(hasTestTag("row-c")), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("the record (${record.bottom}) sits above the bubble (${bubble.top})", record.bottom <= bubble.top + 1f)
     }
 }

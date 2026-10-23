@@ -154,10 +154,10 @@ internal fun RoomPane(
         val typingView by session.typing.view.collectAsStateWithLifecycle()
         val typingLine = typingView.line
 
+        val liveSummary by session.live.summary.collectAsStateWithLifecycle()
         val liveAnswer by session.live.answer.collectAsStateWithLifecycle()
         val liveThought by session.live.thought.collectAsStateWithLifecycle()
-        val liveTools by session.live.steps.collectAsStateWithLifecycle()
-        val liveFinished by session.live.finished.collectAsStateWithLifecycle()
+        val liveSteps by session.live.steps.collectAsStateWithLifecycle()
 
         // Reply/edit/attachment: reactive so a long
         // press elsewhere (Timeline's message menu,
@@ -236,10 +236,16 @@ internal fun RoomPane(
                         loadFace = session.faces::load,
                         roomId = currentRoomId,
                         onMarkRead = { scope.launch { session.timeline.markRead() } },
-                        liveAnswer = liveAnswer,
+                        liveSummary = liveSummary,
+                        liveSteps = liveSteps,
                         liveThought = liveThought,
-                        liveTools = liveTools,
-                        liveFinished = liveFinished,
+                        liveAnswer = liveAnswer,
+                        // D11: the turn's own agent when the cast knows it, else the
+                        // room's agent (the cast's counterpart), else the last speaker.
+                        liveName = liveWriterName(
+                            castPeople?.counterpart?.name ?: session.live.agentName(currentRoomId), items,
+                            agentId = liveSummary?.agentId, cast = castPeople,
+                        ),
                         onReact = { row, key ->
                             scope.launch {
                                 session.toggleReaction(row.item.eventId, key, currentRoomId)

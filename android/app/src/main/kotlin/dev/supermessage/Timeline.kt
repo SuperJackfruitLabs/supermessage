@@ -64,7 +64,18 @@ import androidx.compose.ui.unit.dp
 import dev.supermessage.kit.DisplayRow
 import dev.supermessage.kit.TimelineAnimation
 import dev.supermessage.kit.displayRows
-import dev.supermessage.kit.stores.LiveStore
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.layout.onSizeChanged
+import dev.supermessage.kit.HistoryGlide
+import kotlinx.coroutines.flow.collectLatest
+import androidx.compose.runtime.withFrameNanos
+import uniffi.supermessage_core.ItemView
+import uniffi.supermessage_core.RoomCast
+import uniffi.supermessage_core.TurnEnding
+import uniffi.supermessage_core.TurnSummary
 import java.time.Instant
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.TimelineRow as TimelineRowDto
@@ -118,15 +129,25 @@ import uniffi.supermessage_core.TurnStep
  *
  * ## The live turn's place in the list
  *
- * Mirrors `TimelineCollectionView.swift`'s `snapshot(entries:...)`: a turn
- * **in progress** ([liveFinished] false) is the newest thing in the room, so
- * it sits at index 0 of the inverted list — below every history row. A
- * turn that has **finished** sits *above* the message it produced (one
- * position further from index 0), because "the reasoning and the tool
- * calls happened before the answer, and drawing them under it says they
- * happened after." [LiveTurn] itself decides whether there is anything to
- * show ([LiveStore.isLive]); nothing here duplicates that check to decide
- * *whether* to render it, only *where*.
+ * Mirrors `TimelineCollectionView.swift`'s `snapshot(entries:...)`. A turn
+ * **in progress** is one card ([LiveTurnCard]) at index 0 of the inverted
+ * list, below every history row, keyed `live-turn` so it is never remounted
+ * as its text grows. A **finished** turn has no cell: its record is drawn
+ * inside the answer's own row ([WhatIDid], as the row's prelude), on the
+ * newest non-own row whose view is a bubble ([recordAnchorId]). What is
+ * live comes from the core's turn record, so the card, the glide and the
+ * haptic read one state: [liveSummary].
+ *
+ * ## The history glide
+ *
+ * While a turn streams, the card grows and the list lays out **without
+ * animation** (the streaming cell's resize never animates). The history is
+ * then drawn where it was and eased to where it is, together, by a
+ * transform alone: 0.32 s on `(0.25, 0.1, 0.25, 1)`, as iOS does
+ * (`TimelineCollectionView.swift:187`, `:226`, [HistoryGlide]). Only at the
+ * newest message (scrolled back, the list already keeps the reader's place,
+ * so a quote jump is never pulled back by the growing card), and not under
+ * Reduce Motion.
  *
  * ## Membership runs and stretches — the core groups, the reader opens
  *
@@ -174,10 +195,13 @@ fun Timeline(
     canPaginate: Boolean,
     onPaginate: () -> Unit,
     onMarkRead: () -> Unit,
-    liveAnswer: String? = null,
+    liveSummary: TurnSummary? = null,
+    liveSteps: List<TurnStep> = emptyList(),
     liveThought: String? = null,
-    liveTools: List<TurnStep> = emptyList(),
-    liveFinished: Boolean = false,
+    liveAnswer: String? = null,
+    liveName: String = "Agent",
+    /** The clock the card's running elapsed time reads; a preview pins it so its frame is the same every time. */
+    liveNowMs: () -> Long = System::currentTimeMillis,
     onReact: (row: TimelineRowDto, key: String) -> Unit = { _, _ -> },
     onDecide: suspend (row: TimelineRowDto, answer: GateAnswer) -> Boolean = { _, _ -> false },
     onReply: (row: TimelineRowDto) -> Unit = {},
@@ -195,7 +219,11 @@ fun Timeline(
     // Per list, so per room (the pane keys the list by room), and above the
     // lazy items so a recycled row cannot forget what this device answered.
     val decisionAnswers = rememberDecisionAnswers()
-    val isLive = liveAnswer != null || liveThought != null || liveTools.isNotEmpty()
+    // One state for everything live: the core's turn record (and the answer
+    // being written). `finished` is the core's `endedBy`, however it ended.
+    val isLive = liveSummary != null || liveAnswer != null
+    val liveFinished = liveSummary?.endedBy != null
+    val streaming = isLive && !liveFinished
 
     // Faces for readers, from the messages they have sent here. A receipt
     // carries only a user id; the room has usually already shown that
@@ -274,22 +302,23 @@ fun Timeline(
             for (d in entries) if (d is DisplayRow.Row) d.row.item.eventId?.let { put(it, d.id) }
         }
     }
-    val liveAtZero = isLive && !liveFinished
-    val liveAtOne = isLive && liveFinished && newestFirst.isNotEmpty()
+    val anchorId = remember(revision) { recordAnchorId(rows) }
 
     // A turn finishing in the room on screen is a success haptic, once, on the
     // change to finished (`TimelineView.swift:143`, `!was && now`). A list that
     // opens onto an already-finished turn starts with `finished` remembered,
-    // and a turn that goes away without finishing never flips it.
-    var wasFinished by remember { mutableStateOf(liveFinished) }
-    LaunchedEffect(liveFinished) {
-        if (!wasFinished && liveFinished) haptics.play(Haptic.Success)
-        wasFinished = liveFinished
+    // and a turn that goes away without finishing never flips it. A turn the
+    // core gave up on (timed out) did not succeed: no success haptic.
+    val succeeded = liveSummary?.endedBy.let { it == TurnEnding.DONE || it == TurnEnding.REPLY }
+    var wasFinished by remember { mutableStateOf(succeeded) }
+    LaunchedEffect(succeeded) {
+        if (!wasFinished && succeeded) haptics.play(Haptic.Success)
+        wasFinished = succeeded
     }
     fun jumpTo(id: String) {
         val position = newestFirst.indexOfFirst { it.id == id }
         if (position < 0) return
-        val index = position + if (liveAtZero || (liveAtOne && position >= 1)) 1 else 0
+        val index = position + if (streaming) 1 else 0
         highlightedId = id
         jumpSerial++
         scope.launch {
@@ -404,6 +433,13 @@ fun Timeline(
         if (isAtNewest) onMarkRead()
     }
 
+    // The history glide's state: the offset every item is drawn at, read only
+    // in the draw phase (a layer block), never in composition or layout.
+    val glideDriver = remember { GlideDriver() }
+    LaunchedEffect(glideDriver) { glideDriver.run() }
+    LaunchedEffect(streaming) { if (!streaming) glideDriver.reset() }
+    val glideLayer = remember(glideDriver) { Modifier.graphicsLayer { translationY = glideDriver.offset } }
+
     // Grouping applied here, the row's own header rendered by TimelineRow.
     // Exhaustive over DisplayRow — no `else` — so a third variant added later
     // is a compile error here rather than a blank row.
@@ -434,6 +470,9 @@ fun Timeline(
                         highlighted = highlightedId == row.item.id,
                         onQuoteTap = quoteJump,
                         attribution = if (row.showsRuntime) row.senderName else row.senderShort,
+                        prelude = liveSummary?.recordLabel?.takeIf { liveFinished && row.item.id == anchorId }?.let { label ->
+                            { WhatIDid(label = label, thought = liveThought, steps = liveSteps) }
+                        },
                         imageUri = imageUri,
                         faceUri = faceUri,
                         loadFace = loadFace,
@@ -509,30 +548,48 @@ fun Timeline(
         }
     }
 
-    // What a row does as it arrives and as its neighbours move. The streaming
-    // turn's cell gets none of it, so its growth never animates. While a turn
-    // streams, history rows do not spring either: M4 ports iOS's 0.32 s glide
-    // (owner ruling, M4 Q5), and until then they hold still.
+    // What a row does as it arrives and as its neighbours move. While a turn
+    // streams, history rows get none of it: their placement is the glide's,
+    // a transform that follows the card's growth (below), and a placement
+    // spring on top of it would be a second motion for the same move.
     @Composable
     fun androidx.compose.foundation.lazy.LazyItemScope.rowMotion(id: String): Modifier {
-        if (!animatesThisUpdate) return Modifier
+        if (!animatesThisUpdate || streaming) return glideLayer
         return Modifier
             .animateItem(
                 fadeInSpec = null,
-                placementSpec = if (reduceMotion || liveAtZero) null else spring<androidx.compose.ui.unit.IntOffset>(),
+                placementSpec = if (reduceMotion) null else spring<androidx.compose.ui.unit.IntOffset>(),
                 fadeOutSpec = motion(reduceMotion, tween<Float>(150)),
             )
             .arrivalRise(arrivals, id, reduceMotion)
+            .then(glideLayer)
     }
 
     @Composable
     fun LiveTurnCell() {
-        LiveTurn(
-            answer = liveAnswer,
+        var lastHeight by remember { mutableIntStateOf(0) }
+        LiveTurnCard(
+            summary = liveSummary,
+            steps = liveSteps,
             thought = liveThought,
-            tools = liveTools,
-            finished = liveFinished,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            answer = liveAnswer,
+            name = liveName,
+            nowMs = liveNowMs,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .onSizeChanged { size ->
+                    // The card grew: the list has already laid out (without
+                    // animation), so the history is draw back where it was and
+                    // glides. Not on first appearance, and only at the newest
+                    // message: scrolled back the list keeps the reader's place.
+                    val grew = size.height - lastHeight
+                    val first = lastHeight == 0
+                    lastHeight = size.height
+                    val atNewest = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+                    if (!first && grew > 0.5f && streaming && !reduceMotion && atNewest) glideDriver.grew(grew.toFloat())
+                }
+                .then(glideLayer),
         )
     }
 
@@ -569,28 +626,13 @@ fun Timeline(
                 contentPadding = PaddingValues(vertical = 8.dp),
             ) {
                 // A turn in progress is the newest thing in the room: index 0,
-                // below every history row. See the class doc's "The live
-                // turn's place in the list".
-                if (isLive && !liveFinished) {
+                // below every history row. A finished turn has no cell here;
+                // its record is in the answer's row.
+                if (streaming) {
                     item(key = "live-turn") { LiveTurnCell() }
                 }
-
-                if (isLive && liveFinished && newestFirst.isNotEmpty()) {
-                    // A finished turn sits above the message it produced —
-                    // "the reasoning and the tool calls happened before the
-                    // answer". The newest message stays at the very bottom.
-                    val newest = newestFirst.first()
-                    item(key = newest.id) {
-                        HistoryRow(newest, itemModifier = rowMotion(newest.id))
-                    }
-                    item(key = "live-turn") { LiveTurnCell() }
-                    items(newestFirst.drop(1), key = { it.id }) { row ->
-                        HistoryRow(row, itemModifier = rowMotion(row.id))
-                    }
-                } else {
-                    items(newestFirst, key = { it.id }) { row ->
-                        HistoryRow(row, itemModifier = rowMotion(row.id))
-                    }
+                items(newestFirst, key = { it.id }) { row ->
+                    HistoryRow(row, itemModifier = rowMotion(row.id))
                 }
                 if (isPaginating) {
                     item(key = "pagination-spinner") {
@@ -755,3 +797,84 @@ private val ExpandedStretches = listSaver<Set<String>, String>(
     save = { it.toList() },
     restore = { it.toSet() },
 )
+
+
+/**
+ * The row that carries a finished turn's record: the newest row that is not
+ * the reader's own and whose view is a bubble (`TimelineCollectionView.swift:812-824`).
+ */
+internal fun recordAnchorId(rows: List<TimelineRowDto>): String? =
+    rows.lastOrNull { !it.item.isOwn && it.view is ItemView.Bubble }?.item?.id
+
+/**
+ * Who the card is named for (D11, owner answer Q1): the turn's own agent
+ * ([agentId], which the core takes from the sender of the turn's first live
+ * event) when the room's [cast] knows it, by the cast's display name; the room's
+ * agent ([agentName], the cast's counterpart) when it does not; else whoever
+ * spoke last, else "Agent".
+ */
+internal fun liveWriterName(
+    agentName: String?,
+    rows: List<TimelineRowDto>,
+    agentId: String? = null,
+    cast: RoomCast? = null,
+): String {
+    if (agentId != null && cast != null) {
+        val counterpart = cast.counterpart
+        val named = when {
+            counterpart != null && counterpart.userId == agentId -> counterpart.name
+            agentId in cast.agentIds -> cast.people.firstOrNull { it.userId == agentId }?.name
+            else -> null
+        }
+        if (named != null) return named
+    }
+    return agentName ?: rows.lastOrNull { !it.item.isOwn }?.senderName ?: "Agent"
+}
+
+/**
+ * The history glide's frame loop. [grew] puts the offset in place at once, in
+ * the same layout pass that grew the card (so there is no frame where the
+ * history has already moved), and [run] eases it away on the frame clock.
+ */
+internal class GlideDriver {
+    private val glide = HistoryGlide()
+    var offset by mutableFloatStateOf(0f)
+        private set
+
+    /**
+     * Counts growths. The frame loop restarts on every change, so a growth
+     * that arrives as the last glide ends (in the layout of the same frame)
+     * is never left without a loop; a flag that goes false then true again
+     * before the loop looks would be conflated away.
+     */
+    private var epoch by mutableIntStateOf(0)
+
+    fun grew(deltaPx: Float) {
+        glide.add(deltaPx)
+        offset += deltaPx
+        epoch++
+        // Called from the layout that grew the card. The layers read `offset`
+        // in the draw phase, and a plain write reaches them on the *next*
+        // main-looper turn: a frame in which the history has already moved and
+        // is not yet drawn back. Publishing now puts the offset in this frame.
+        Snapshot.sendApplyNotifications()
+    }
+
+    fun reset() {
+        glide.clear()
+        offset = 0f
+        epoch++
+    }
+
+    suspend fun run() {
+        snapshotFlow { epoch }.collectLatest {
+            while (true) {
+                val over = withFrameNanos { now ->
+                    offset = glide.offsetAt(now)
+                    !glide.isActive
+                }
+                if (over) break
+            }
+        }
+    }
+}
