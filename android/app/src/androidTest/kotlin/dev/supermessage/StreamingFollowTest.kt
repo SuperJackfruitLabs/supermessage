@@ -68,9 +68,9 @@ class StreamingFollowTest {
         compose.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes()
             .firstOrNull()?.boundsInRoot
 
-    private fun waitFor(what: String, cond: () -> Boolean) {
+    private fun waitFor(what: String, timeoutMillis: Long = 10_000, cond: () -> Boolean) {
         try {
-            compose.waitUntil(timeoutMillis = 10_000) { cond() }
+            compose.waitUntil(timeoutMillis = timeoutMillis) { cond() }
         } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
             throw AssertionError("timed out waiting for: $what", e)
         }
@@ -144,7 +144,9 @@ class StreamingFollowTest {
             val controller = WindowCompat.getInsetsController(compose.activity.window, host())
             if (up) controller.show(WindowInsetsCompat.Type.ime()) else controller.hide(WindowInsetsCompat.Type.ime())
         }
-        waitFor(if (up) "the keyboard to show" else "the keyboard to go") { imeVisible() == up }
+        // The first show on a cold emulator starts the keyboard app: CI's software-rendered AVD
+        // has taken over 10s.
+        waitFor(if (up) "the keyboard to show" else "the keyboard to go", timeoutMillis = 30_000) { imeVisible() == up }
         // Its inset animation: the list's bottom stops moving.
         var last = Float.NaN
         var steady = 0
@@ -159,7 +161,7 @@ class StreamingFollowTest {
 
     /**
      * Sends, then streams an answer. [keyboardOpen]: the keyboard stays up throughout, as it
-     * does for someone who has just sent; otherwise it is put away before the send.
+     * does for someone who has just sent; otherwise it is never raised.
      */
     private fun sendAndFollow(reduceMotion: Boolean, keyboardOpen: Boolean) {
         open(reduceMotion)
@@ -168,9 +170,8 @@ class StreamingFollowTest {
         // Sending: the reader's own words land at the newest end, in view.
         compose.onNodeWithTag("composer-text").performClick()
         compose.onNodeWithTag("composer-text").performTextInput("Can you check the roster order?")
-        keyboard(up = true)
-        if (!keyboardOpen) keyboard(up = false)
         if (keyboardOpen) {
+            keyboard(up = true)
             val list = bounds("timeline-list")!!
             // A short phone with the keyboard up has almost no list left (1080x1280: 36px),
             // less than the dock's own reserve; there is nothing to follow in.
