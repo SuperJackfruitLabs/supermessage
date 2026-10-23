@@ -26,6 +26,7 @@ import dev.supermessage.previews.PreviewFixtures
 import java.util.Collections
 import kotlinx.coroutines.delay
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import uniffi.supermessage_core.ItemView
 import uniffi.supermessage_core.RichBlock
@@ -148,6 +149,16 @@ class StreamingStutterTest {
         val sorted = frames.sorted()
         val p50 = sorted[sorted.size / 2]
         val p95 = sorted[(sorted.size * 95) / 100]
+        // Frame timing means something only on a device that renders in real time. CI's
+        // software-GPU AVD ran this at a median of 144 ms a frame (p95 184 ms), where every frame
+        // is "slow" and the step bound below has no ordinary frames to pair; this machine's AVD
+        // runs at ~28 ms. On such a device the test is skipped, and says why, rather than passing
+        // or failing on the emulator's speed. The glide's behaviour is covered on every device by
+        // StreamingGlideTest, which steps the frame clock instead of measuring it.
+        assumeTrue(
+            "frame timing needs a device that renders in real time: median frame ${ms(p50)} ms (p95 ${ms(p95)} ms)",
+            p50 < REAL_TIME_MEDIAN_NANOS,
+        )
 
         // Pair each sample with the one before it and keep only frames of ordinary length: the
         // glide is clocked by frame time, so a single slow frame legitimately moves the history
@@ -196,6 +207,9 @@ class StreamingStutterTest {
     private companion object {
         /** A frame this long is a visible hitch: nine 60 Hz frames (the emulator's own frames are ~27 ms at the median). */
         const val LONG_FRAME_NANOS = 150_000_000L
+
+        /** A median frame under this (three 60 Hz frames) is a device rendering in real time; above it the timing measures the device, not the app. */
+        const val REAL_TIME_MEDIAN_NANOS = 50_000_000L
 
         /** Above this (about four 60 Hz frames, and past this AVD's p95 of ~46 ms) a frame counts as slow in the log. */
         const val SLOW_FRAME_NANOS = 60_000_000L
