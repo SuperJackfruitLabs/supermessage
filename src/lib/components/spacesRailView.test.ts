@@ -137,6 +137,21 @@ describe("spaceEntryLabel", () => {
     expect(spaceEntryLabel(space({ name: "Broken", childCount: -1 }))).toBe("Broken");
   });
 
+  it("the rail names a space readably", () => {
+    // The core's display name (`SpaceSummary.displayName`) is what a person reads: a generated
+    // id is a runtime, a host has no `.local`. The raw name is for keying, never for a label.
+    const generated = space({
+      name: "9247e5b1-3c2d-4e8f-a1b2-0123456789ab",
+      displayName: "Runtime 9247e5",
+      childCount: 2,
+    });
+    expect(spaceEntryLabel(generated)).toBe("Runtime 9247e5, 2 rooms");
+    expect(spaceEntryLabel(generated)).not.toContain("9247e5b1");
+    expect(
+      spaceEntryLabel(space({ name: "Rakeshs-MacBook-Pro.local", displayName: "Rakeshs-MacBook-Pro", childCount: 1 })),
+    ).toBe("Rakeshs-MacBook-Pro, 1 room");
+  });
+
   it("labels from the parsed identity, never from the raw name", () => {
     // The bound itself moved to `core::room_identity`, which caps the name at
     // 120 code points and the role at 40 and has its own test for it. What

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { animateList } from "./animateList";
   // The sidebar: rooms sorted by recency, selecting one drives the timeline
   // subscription via `roomsStore.select`.
@@ -51,13 +52,34 @@
   import { roomSettingsWrites } from "$lib/stores/roomSettingsWrites.svelte";
   import InlineFailure from "./timeline/InlineFailure.svelte";
   import RosterSectionHeading from "./roster/RosterSectionHeading.svelte";
+  import FilterChips from "./roster/FilterChips.svelte";
+  import ContentUnavailable from "./layout/ContentUnavailable.svelte";
+  import { createRosterFilter, type FilteredRoster } from "./roster/rosterFilter";
   import {
+    roomAvatar,
     roomInfo,
+    rosterHiddenInvitations,
     rosterSections,
-    type AgentState,
+    spaceDisplayName,
+    type RoomRow as RoomRowDto,
+    type RosterFilter,
     type RosterSection,
     type RosterView,
   } from "$lib/ipc";
+
+  /**
+   * Where the roster comes from, so a story can hand in rooms and a core without a session. The
+   * app passes nothing and gets the rooms store and the real commands.
+   */
+  export interface Source {
+    rooms: RoomRowDto[];
+    selectedId: string | null;
+    rosterSections: typeof rosterSections;
+    rosterHiddenInvitations: typeof rosterHiddenInvitations;
+    spaceDisplayName: typeof spaceDisplayName;
+    filter: ReturnType<typeof createRosterFilter>;
+    roomAvatar: typeof roomAvatar;
+  }
 
   /**
    * `onSelect` fires after a row is chosen, whether or not that changed the
@@ -66,9 +88,22 @@
    * of the room that is already selected, which is exactly how an operator
    * returns to a room after using the back affordance.
    */
-  let { onSelect }: { onSelect?: () => void } = $props();
+  let { onSelect, source }: { onSelect?: () => void; source?: Partial<Source> } = $props();
 
-  const avatarCache = createAvatarCache();
+  const rooms = $derived(source?.rooms ?? roomsStore.rooms);
+  const selectedId = $derived(source?.selectedId !== undefined ? source.selectedId : roomsStore.selectedId);
+  // Read when called, never captured: a story may hand in a different source later.
+  const core = {
+    rosterSections: (...a: Parameters<typeof rosterSections>) => (source?.rosterSections ?? rosterSections)(...a),
+    rosterHiddenInvitations: (...a: Parameters<typeof rosterHiddenInvitations>) =>
+      (source?.rosterHiddenInvitations ?? rosterHiddenInvitations)(...a),
+    spaceDisplayName: (name: string) => (source?.spaceDisplayName ?? spaceDisplayName)(name),
+  };
+  // One controller for the component's life.
+  // svelte-ignore state_referenced_locally
+  const filter = source?.filter ?? createRosterFilter();
+
+  const avatarCache = createAvatarCache({ roomAvatar: (id) => (source?.roomAvatar ?? roomAvatar)(id) });
 
   /** The open row menu, if any: which room, where, and what it offers. */
   let menu = $state<{ roomId: string; at: { x: number; y: number }; items: RowMenuItem[] } | null>(null);
@@ -83,7 +118,7 @@
    * toggle then does nothing, as on iOS. A room with nothing to offer opens no menu.
    */
   async function openMenu(roomId: string, at: { x: number; y: number }): Promise<void> {
-    const entry = sections.flatMap((s) => s.rows).find((e) => e.row.room.id === roomId);
+    const entry = arranged.flatMap((s) => s.rows).find((e) => e.row.room.id === roomId);
     if (!entry) return;
     const mine = ++menuRequest;
     settingFailure = null;
@@ -135,7 +170,7 @@
    * Choosing the already-focused room now does nothing but re-show it.
    */
   function chooseRoom(id: string): void {
-    if (id !== roomsStore.selectedId) roomsStore.select(id);
+    if (id !== selectedId) roomsStore.select(id);
     onSelect?.();
   }
 
@@ -155,23 +190,62 @@
     localStorage.setItem(VIEW_KEY, view);
   });
 
+  /** The desktop always lists invitations in the roster, so none are withheld by the arrangement. */
+  const SHOWS_INVITATIONS = true;
+
+  /** The chip in force; the stored one is read through the core on mount. */
+  let chosen = $state<RosterFilter>("all");
+  let chosenLoaded = $state(false);
+  onMount(() => {
+    void filter
+      .load()
+      .catch((err: unknown) => console.error("roster filter load failed", err))
+      .finally(() => {
+        chosen = filter.selected;
+        chosenLoaded = true;
+      });
+  });
+
+  function chooseChip(next: RosterFilter): void {
+    chosen = next;
+    void filter.select(next).catch((err: unknown) => console.error("roster filter store failed", err));
+  }
+
   /**
-   * The arranged roster.
+   * The arranged roster, and what the chip in force leaves of it.
    *
    * Asked for once per change rather than per row: the section list carries
    * each row's state with it, so drawing a dot costs nothing beyond the one
-   * call this effect already makes.
+   * call this effect already makes. The arrangement is the core's, the narrowing
+   * is the core's, and so are the chip counts (over the whole arrangement) and
+   * the readable section titles.
    */
-  let sections = $state<RosterSection[]>([]);
+  let arranged = $state<RosterSection[]>([]);
+  let shown = $state<FilteredRoster>({ sections: [], chips: [], empty: null });
+  let titles = $state<Map<string, string>>(new Map());
+  let roster = 0;
   $effect(() => {
-    const rows = roomsStore.rooms;
-    const chosen = view;
-    void rosterSections(rows, chosen, true, Date.now()).then((next) => {
-      sections = next;
-    });
+    const rows = rooms;
+    const chosenView = view;
+    const inForce = chosen;
+    if (!chosenLoaded) return;
+    void inForce;
+    const mine = ++roster;
+    void (async () => {
+      const next = await core.rosterSections(rows, chosenView, SHOWS_INVITATIONS, Date.now());
+      const hidden = await core.rosterHiddenInvitations(rows, SHOWS_INVITATIONS);
+      const filtered = await filter.apply(next, hidden);
+      if (filtered === null || mine !== roster) return;
+      const readable = await filter.sectionTitles(filtered.sections, core.spaceDisplayName);
+      if (mine !== roster) return;
+      arranged = next;
+      shown = filtered;
+      titles = readable;
+    })().catch((err: unknown) => console.error("roster failed", err));
   });
 
-  const sortedRooms = $derived(sections.flatMap((section) => section.rows));
+  const sortedRooms = $derived(shown.sections.flatMap((section) => section.rows));
+  const hasRooms = $derived(arranged.some((section) => section.rows.length > 0));
 
 
   // Recency threshold for spec §6.1's muted-vs-faint split on the "· 4m"
@@ -206,6 +280,9 @@
 -->
 <nav aria-label="Rooms" class="flex h-full flex-col overflow-y-auto">
   <ArrangementMenu {view} onChange={(next) => (view = next)} />
+  {#if hasRooms}
+    <FilterChips chips={shown.chips} selected={chosen} onSelect={chooseChip} />
+  {/if}
   {#if settingFailure !== null}
     <div class="px-4"><InlineFailure message={settingFailure} /></div>
   {/if}
@@ -218,13 +295,57 @@
     above is not something the action tries to animate.
   -->
   <div use:animateList class="flex flex-col">
-  {#if sortedRooms.length === 0}
-    <p class="px-4 py-6 text-center text-ui text-content-muted">No rooms yet.</p>
+  {#if !hasRooms}
+    <ContentUnavailable
+      role="status"
+      testid="no-rooms"
+      title="No rooms yet"
+      description="Rooms appear here as they sync."
+    >
+      {#snippet glyph()}
+        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3.5 13.5 6 5.5h12l2.5 8" />
+          <path d="M3.5 13.5V18a1.5 1.5 0 0 0 1.5 1.5h14a1.5 1.5 0 0 0 1.5-1.5v-4.5h-5a3.5 3.5 0 0 1-7 0Z" />
+        </svg>
+      {/snippet}
+    </ContentUnavailable>
+  {:else if shown.empty !== null}
+    <ContentUnavailable
+      role="status"
+      testid="roster-empty"
+      title={shown.empty.title}
+      description={shown.empty.description}
+    >
+      {#snippet glyph()}
+        {#if chosen === "all"}
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+            <path d="m4 7 8 6 8-6" />
+          </svg>
+        {:else}
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M7.5 9.5h9M9.5 12.5h5M11 15.5h2" />
+          </svg>
+        {/if}
+      {/snippet}
+      {#snippet action()}
+        {#if chosen !== "all"}
+          <button
+            type="button"
+            data-testid="show-all"
+            onclick={() => chooseChip("all")}
+            class="rounded-control bg-accent px-3 py-1.5 text-ui font-medium text-accent-content transition-colors hover:opacity-90"
+            >Show all</button
+          >
+        {/if}
+      {/snippet}
+    </ContentUnavailable>
   {:else}
-    {#each sections as section (section.id)}
+    {#each shown.sections as section (section.id)}
       {#if section.title}
         <RosterSectionHeading
-          title={section.title}
+          title={titles.get(section.title) ?? section.title}
           detail={section.detail}
           attention={section.attention}
         />
@@ -235,7 +356,7 @@
           state={entry.state}
           describesAgent={entry.describesAgent}
           avatar={entry.avatar ?? null}
-          selected={entry.row.room.id === roomsStore.selectedId}
+          selected={entry.row.room.id === selectedId}
           avatarUrl={avatarCache.get(entry.row.room.id)}
           {now}
           onSelect={chooseRoom}
