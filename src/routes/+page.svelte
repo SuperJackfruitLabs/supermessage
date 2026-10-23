@@ -24,6 +24,7 @@
   import { attention } from "$lib/stores/attention.svelte";
   import { notifier } from "$lib/notifier/notifier.svelte";
   import { openRoomFromNotification } from "$lib/notifier/openRoom";
+  import { navigateTo } from "$lib/navigate";
   import { createWindowFocus } from "$lib/stores/windowFocus.svelte";
   import {
     appVersion,
@@ -33,6 +34,7 @@
     knownPeople,
     onIgnoredUsers,
     onNotificationOpen,
+    onNavigate,
     ensureRecovery,
     notificationPermission,
     joinRoomByAlias,
@@ -795,11 +797,13 @@
   // synchronous one.
   let unlistenIgnored: (() => void) | null = null;
   let unlistenOpen: (() => void) | null = null;
+  let unlistenNavigate: (() => void) | null = null;
   let destroyed = false;
   onDestroy(() => {
     destroyed = true;
     unlistenIgnored?.();
     unlistenOpen?.();
+    unlistenNavigate?.();
   });
 
   /** A notification was clicked: the window is forward; show its room (the collapsed layout too). */
@@ -826,6 +830,12 @@
         else unlistenOpen = unlisten;
       })
       .catch((err: unknown) => console.error("could not listen for notification clicks", err));
+    onNavigate((to) => navigateTo(to, chooseDestination))
+      .then((unlisten) => {
+        if (destroyed) unlisten();
+        else unlistenNavigate = unlisten;
+      })
+      .catch((err: unknown) => console.error("could not listen for tray navigation", err));
     try {
       restored = await roomsStore.restoreSession();
     } catch (err) {

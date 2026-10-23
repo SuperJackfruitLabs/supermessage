@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, voiceRecordingSpec, voiceWaveform, voiceLongEnough, attachmentStageRecording, attachmentMarkVoice, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, voiceRecordingSpec, voiceWaveform, voiceLongEnough, attachmentStageRecording, attachmentMarkVoice, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen, onNavigate } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -368,6 +368,18 @@ describe("session commands", () => {
     const callback = listenMock.mock.calls[0][1] as (e: { payload: { roomId: string } }) => void;
     callback({ payload: { roomId: "!r:x" } });
     expect(handler).toHaveBeenCalledWith("!r:x");
+  });
+
+  it("onNavigate listens on sm://navigate and hands over the destination", async () => {
+    const listenMock = vi.mocked(listen);
+    listenMock.mockReset();
+    listenMock.mockResolvedValue(() => {});
+    const handler = vi.fn();
+    await onNavigate(handler);
+    expect(listenMock.mock.calls[0][0]).toBe("sm://navigate");
+    const callback = listenMock.mock.calls[0][1] as (e: { payload: { to: string } }) => void;
+    callback({ payload: { to: "needsYou" } });
+    expect(handler).toHaveBeenCalledWith("needsYou");
   });
 
   it("onIgnoredUsers listens on sm://ignored-users and hands over the ids", async () => {

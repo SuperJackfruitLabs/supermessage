@@ -2165,6 +2165,16 @@ export function onNotificationOpen(handler: (roomId: string) => void): Promise<U
   return listen<{ roomId: string }>(NOTIFICATION_OPEN_EVENT, (event) => handler(event.payload.roomId));
 }
 
+const NAVIGATE_EVENT = "sm://navigate";
+
+/**
+ * The tray asked the page to go somewhere (its "Open Needs you"). The window is already in
+ * front; `to` names a sidebar destination, and choosing it is the page's.
+ */
+export function onNavigate(handler: (to: string) => void): Promise<UnlistenFn> {
+  return listen<{ to: string }>(NAVIGATE_EVENT, (event) => handler(event.payload.to));
+}
+
 /** Subscribes to room-list diff envelopes on {@link ROOMS_DIFF_EVENT}. */
 export function onRoomsDiff(handler: (env: DiffEnvelope<RoomRow>) => void): Promise<UnlistenFn> {
   return listen<DiffEnvelope<RoomRow>>(ROOMS_DIFF_EVENT, (event) => handler(event.payload));

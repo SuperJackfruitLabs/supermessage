@@ -27,6 +27,13 @@ mod notify;
 // Only Linux reports a press (see `notify::PluginPoster`), so elsewhere nothing calls in.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod notify_actions;
+// The tray is desktop-only (Tauri has no tray on mobile), and the tokens are only its dot.
+#[cfg(desktop)]
+mod tokens;
+// `set_attention` drives the tray's view from the next task; until then nothing calls it.
+#[cfg(desktop)]
+#[allow(dead_code)]
+mod tray;
 
 use crate::commands::{
     acknowledgement, agent_avatar_style, agent_avatar_variants, attachment_discard,
@@ -319,6 +326,10 @@ pub fn run() {
                     Arc::new(notify::PluginPoster::new(app.handle().clone()));
                 app.manage(poster);
             }
+            // The tray: a menu with the Needs you line and the way back into the app. Absent,
+            // with a log line, where the desktop cannot show one.
+            #[cfg(desktop)]
+            tray::install(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
