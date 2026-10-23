@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 const html = readFileSync(new URL('../dist/index.html', import.meta.url), 'utf8');
 const fails = [];
-for (const tag of ['<sjl-suite-bar', '<sjl-product-header', '<sjl-claims', '<sjl-street']) {
+for (const tag of ['<sjl-suite-bar', '<sjl-product-header', '<sjl-claims', '<sjl-footer']) {
   if (!html.includes(tag)) fails.push(`missing ${tag}`);
 }
 if (/<header class="?mast/.test(html)) fails.push('old masthead <header class="mast"> still present');
