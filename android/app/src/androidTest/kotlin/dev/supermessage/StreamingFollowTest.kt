@@ -20,6 +20,7 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import dev.supermessage.RoomHarness.count
+import dev.supermessage.RoomHarness.raiseKeyboard
 import dev.supermessage.kit.Session
 import dev.supermessage.previews.PreviewFixtures
 import org.junit.Assert.assertEquals
@@ -68,9 +69,9 @@ class StreamingFollowTest {
         compose.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes()
             .firstOrNull()?.boundsInRoot
 
-    private fun waitFor(what: String, timeoutMillis: Long = 10_000, cond: () -> Boolean) {
+    private fun waitFor(what: String, cond: () -> Boolean) {
         try {
-            compose.waitUntil(timeoutMillis = timeoutMillis) { cond() }
+            compose.waitUntil(timeoutMillis = 10_000) { cond() }
         } catch (e: androidx.compose.ui.test.ComposeTimeoutException) {
             throw AssertionError("timed out waiting for: $what", e)
         }
@@ -140,13 +141,14 @@ class StreamingFollowTest {
 
     /** The real soft keyboard up ([up]) or down, and the layout settled after it. */
     private fun keyboard(up: Boolean) {
-        compose.runOnUiThread {
-            val controller = WindowCompat.getInsetsController(compose.activity.window, host())
-            if (up) controller.show(WindowInsetsCompat.Type.ime()) else controller.hide(WindowInsetsCompat.Type.ime())
+        if (up) {
+            compose.raiseKeyboard()
+        } else {
+            compose.runOnUiThread {
+                WindowCompat.getInsetsController(compose.activity.window, host()).hide(WindowInsetsCompat.Type.ime())
+            }
+            waitFor("the keyboard to go") { imeVisible() == false }
         }
-        // The first show on a cold emulator starts the keyboard app: CI's software-rendered AVD
-        // has taken over 10s.
-        waitFor(if (up) "the keyboard to show" else "the keyboard to go", timeoutMillis = 30_000) { imeVisible() == up }
         // Its inset animation: the list's bottom stops moving.
         var last = Float.NaN
         var steady = 0

@@ -13,8 +13,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import dev.supermessage.RoomHarness.raiseKeyboard
 import kotlin.math.abs
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -84,12 +84,9 @@ class KeyboardGapTest {
         compose.onNodeWithText(RoomHarness.NAME).performScrollTo().performClick()
         compose.waitForIdle()
 
-        // A tap focuses the field, as a finger does; the explicit show is for a device that
-        // starts with a hardware keyboard attached (the CI AVD), where a tap alone may not.
-        compose.onNodeWithTag("composer-text").performClick()
-        compose.runOnUiThread {
-            WindowCompat.getInsetsController(compose.activity.window, host()).show(WindowInsetsCompat.Type.ime())
-        }
+        // A tap focuses the field, as a finger does; the explicit, repeated show is for a device
+        // that starts with a hardware keyboard attached (the CI AVD), where a tap alone may not.
+        compose.raiseKeyboard()
 
         // The keyboard is up and the layout has stopped moving (its inset animation is over).
         var last: Reading? = null
