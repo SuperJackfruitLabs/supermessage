@@ -74,6 +74,13 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # permission is granted either.
 tauri-plugin-dialog = "2"
 
+# Desktop notifications (parity M6). Posts on macOS and Windows and answers the
+# permission question; its Actions API is mobile-only, so Linux, where answer
+# buttons are wanted (open question Q4), posts through `notify-rust` directly.
+# The webview is granted no `notification:*` permission: Rust posts, the page
+# only asks Rust to.
+tauri-plugin-notification = "=2.7.0"
+
 # Image dimensions from the file *header* (core::attachments::image_dimensions).
 # MIT, zero dependencies, pure header parsing — deliberately not the `image`
 # crate: §5 needs two integers, and running a full decoder over a file a
@@ -126,6 +133,11 @@ tauri-plugin-mcp-bridge = { version = "0.12", optional = true }
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 
+
+# The plugin's own Linux backend (it resolves the same copy), used directly
+# because the plugin cannot carry answer buttons on desktop (Q4).
+[target.'cfg(target_os = "linux")'.dependencies]
+notify-rust = "=4.18.0"
 
 [dev-dependencies]
 # `test` for `tauri::test::mock_app`: commands take `State<Session>`, which only an app can hand out.

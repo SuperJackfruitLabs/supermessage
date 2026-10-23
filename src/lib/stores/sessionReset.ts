@@ -3,6 +3,7 @@
 // was signed in. Called on every way back to /login, not only the sign-out button.
 import { accountStore } from "./account.svelte";
 import { acknowledgementStore } from "./acknowledgement.svelte";
+import { notificationClearAll } from "$lib/ipc";
 import { castStore } from "./cast.svelte";
 import { destinations } from "./destinations.svelte";
 import { editTargetStore } from "./editTarget.svelte";
@@ -19,10 +20,12 @@ export interface SessionStores {
   castStore: { clear(): void };
   acknowledgementStore: { clear(): void };
   destinations: { reset(): void };
+  /** Withdraws every delivered notification. */
+  notificationClearAll: () => Promise<void>;
 }
 
 export function resetSessionState(
-  stores: SessionStores = { editTargetStore, replyTargetStore, safetyStore, accountStore, liveStore, castStore, acknowledgementStore, destinations },
+  stores: SessionStores = { editTargetStore, replyTargetStore, safetyStore, accountStore, liveStore, castStore, acknowledgementStore, destinations, notificationClearAll },
 ): void {
   stores.editTargetStore.clearAll();
   stores.replyTargetStore.clearAll();
@@ -36,4 +39,7 @@ export function resetSessionState(
   stores.acknowledgementStore.clear();
   // The last account's inbox, badge and agents must not greet the next one; back on Chats.
   stores.destinations.reset();
+  // The last account's notifications must not outlive it (iOS removes every delivered one).
+  // Fire and forget: a failure to withdraw must not hold up the sign-out.
+  void stores.notificationClearAll().catch(() => {});
 }

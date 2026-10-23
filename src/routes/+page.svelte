@@ -20,7 +20,7 @@
   import { goto } from "$app/navigation";
   import { roomsStore } from "$lib/stores/rooms.svelte";
   import { spacesStore } from "$lib/stores/spaces.svelte";
-  import { consumeFreshSignIn } from "$lib/stores/freshSignIn";
+  import { setUpAfterSignIn } from "$lib/stores/signInSetup";
   import {
     appVersion,
     type RoomMember,
@@ -29,6 +29,7 @@
     knownPeople,
     onIgnoredUsers,
     ensureRecovery,
+    notificationPermission,
     joinRoomByAlias,
     recoverWithKey,
     resetRecovery,
@@ -809,7 +810,9 @@
     // `consumeFreshSignIn` is set by /login alone. Not awaited, and a failure
     // is silent: the user is not interrupted, and a device that cannot read its
     // history is still offered the recovery-key screen from "Encryption recovery".
-    if (consumeFreshSignIn()) {
+    // One read of the one-shot mark serves both: notification permission is asked
+    // after a fresh sign-in only (`setUpAfterSignIn`), and so is recovery.
+    if (setUpAfterSignIn({ notificationPermission })) {
       void ensureRecovery()
         .then((key) => {
           if (key) void openRecovery(key);

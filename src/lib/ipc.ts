@@ -2581,6 +2581,33 @@ export async function sendPermissionAnswer(roomId: string, optionId: string): Pr
   await invoke<void>("send_permission_answer", { roomId, optionId });
 }
 
+/** What the OS says about posting notifications. */
+export type NotificationPermission = "granted" | "denied" | "prompt";
+
+/**
+ * Whether the app may post notifications. With `prompt` set the OS is asked when
+ * the answer is still open; pass it after a fresh sign-in only, never on a restore.
+ */
+export async function notificationPermission(prompt: boolean): Promise<NotificationPermission> {
+  return await invoke<NotificationPermission>("notification_permission", { prompt });
+}
+
+/** Removes every delivered notification (sign-out). */
+export async function notificationClearAll(): Promise<void> {
+  await invoke<void>("notification_clear_all");
+}
+
+/**
+ * `Session::send_gate_decision_to`: answers a gate in `roomId`, open or not.
+ * Rejects `protocol` for a malformed room id before anything is sent.
+ */
+export async function sendGateDecisionTo(
+  roomId: string, gateId: string, optionId: string, comment: string | null,
+  inReplyTo: string, prompt: string,
+): Promise<void> {
+  await invoke<void>("send_gate_decision_to", { roomId, gateId, optionId, comment, inReplyTo, prompt });
+}
+
 /** `core::safety::IGNORED_USERS_EVENT`: the blocked list, emitted by the core. */
 const IGNORED_USERS_EVENT = "sm://ignored-users";
 

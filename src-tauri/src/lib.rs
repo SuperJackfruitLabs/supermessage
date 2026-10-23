@@ -14,11 +14,14 @@
 // crate-type are this binary and its own test targets.
 
 use serde::Serialize;
+use std::sync::Arc;
 use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 
 mod commands;
+mod commands_notify;
 mod commands_session;
 mod host;
+mod notify;
 
 use crate::commands::{
     acknowledgement, agent_avatar_style, agent_avatar_variants, attachment_discard,
@@ -35,6 +38,9 @@ use crate::commands::{
     send_reply, set_hidden_events, set_typing, space_display_name, space_select, spaces_list,
     timeline_paginate_back, timeline_resync, timeline_subscribe, toggle_reaction, turn,
     turn_duration_label, turn_record_label, turn_status_word, typing_view,
+};
+use crate::commands_notify::{
+    notification_clear_all, notification_permission, send_gate_decision_to,
 };
 use crate::commands_session::{
     account, blocked_users, direct_room_with, ignore_user, known_people, people_label,
@@ -168,6 +174,11 @@ pub fn run() {
         // webview opened would hand *the webview* a path, and the
         // attachments design (§3) exists to stop exactly that.
         .plugin(tauri_plugin_dialog::init())
+        // Registered for its **Rust** API only, like the dialog plugin above: it
+        // posts on macOS and Windows and answers the permission question. No
+        // `notification:*` permission is granted, so the webview cannot post;
+        // it asks Rust (`notify::Poster`).
+        .plugin(tauri_plugin_notification::init())
         // The Rust-side drag-drop handler the attachments design §3 requires.
         // Tauri also emits its own `tauri://drag-drop` (carrying raw paths)
         // to the webview and offers no way to suppress just that —
@@ -223,6 +234,25 @@ pub fn run() {
             // all three must see the *one* map the session owns.
             app.manage(session.staged_attachments());
             app.manage(session);
+            // Where notifications go: `notify-rust` on Linux, which can carry answer
+            // buttons, the plugin elsewhere. The receiver is what Linux button
+            // presses arrive on; it waits to be taken.
+            #[cfg(target_os = "linux")]
+            {
+                let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                let poster: Arc<dyn notify::Poster> = Arc::new(notify::XdgPoster::new(
+                    Arc::new(notify::NotifyRustBackend),
+                    tx,
+                ));
+                app.manage(poster);
+                app.manage(notify::ActionInbox::new(rx));
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                let poster: Arc<dyn notify::Poster> =
+                    Arc::new(notify::PluginPoster::new(app.handle().clone()));
+                app.manage(poster);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -243,6 +273,9 @@ pub fn run() {
             account,
             people_label,
             send_permission_answer,
+            notification_permission,
+            notification_clear_all,
+            send_gate_decision_to,
             connection_state,
             login,
             restore_session,

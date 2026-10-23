@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, onIgnoredUsers } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, sendGateDecisionTo, onIgnoredUsers } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -321,6 +321,10 @@ describe("session commands", () => {
     ["account invokes account", () => account(), "account", undefined],
     ["peopleLabel passes userIds", () => peopleLabel(["@a:x", "@b:x"]), "people_label", { userIds: ["@a:x", "@b:x"] }],
     ["sendPermissionAnswer passes roomId and optionId", () => sendPermissionAnswer("!r:x", "Allow once"), "send_permission_answer", { roomId: "!r:x", optionId: "Allow once" }],
+    ["notificationPermission passes prompt", () => notificationPermission(true), "notification_permission", { prompt: true }],
+    ["notificationPermission without a prompt", () => notificationPermission(false), "notification_permission", { prompt: false }],
+    ["notificationClearAll takes no arguments", () => notificationClearAll(), "notification_clear_all", undefined],
+    ["sendGateDecisionTo passes camelCase args", () => sendGateDecisionTo("!r:x", "g1", "approve", null, "$e", "Ship it?"), "send_gate_decision_to", { roomId: "!r:x", gateId: "g1", optionId: "approve", comment: null, inReplyTo: "$e", prompt: "Ship it?" }],
   ];
 
   it.each(calls)("%s", async (_name, call, command, args) => {

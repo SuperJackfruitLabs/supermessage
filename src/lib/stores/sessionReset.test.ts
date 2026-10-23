@@ -17,6 +17,7 @@ function blankTurnStores() {
     castStore: createCastStore({ roomCast: async () => { throw new Error("unused"); } }),
     acknowledgementStore: createAcknowledgementStore({ acknowledgement: async () => null }),
     destinations: blankDestinations(),
+    notificationClearAll: async () => {},
   };
 }
 function blankDestinations() {
@@ -102,6 +103,7 @@ describe("resetSessionState", () => {
       castStore,
       acknowledgementStore: createAcknowledgementStore({ acknowledgement: async () => null }),
       destinations: blankDestinations(),
+      notificationClearAll: async () => {},
     });
     expect(liveStore.isLive).toBe(false);
     expect(liveStore.summary).toBeNull();
@@ -126,6 +128,38 @@ describe("resetSessionState and the dock", () => {
       acknowledgementStore,
     });
     expect(acknowledgementStore.current).toBeNull();
+  });
+});
+
+describe("resetSessionState and notifications", () => {
+  it("resetSessionState withdraws every notification", () => {
+    let withdrawn = 0;
+    resetSessionState({
+      editTargetStore: createEditTargetStore(),
+      replyTargetStore: createReplyTargetStore(),
+      safetyStore: createSafetyStore(null),
+      accountStore: createAccountStore(),
+      ...blankTurnStores(),
+      notificationClearAll: async () => {
+        withdrawn += 1;
+      },
+    });
+    expect(withdrawn).toBe(1);
+  });
+
+  it("a failing withdrawal does not stop the sign-out", () => {
+    expect(() =>
+      resetSessionState({
+        editTargetStore: createEditTargetStore(),
+        replyTargetStore: createReplyTargetStore(),
+        safetyStore: createSafetyStore(null),
+        accountStore: createAccountStore(),
+        ...blankTurnStores(),
+        notificationClearAll: async () => {
+          throw new Error("no notification server");
+        },
+      }),
+    ).not.toThrow();
   });
 });
 
