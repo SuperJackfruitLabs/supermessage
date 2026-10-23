@@ -39,7 +39,8 @@ Background push on iOS goes through the AgentPod hub's own push gateway
 `Core::notification_for`; it is not yet verified on a device. Android has
 background push through UnifiedPush (the distributor's own Matrix gateway, no
 fallback), covered by unit tests and a fake-distributor instrumented test; a
-live push through ntfy is pending the owner. Desktop has no background push. Keep dated verification reports in their
+live push through ntfy, a push in Doze and a real lock-screen answer are
+pending the owner. Desktop has no background push. Keep dated verification reports in their
 original context rather than presenting them as current evidence.
 
 Remaining follow-ups:
