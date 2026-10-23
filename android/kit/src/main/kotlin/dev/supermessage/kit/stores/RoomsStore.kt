@@ -114,13 +114,12 @@ class RoomsStore(
     fun row(roomId: String): RoomRow? = _rooms.value.firstOrNull { it.room.id == roomId }
 
     /**
-     * Mark [roomId] read, reporting whether the core accepted it, so a swipe
-     * plays its success haptic only for a change that landed. (The core can
-     * only mark the open room today; for any other it refuses, as on iOS.)
+     * Mark [roomId] read — any room, open or not (the roster's swipe) — reporting whether a
+     * receipt went, so the swipe plays its success haptic only for a change that landed.
+     * `false` for a refusal and for a room with nothing newer to acknowledge, as on iOS.
      */
     suspend fun markRead(roomId: String): Boolean = try {
-        client.markRoomRead(roomId)
-        true
+        client.markRoomReadFromList(roomId)
     } catch (e: kotlinx.coroutines.CancellationException) {
         throw e
     } catch (e: Exception) {

@@ -78,7 +78,7 @@ class RosterSwipeTest {
     private class FakeCore(
         private val rooms: List<RoomRow>,
         private val infoResult: () -> RoomInfoDto = { throw IllegalStateException("offline") },
-        private val markReadResult: () -> Unit = {},
+        private val markReadResult: () -> Boolean = { true },
     ) : StubCore() {
         /** The session pushes the hidden set at sign-in; these tests hide nothing. */
         override fun setHiddenEvents(eventIds: List<String>) {}
@@ -101,9 +101,6 @@ class RosterSwipeTest {
             infoAsked += roomId
             return infoResult()
         }
-        // The real core marks only the room that is open and refuses every
-        // other (backlog: a core gap), so the fake does too: a swipe on a
-        // closed room must fail, not succeed on the fake's say-so.
         private var openRoom: String? = null
 
         override fun timelineSubscribe(roomId: String, sink: EventSink) {
@@ -125,10 +122,15 @@ class RosterSwipeTest {
             agentIds = emptyList(), addressee = null, mentionables = emptyList(),
         )
 
+        // The open room's own mark (the pane's), which a swipe no longer uses.
         override fun markRoomRead(roomId: String) {
-            markReadResult()
             check(roomId == openRoom) { "not the open room" }
+        }
+
+        // The roster's mark: any room.
+        override fun markRoomReadFromList(roomId: String): Boolean {
             markedRead += roomId
+            return markReadResult()
         }
         override fun setRoomNotifications(roomId: String, mode: NotificationMode) {
             notificationsSet += mode to roomId
@@ -164,35 +166,31 @@ class RosterSwipeTest {
 
     private val alpha = listOf(roomRow("!a:example.org", "Alpha"))
 
-    /** The core can mark only the open room today, so that is the one swipe that lands. */
+    /** The roster's own mark, not the open room's: any room can be swiped, open or not. */
     @Test
-    fun swipingRightMarksTheOpenRoomRead() {
+    fun swipingRightMarksAnyRoomRead() {
         val core = FakeCore(alpha)
         show(core)
-        // Opened without being selected: the roster stays on screen.
-        runBlocking { session.open("!a:example.org") }
-        compose.waitForIdle()
-        core.markedRead.clear()
         compose.onNodeWithTag("roster-row").performTouchInput { swipeRight() }
         compose.waitForIdle()
         assertEquals(listOf("!a:example.org"), core.markedRead)
         assertEquals(listOf(HapticFeedbackType.Confirm), haptics.played)
     }
 
-    /** As the real core: any other room is refused, and the swipe fails without a word. */
+    /** `false` from the core is "nothing newer to acknowledge": no receipt, no haptic. */
     @Test
-    fun swipingRightOnAClosedRoomFailsSilently() {
-        val core = FakeCore(alpha)
+    fun aMarkReadThatSentNothingPlaysNoHaptic() {
+        val core = FakeCore(alpha, markReadResult = { false })
         show(core)
         compose.onNodeWithTag("roster-row").performTouchInput { swipeRight() }
         compose.waitForIdle()
-        assertEquals(emptyList<String>(), core.markedRead)
+        assertEquals(listOf("!a:example.org"), core.markedRead)
         assertEquals(emptyList<HapticFeedbackType>(), haptics.played)
     }
 
     @Test
     fun aMarkReadTheCoreRefusesPlaysNoHaptic() {
-        val core = FakeCore(alpha, markReadResult = { throw IllegalStateException("not the open room") })
+        val core = FakeCore(alpha, markReadResult = { throw IllegalStateException("offline") })
         show(core)
         compose.onNodeWithTag("roster-row").performTouchInput { swipeRight() }
         compose.waitForIdle()

@@ -183,6 +183,13 @@ class CoreClient(
     }
 
     /**
+     * Mark any room read up to its latest event — the roster's swipe, which the open room's
+     * [markRoomRead] cannot serve. `true` when a receipt was sent, `false` when there was
+     * nothing newer to acknowledge.
+     */
+    suspend fun markRoomReadFromList(roomId: String): Boolean = run { it.markRoomReadFromList(roomId) }
+
+    /**
      * The events the reader hid on this device. The core groups the timeline as
      * if they were absent and marks their rows `hidden`; push the full set at
      * sign-in and whenever it changes.
