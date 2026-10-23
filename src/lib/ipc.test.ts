@@ -24,7 +24,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 const { listen } = await import("@tauri-apps/api/event");
-const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen } = await import("./ipc");
+const { turn, turnStatusWord, firstRunAdvance, firstRunAnswer, firstRunScript, acknowledgement, hasSent, setHiddenEvents, roomCast, typingView, attachmentSend, rosterNeedsYouInbox, roomStatus, rosterFilterSections, agentAvatarStyle, agentAvatarVariants, deleteMessage, editMessage, ensureRecovery, makeSessionCommands, spaceDisplayName, spaceSelect, spacesList, ignoreUser, unignoreUser, blockedUsers, reportEvent, reportRoom, reportUser, reportReasonRemaining, setRoomNotificationMode, setRoomPinned, markRoomReadFromList, knownPeople, directRoomWith, roomInviter, roomMentionCandidates, account, peopleLabel, sendPermissionAnswer, notificationPermission, notificationClearAll, setAttention, voiceRecordingSpec, voiceWaveform, attachmentStageRecording, attachmentMarkVoice, sendGateDecisionTo, notificationsForRoster, notificationsForFocused, notificationDelivers, notificationPost, onIgnoredUsers, onNotificationOpen } = await import("./ipc");
 
 describe("makeSessionCommands", () => {
   it("calls onArm before invoking login", async () => {
@@ -194,6 +194,18 @@ describe("roster views", () => {
   });
 });
 
+describe("attachmentStageRecording", () => {
+  it("sends the bytes as the raw body and the room and mime as headers", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue({ token: "t" });
+    await attachmentStageRecording("!r:x", "audio/ogg;codecs=opus", new Blob([new Uint8Array([1, 2, 3])]));
+    const [cmd, body, options] = invokeMock.mock.calls[0];
+    expect(cmd).toBe("attachment_stage_recording");
+    expect(Array.from(body as Uint8Array)).toEqual([1, 2, 3]);
+    expect(options).toEqual({ headers: { "x-room-id": "!r:x", "x-mime": "audio/ogg;codecs=opus" } });
+  });
+});
+
 describe("attachmentSend", () => {
   it("returns the core's outcome", async () => {
     const outcome = {
@@ -326,6 +338,9 @@ describe("session commands", () => {
     ["sendPermissionAnswer passes roomId and optionId", () => sendPermissionAnswer("!r:x", "Allow once"), "send_permission_answer", { roomId: "!r:x", optionId: "Allow once" }],
     ["notificationPermission passes prompt", () => notificationPermission(true), "notification_permission", { prompt: true }],
     ["notificationPermission without a prompt", () => notificationPermission(false), "notification_permission", { prompt: false }],
+    ["voiceRecordingSpec takes no arguments", () => voiceRecordingSpec(), "voice_recording_spec", undefined],
+    ["voiceWaveform passes decibels and bins", () => voiceWaveform([-60, -10], 60), "voice_waveform", { decibels: [-60, -10], bins: 60 }],
+    ["attachmentMarkVoice passes room, token, length and waveform camelCased", () => attachmentMarkVoice("!r:x", "tok", 3200, [0.5]), "attachment_mark_voice", { roomId: "!r:x", token: "tok", durationMs: 3200, waveform: [0.5] }],
     ["setAttention passes the count camelCased", () => setAttention(3), "set_attention", { needsYou: 3 }],
     ["notificationClearAll takes no arguments", () => notificationClearAll(), "notification_clear_all", undefined],
     ["sendGateDecisionTo passes camelCase args", () => sendGateDecisionTo("!r:x", "g1", "approve", null, "$e", "Ship it?"), "send_gate_decision_to", { roomId: "!r:x", gateId: "g1", optionId: "approve", comment: null, inReplyTo: "$e", prompt: "Ship it?" }],

@@ -138,6 +138,8 @@ tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 # because the plugin cannot carry answer buttons on desktop (Q4).
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = "=4.18.0"
+# WebKitGTK's settings and permission-request signal, for the microphone (C2). The copy wry resolves.
+webkit2gtk = "2.0"
 
 [dev-dependencies]
 # `test` for `tauri::test::mock_app`: commands take `State<Session>`, which only an app can hand out.

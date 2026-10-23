@@ -77,6 +77,12 @@
   import { editTargetStore } from "$lib/stores/editTarget.svelte";
   import ComposerCapsule from "./composer/ComposerCapsule.svelte";
   import StagedAttachmentChip from "./composer/StagedAttachmentChip.svelte";
+  import FailureLine from "./composer/FailureLine.svelte";
+  import MicButton from "./composer/MicButton.svelte";
+  import RecordingPill from "./composer/RecordingPill.svelte";
+  import { audioPlayback } from "$lib/stores/audioPlayback.svelte";
+  import { createMicCapture, voiceCaptureSupported } from "$lib/voice/micCapture";
+  import { createVoiceRecorder, type VoicePhase, type VoiceRecorder } from "$lib/voice/voiceRecorder";
   import { applyMention, findMentionQuery, type MentionCandidate } from "./mentions";
   import { createMentionSearch } from "./composer/mentionSearch";
   import { castStore } from "$lib/stores/cast.svelte";
@@ -104,7 +110,12 @@
     attachmentSend,
     editMessage,
     attachmentStage,
+    attachmentStageRecording,
+    attachmentMarkVoice,
+    voiceRecordingSpec,
+    voiceWaveform,
     onStagedAttachment,
+    type AttachmentSendOutcome,
     type CoreError,
     type StagedAttachment,
   } from "$lib/ipc";
@@ -387,6 +398,41 @@
   }
 
   /**
+   * What the composer holds after the core reported a failed send of `sentToken` (a staged file,
+   * or a voice message, whose token only the recorder knew: `null`).
+   */
+  function settleFailedSend(
+    sentRoomId: string,
+    sentToken: string | null,
+    filename: string,
+    outcome: Extract<AttachmentSendOutcome, { outcome: "failed" }>,
+  ): void {
+    // The core put the file behind a fresh token (or could not). Keep it
+    // on the chip with the failure; the draft and caption stay put.
+    const next = afterFailedSend(outcome, filename);
+    if (roomId === sentRoomId) {
+      if (!shouldAdoptRestaged(attachments.stagedFor(sentRoomId), sentToken ?? "")) {
+        // The reader attached something else mid-send: their pick stays,
+        // the fresh token is released, and the failure shows as a plain
+        // line rather than on the wrong file's chip.
+        if (next.staged) discardStaged(next.staged.token);
+        failure = next.failed.failure;
+      } else {
+        if (next.staged) adoptStaged(sentRoomId, next.staged);
+        else if (sentToken !== null) {
+          const abandoned = attachments.takeToken(sentToken);
+          if (abandoned !== null) discardStaged(abandoned.token);
+        }
+        failedChip = next.failed;
+      }
+    } else {
+      // The reader moved rooms mid-send: nothing here to retry from.
+      if (sentToken !== null) attachments.takeToken(sentToken);
+      if (next.staged) discardStaged(next.staged.token);
+    }
+  }
+
+  /**
    * Sends the staged file. Called from `send` when there is one, so Enter
    * and the Send button behave identically — see this file's top-of-script
    * comment for why Send is repurposed rather than disabled.
@@ -416,29 +462,7 @@
     try {
       const outcome = await attachmentSend(sentRoomId, attachment.token, caption);
       if (outcome.outcome === "failed") {
-        // The core put the file behind a fresh token (or could not). Keep it
-        // on the chip with the failure; the draft and caption stay put.
-        const next = afterFailedSend(outcome, stagedStripView(attachment).filename);
-        if (roomId === sentRoomId) {
-          if (!shouldAdoptRestaged(attachments.stagedFor(sentRoomId), attachment.token)) {
-            // The reader attached something else mid-send: their pick stays,
-            // the fresh token is released, and the failure shows as a plain
-            // line rather than on the wrong file's chip.
-            if (next.staged) discardStaged(next.staged.token);
-            failure = next.failed.failure;
-          } else {
-            if (next.staged) adoptStaged(sentRoomId, next.staged);
-            else {
-              const abandoned = attachments.takeToken(attachment.token);
-              if (abandoned !== null) discardStaged(abandoned.token);
-            }
-            failedChip = next.failed;
-          }
-        } else {
-          // The reader moved rooms mid-send: nothing here to retry from.
-          attachments.takeToken(attachment.token);
-          if (next.staged) discardStaged(next.staged.token);
-        }
+        settleFailedSend(sentRoomId, attachment.token, stagedStripView(attachment).filename, outcome);
         return;
       }
       attachments.takeToken(attachment.token);
@@ -456,6 +480,85 @@
       };
       const abandoned = attachments.takeToken(attachment.token);
       if (abandoned !== null) discardStaged(abandoned.token);
+    } finally {
+      sending = false;
+      refreshStaged();
+    }
+  }
+
+  // ── Voice messages (C2) ───────────────────────────────────────────────────
+  //
+  // The recorder is a state machine (`$lib/voice/voiceRecorder.ts`) over the webview's
+  // `MediaRecorder`; its numbers and the waveform are the core's. It exists once the core has
+  // answered `voice_recording_spec`, and only where the webview can record Ogg/Opus: elsewhere
+  // there is no mic and the composer is exactly what it was.
+
+  const micSupported = voiceCaptureSupported();
+  let recorder = $state.raw<VoiceRecorder | null>(null);
+  let voicePhase = $state<VoicePhase>({ kind: "idle" });
+  let voiceFailure = $state<string | null>(null);
+  let voiceUnsupported = $state(false);
+  const voice = {
+    get failure(): string | null {
+      return voiceFailure;
+    },
+  };
+  /** The recording, as the composer shows it: the pill in place of the field. */
+  const recording = $derived(voicePhase.kind === "recording" ? voicePhase : null);
+
+  onMount(() => {
+    if (!micSupported) return;
+    let stopped = false;
+    voiceRecordingSpec()
+      .then((spec) => {
+        if (stopped) return;
+        const created: VoiceRecorder = createVoiceRecorder({
+          capture: createMicCapture(spec),
+          spec,
+          now: () => Date.now(),
+          every: (fn, ms) => {
+            const handle = setInterval(fn, ms);
+            return () => clearInterval(handle);
+          },
+          waveform: voiceWaveform,
+          stageRecording: attachmentStageRecording,
+          markVoice: attachmentMarkVoice,
+          sendStaged: attachmentSend,
+          discard: discardStaged,
+          stopPlayback: () => audioPlayback().stop(),
+          onChange: () => {
+            voicePhase = created.phase;
+            voiceFailure = created.failure;
+            voiceUnsupported = created.unsupported;
+          },
+        });
+        recorder = created;
+      })
+      .catch((err: unknown) => console.error("voice recording unavailable", err));
+    return () => {
+      stopped = true;
+      void recorder?.cancel();
+    };
+  });
+
+  /** Stops the recording and sends it as a voice message, with no text. */
+  async function sendRecording(): Promise<void> {
+    const active = recorder;
+    if (!active?.isRecording) return;
+    const sentRoomId = roomId;
+    stopTyping(sentRoomId);
+    sending = true;
+    failure = null;
+    failedChip = null;
+    try {
+      const result = await active.send(sentRoomId);
+      if (result === "discarded") return;
+      if (result.outcome === "failed") settleFailedSend(sentRoomId, null, "Voice message", result);
+    } catch (err) {
+      console.error("failed to send a voice message", err);
+      if (roomId === sentRoomId) {
+        failedChip = { filename: "Voice message", failure: attachmentFailure(err, "send") };
+      }
     } finally {
       sending = false;
       refreshStaged();
@@ -536,6 +639,8 @@
       // a promise the core has already broken; discarding it here also
       // stops the path being pinned until the staging timeout sweeps it.
       // See `stagedAttachment.ts`'s `StagedAttachmentTracker` doc comment.
+      // A recording belongs to the room it was started in.
+      void recorder?.cancel();
       const abandoned = attachments.switchTo(roomId);
       if (abandoned !== null) discardStaged(abandoned.token);
       refreshStaged();
@@ -576,15 +681,29 @@
   }
 
   const trimmed = $derived(value.trim());
+  /** Whether the mic stands in for Send: nothing typed, nothing staged, nothing being edited. */
+  const micShown = $derived(
+    recorder !== null &&
+      !voiceUnsupported &&
+      !sending &&
+      editTarget === null &&
+      staged === null &&
+      failedChip === null &&
+      value.trim() === "",
+  );
+  /** The mic shows when idle-and-empty, and stays under the pointer during a held recording. */
+  const showMic = $derived((micShown && recording === null) || recording?.held === true);
+
   /**
    * A staged file is enough on its own — Send is the affirmative half of the
    * confirm step, so it cannot require text the design explicitly does not
    * support sending alongside a file (captions are out of scope, §1).
    */
   const canSend = $derived(
-    sendIntent(editTarget, staged !== null, value) !== "nothing" &&
-      !sending &&
-      !blocksSend(staged, failedChip, editTarget !== null)
+    recording !== null ||
+      (sendIntent(editTarget, staged !== null, value) !== "nothing" &&
+        !sending &&
+        !blocksSend(staged, failedChip, editTarget !== null))
   );
 
   /** Cancels the pending reply for `roomId` without discarding the draft text. */
@@ -741,12 +860,9 @@
   independently bordered bars.
 -->
 {#if failure}
-  <div class="shrink-0 bg-surface-sunken px-4 py-2">
-    <div class="mx-auto flex w-full max-w-[72ch] flex-col gap-0.5">
-    <span class="text-label text-danger">{failure.label}</span>
-    <p class="selectable text-ui text-content" role="alert">{failure.message}</p>
-    </div>
-  </div>
+  <FailureLine label={failure.label} message={failure.message} />
+{:else if voice.failure}
+  <FailureLine label="Voice message" message={voice.failure} />
 {/if}
 {#snippet capsuleTop()}
 {#if editTarget}
@@ -842,6 +958,27 @@
     ></textarea>
   </div>
 {/snippet}
+{#snippet recordingField()}
+  {#if recording}
+    <RecordingPill
+      startedAt={recording.startedAt}
+      held={recording.held}
+      onDiscard={() => void recorder?.cancel()}
+    />
+  {/if}
+{/snippet}
+{#snippet micControl()}
+  <MicButton
+    recording={recording?.held === true}
+    onTap={() => void recorder?.start(false)}
+    onHoldBegan={() => void recorder?.start(true)}
+    onHoldEnded={(cancelled) => {
+      if (!recorder?.isRecording) recorder?.abandonPendingStart();
+      else if (cancelled) void recorder.cancel();
+      else void sendRecording();
+    }}
+  />
+{/snippet}
 <!--
   The strip's ground runs edge to edge, but its contents sit in the same
   centred `72ch` column the timeline uses (spec §6.3.0). Before this, the
@@ -894,12 +1031,13 @@
   <!-- Send is a ghost when disabled; see ComposerCapsule.svelte. -->
   <ComposerCapsule
     top={capsuleTop}
-    field={capsuleField}
+    field={recording ? recordingField : capsuleField}
+    mic={showMic ? micControl : undefined}
     onAttach={attach}
-    attachDisabled={staging || sending}
-    sendLabel={sendLabel(editTarget !== null, staged !== null)}
+    attachDisabled={staging || sending || recording !== null}
+    sendLabel={recording ? "Send voice message" : sendLabel(editTarget !== null, staged !== null)}
     {canSend}
-    onSend={send}
+    onSend={recording ? sendRecording : send}
   />
   </div>
 </div>

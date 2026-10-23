@@ -2065,6 +2065,60 @@ export async function attachmentDiscard(token: string): Promise<void> {
 }
 
 /**
+ * The recorder's numbers, from `core::voice_recording::spec` (camelCase). The desktop keeps no
+ * copy of them.
+ */
+export interface VoiceRecordingSpec {
+  fileStem: string;
+  sampleRate: number;
+  channels: number;
+  bitRate: number;
+  meterIntervalMs: number;
+  waveformBins: number;
+  shortestMs: number;
+}
+
+/** `core::voice_recording::spec`. */
+export async function voiceRecordingSpec(): Promise<VoiceRecordingSpec> {
+  return invoke<VoiceRecordingSpec>("voice_recording_spec");
+}
+
+/**
+ * `core::voice_recording::waveform`: the meter's dBFS readings as 0..1 levels, squeezed into at
+ * most `bins` points. Readings must be finite (silence is -160): JSON turns `-Infinity` into
+ * `null`, which the command refuses.
+ */
+export async function voiceWaveform(decibels: number[], bins: number): Promise<number[]> {
+  return invoke<number[]>("voice_waveform", { decibels, bins });
+}
+
+/**
+ * Stages a finished recording for `roomId`. The bytes travel as the raw IPC body and the room
+ * and the recorder's mime type as headers; the core never hands back a path. Resolves with the
+ * staged file, which is then marked with {@link attachmentMarkVoice} and sent.
+ */
+export async function attachmentStageRecording(
+  roomId: string,
+  mime: string,
+  body: Blob,
+): Promise<StagedAttachment> {
+  const bytes = new Uint8Array(await body.arrayBuffer());
+  return invoke<StagedAttachment>("attachment_stage_recording", bytes, {
+    headers: { "x-room-id": roomId, "x-mime": mime },
+  });
+}
+
+/** Marks a staged recording as a voice message with its length and waveform (0..1 levels). */
+export async function attachmentMarkVoice(
+  roomId: string,
+  token: string,
+  durationMs: number,
+  waveform: number[],
+): Promise<void> {
+  await invoke<void>("attachment_mark_voice", { roomId, token, durationMs, waveform });
+}
+
+/**
  * Subscribes to files dropped on the window and staged by the core, on
  * {@link STAGED_ATTACHMENT_EVENT}.
  *

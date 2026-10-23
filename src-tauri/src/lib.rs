@@ -21,6 +21,7 @@ mod attention;
 mod commands;
 mod commands_notify;
 mod commands_session;
+mod commands_voice;
 mod host;
 mod notify;
 mod notify_actions;
@@ -52,6 +53,9 @@ use crate::commands_session::{
     room_mention_candidates, send_permission_answer, set_room_notification_mode, set_room_pinned,
     unignore_user,
 };
+use crate::commands_voice::{
+    attachment_mark_voice, attachment_stage_recording, voice_recording_spec, voice_waveform,
+};
 use supermessage_core::secrets::KeyringStore;
 use supermessage_core::{session::Session, tls};
 
@@ -78,6 +82,53 @@ async fn core_status() -> CoreStatus {
         "core_status requested by webview"
     );
     status
+}
+
+/// Whether a webview permission request may be granted: the microphone alone (audio, no
+/// video), and only while the view shows the app's own content. Everything else is denied.
+fn allows_user_media(audio: bool, video: bool, uri: &Url) -> bool {
+    audio && !video && is_app_origin(uri)
+}
+
+/// Turns on `getUserMedia` in WebKitGTK and answers its permission requests without a prompt:
+/// the microphone for the app's own origin, nothing else. Without this WebKitGTK denies every
+/// request, so the composer's mic would never record.
+#[cfg(target_os = "linux")]
+fn allow_microphone(window: &tauri::WebviewWindow) {
+    use webkit2gtk::glib::prelude::Cast;
+    use webkit2gtk::{
+        PermissionRequestExt, SettingsExt, UserMediaPermissionRequest,
+        UserMediaPermissionRequestExt, WebViewExt,
+    };
+    let result = window.with_webview(|webview| {
+        let view = webview.inner();
+        if let Some(settings) = WebViewExt::settings(&view) {
+            settings.set_enable_media_stream(true);
+        }
+        view.connect_permission_request(|view, request| {
+            let allowed = request
+                .downcast_ref::<UserMediaPermissionRequest>()
+                .is_some_and(|media| {
+                    let uri = WebViewExt::uri(view).and_then(|u| Url::parse(&u).ok());
+                    uri.is_some_and(|uri| {
+                        allows_user_media(
+                            media.is_for_audio_device(),
+                            media.is_for_video_device(),
+                            &uri,
+                        )
+                    })
+                });
+            if allowed {
+                request.allow();
+            } else {
+                request.deny();
+            }
+            true
+        });
+    });
+    if let Err(e) = result {
+        tracing::warn!(error = %e, "couldn't set up the microphone permission");
+    }
 }
 
 /// The Vite dev server's fixed port — duplicated from `tauri.conf.json`'s
@@ -210,18 +261,23 @@ pub fn run() {
             // config has no way to express — can be attached here, before
             // the window is actually built. See `is_app_origin`'s doc
             // comment for what this blocks and why it matters.
-            WebviewWindowBuilder::from_config(app.handle(), &app.config().app.windows[0])?
-                .on_navigation(|url| {
-                    let allowed = is_app_origin(url);
-                    if !allowed {
-                        tracing::warn!(
-                            url = %url,
-                            "blocked a webview navigation outside the app's own origin"
-                        );
-                    }
-                    allowed
-                })
-                .build()?;
+            let _window =
+                WebviewWindowBuilder::from_config(app.handle(), &app.config().app.windows[0])?
+                    .on_navigation(|url| {
+                        let allowed = is_app_origin(url);
+                        if !allowed {
+                            tracing::warn!(
+                                url = %url,
+                                "blocked a webview navigation outside the app's own origin"
+                            );
+                        }
+                        allowed
+                    })
+                    .build()?;
+            #[cfg(target_os = "linux")]
+            allow_microphone(&_window);
+            // A recording left by the last run is single-use and can no longer be staged.
+            commands_voice::sweep_recordings(app.handle());
 
             let data_dir = app.path().app_data_dir().expect("app data dir");
             let session = Session::new(data_dir, Box::new(KeyringStore));
@@ -262,6 +318,10 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             attention::set_attention,
+            attachment_stage_recording,
+            attachment_mark_voice,
+            voice_recording_spec,
+            voice_waveform,
             core_status,
             ignore_user,
             unignore_user,
@@ -400,6 +460,23 @@ fn spawn_action_consumer(app: tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_permission_handler_allows_only_audio_for_the_app_origin() {
+        let app = Url::parse("tauri://localhost/index.html").unwrap();
+        let elsewhere = Url::parse("https://example.org/").unwrap();
+        assert!(allows_user_media(true, false, &app));
+        assert!(
+            !allows_user_media(true, true, &app),
+            "a camera is never allowed"
+        );
+        assert!(!allows_user_media(false, true, &app));
+        assert!(!allows_user_media(false, false, &app));
+        assert!(
+            !allows_user_media(true, false, &elsewhere),
+            "only the app's own content"
+        );
+    }
 
     #[test]
     fn is_app_origin_allows_the_tauri_custom_protocol_origin() {
