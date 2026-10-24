@@ -934,6 +934,11 @@ jobs:
           script: |
             adb uninstall dev.supermessage || true
             adb uninstall dev.supermessage.test || true
+            # The software-rendered AVD makes System UI miss its input deadline,
+            # and the "isn't responding" dialog then takes window focus from the
+            # test's activity (seen: KeyboardGapTest never got focus, and a
+            # click elsewhere failed). Error dialogs off; the ANR is still logged.
+            adb shell settings put global hide_error_dialogs 1
             cd android && ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.numShards=${{ env.NUM_SHARDS }} -Pandroid.testInstrumentationRunnerArguments.shardIndex=${{ matrix.shard }}
 
 

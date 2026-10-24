@@ -162,15 +162,18 @@ internal object RoomHarness {
             return f
         }
         if (!focused()) {
-            // On CI the window has stayed unfocused for 30s after an earlier test in the
-            // shard. Clear what can sit above it: a sleeping screen, the keyguard, and an
-            // expanded notification shade.
-            shell("input keyevent KEYCODE_WAKEUP")
-            shell("wm dismiss-keyguard")
-            shell("cmd statusbar collapse")
+            clearWhatSitsAbove()
         }
+        var cleared = SystemClock.uptimeMillis()
         try {
-            waitUntil(timeoutMillis) { focused() }
+            waitUntil(timeoutMillis) {
+                val f = focused()
+                if (!f && SystemClock.uptimeMillis() - cleared >= 5_000) {
+                    cleared = SystemClock.uptimeMillis()
+                    clearWhatSitsAbove()
+                }
+                f
+            }
         } catch (e: ComposeTimeoutException) {
             val holder = shell("dumpsys window displays").lines()
                 .filter { "mCurrentFocus" in it || "mFocusedApp" in it }
@@ -196,6 +199,19 @@ internal object RoomHarness {
         } catch (e: ComposeTimeoutException) {
             throw AssertionError("the soft keyboard never showed (window focused: ${focused()})", e)
         }
+    }
+
+    /**
+     * What can hold window focus above a test's activity: a sleeping screen, the keyguard,
+     * an expanded notification shade, and a system dialog. On CI it was System UI's
+     * "isn't responding" dialog (CI also turns error dialogs off); CLOSE_SYSTEM_DIALOGS
+     * dismisses one already showing.
+     */
+    private fun clearWhatSitsAbove() {
+        shell("input keyevent KEYCODE_WAKEUP")
+        shell("wm dismiss-keyguard")
+        shell("cmd statusbar collapse")
+        shell("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
     }
 
     /** Runs [command] as the shell user and returns what it printed. */

@@ -32,6 +32,8 @@ adb -s "$S" shell wm density 420 >/dev/null
 adb -s "$S" shell settings put global window_animation_scale 0
 adb -s "$S" shell settings put global transition_animation_scale 0
 adb -s "$S" shell settings put global animator_duration_scale 0
+# As CI: no "isn't responding" dialog stealing window focus from a test.
+adb -s "$S" shell settings put global hide_error_dialogs 1
 
 echo "==> now: $(adb -s "$S" shell wm size | tr -d '\r'), $(adb -s "$S" shell wm density | tr -d '\r')"
 echo "==> animations: window=$(adb -s "$S" shell settings get global window_animation_scale | tr -d '\r')," \
