@@ -308,6 +308,42 @@ On iOS the same event notifies through the core too
 once and Reject gets the PERMISSION category, a gate with Approve or Reject the
 GATE category, anything else DECISION ("Open" only).
 
+### 5a. gate.v2 — options and a subject from the gate
+
+charter `decisions/2026-11-07-gate-v2-is-the-decision-envelope.md`. The hub
+also puts gate.v2 fields on the same prose message, beside the unchanged
+`dev.superpipeline.gate` card, marked `suite_event_type:
+"dev.superpipeline.gate.v2"`. The wire is pinned by
+`fixtures/ecosystem-identity/matrix_gate_events.json`, vendored from AgentPod
+unchanged and read by `core::gate_v2`'s tests.
+
+- **Which card.** A message whose v2 fields validate is drawn from v2
+  (`core::gate_v2`, registered as `dev.superpipeline.gate.v2`); anything the
+  corpus refuses — an option with no `meaning`, a subject with no `digest`, no
+  `body`, duplicate ids, `needsComment` — reads the v1 card exactly as before.
+  Both are the same decision (`gate:<gate_id>`), so the legacy v1 event that
+  follows stays hidden and an outcome closes either.
+- **Options by meaning.** `CustomEventDecision.gate_v2` carries every option
+  with its `meaning` (`approve | reject | revise | choose | defer`) and
+  `needs_comment`; no list of ids is applied. Hosts draw approve as the main
+  action(s), revise with a comment prompt, reject as destructive, the rest
+  neutral.
+- **The preview.** A subject-bound gate carries its preview blocks
+  (`text | field | link`), drawn verbatim. The core withholds every approving
+  option, and says why (`approvals_withheld`), when `preview_complete` is not
+  `true`, a block is of a kind it cannot draw or past the hub's bounds, or a
+  link is not a safe `https://` URL. Revise, reject and the card's link stay.
+- **Hosts without v2.** `CustomEventDecision.options` for a v2 gate holds only
+  superpipeline's three ids and never an approval of a subject, so the desktop
+  and the notification actions answer with `decision.v1` as before and cannot
+  approve a post they do not show.
+- **The answer.** iOS and Android answer a v2 card with
+  `Core::send_gate_decision_v2`, handing back the card's `gate_v2`; the core
+  refuses an option not offered or withheld and an empty comment where one is
+  needed, and sends `dev.superpipeline.gate.decision.v2`: `gate_id`,
+  `option_id`, `comment` (`null` when none), `subject: {id, digest}` for a
+  subject-bound gate, and the `m.reference` to the gate's event.
+
 ## 6. Quiet events — what must never interrupt, at three layers
 
 Some events are not news: a reaction (an agent's 👀/✅/❌ on the reader's

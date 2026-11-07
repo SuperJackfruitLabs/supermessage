@@ -572,6 +572,11 @@ void uniffi_supermessage_ffi_fn_method_core_send_gate_decision(void*_Nonnull ptr
 void uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(void*_Nonnull ptr, RustBuffer room_id, RustBuffer gate_id, RustBuffer option_id, RustBuffer comment, RustBuffer in_reply_to, RustBuffer prompt, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_GATE_DECISION_V2
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_GATE_DECISION_V2
+void uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2(void*_Nonnull ptr, RustBuffer room_id, RustBuffer gate, RustBuffer option_id, RustBuffer comment, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE
 void uniffi_supermessage_ffi_fn_method_core_send_message(void*_Nonnull ptr, RustBuffer room_id, RustBuffer body, RustBuffer mentions, RustCallStatus *_Nonnull out_status
@@ -2011,6 +2016,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_send_gate_decision(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_DECISION_TO
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_DECISION_TO
 uint16_t uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_DECISION_V2
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_DECISION_V2
+uint16_t uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2(void
     
 );
 #endif

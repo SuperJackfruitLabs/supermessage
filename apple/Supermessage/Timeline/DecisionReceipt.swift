@@ -9,6 +9,9 @@ import SwiftUI
 struct DecisionAnswerRecord: Equatable {
     let option: CustomEventDecisionOption
     let at: Date
+    /// The part the option played, when the card knew it from more than the
+    /// id — a gate.v2 option's `meaning`. `nil` reads it from the id, as v1.
+    var role: DecisionOptionRole? = nil
 
     /// What happened, in a sentence the reader said.
     ///
@@ -20,7 +23,7 @@ struct DecisionAnswerRecord: Equatable {
     /// for a verb we do not know is how a receipt ends up saying something
     /// the reader did not do.
     var outcome: String {
-        switch DecisionOptionRole(option) {
+        switch role ?? DecisionOptionRole(option) {
         case .approve: return "Approved by you"
         case .requestChanges: return "Changes requested by you"
         case .reject: return "Rejected by you"
@@ -46,6 +49,17 @@ enum DecisionOptionRole {
         case GateAnswer.requestChanges: self = .requestChanges
         case "reject": self = .reject
         default: self = .other
+        }
+    }
+
+    /// A gate.v2 option, by what it means — never by its id, which a v2 gate
+    /// chooses freely (`approve_automatic`, `approve_manual`).
+    init(_ meaning: GateOptionMeaning) {
+        switch meaning {
+        case .approve: self = .approve
+        case .revise: self = .requestChanges
+        case .reject: self = .reject
+        case .choose, .defer: self = .other
         }
     }
 }

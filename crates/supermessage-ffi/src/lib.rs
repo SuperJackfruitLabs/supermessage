@@ -341,6 +341,33 @@ impl Core {
         Ok(())
     }
 
+    /// Answer a gate.v2 from its card (`supermessage_core::gate_v2`).
+    ///
+    /// `gate` is the `CustomEventDecision::gate_v2` the card was drawn from,
+    /// handed back unchanged: the core checks the answer against it (the
+    /// option was offered, an approval was not withheld, a comment is present
+    /// where `needs_comment` says one is required) and copies its subject
+    /// binding into the `dev.superpipeline.gate.decision.v2` it sends. The
+    /// sentence left in the room is the core's, as for
+    /// [`Core::send_gate_decision`].
+    pub fn send_gate_decision_v2(
+        &self,
+        room_id: String,
+        gate: supermessage_core::gate_v2::GateV2Decision,
+        option_id: String,
+        comment: Option<String>,
+        in_reply_to: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.focused_timeline().send_gate_decision_v2(
+            &room_id,
+            &gate,
+            &option_id,
+            comment.as_deref(),
+            &in_reply_to,
+        ))?;
+        Ok(())
+    }
+
     /// Set how loudly a room may interrupt. `Default` unsets the room's own
     /// rule so the account default applies again.
     pub fn set_room_notifications(

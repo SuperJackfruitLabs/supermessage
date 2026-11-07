@@ -1963,7 +1963,15 @@ fn embedded_from_raw(
     }
     let content: serde_json::Value = raw.get_field("content").ok()??;
     let (event_type, payload) = crate::embedded::embedded_suite_event(&content)?;
-    let payload = bound_custom_payload(payload, CUSTOM_PAYLOAD_MAX_BYTES)?;
+    // A gate.v2 carries the exact post it asks about, so its own, larger
+    // bound — already applied when it was chosen over the v1 card
+    // (`crate::gate_v2::embedded_payload`).
+    let max_bytes = if event_type == crate::gate_v2::GATE_V2_EVENT_TYPE {
+        crate::gate_v2::GATE_V2_PAYLOAD_MAX_BYTES
+    } else {
+        CUSTOM_PAYLOAD_MAX_BYTES
+    };
+    let payload = bound_custom_payload(payload, max_bytes)?;
     Some((event_type, payload))
 }
 
@@ -2865,6 +2873,33 @@ impl FocusedTimeline {
         // focused". The same builder serves `Session::send_gate_decision_to`,
         // which is what keeps the two paths' bytes identical.
         let content = gate_decision_request(gate_id, option_id, comment, in_reply_to, prompt)?;
+        let timeline = self.active_timeline_for(room_id)?;
+        timeline
+            .room()
+            .send_raw("m.room.message", content)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Answers a gate.v2 (`crate::gate_v2`) from its card, in the open room.
+    ///
+    /// `gate` is the [`crate::gate_v2::GateV2Decision`] the card was drawn
+    /// from, handed back by the host: the answer is checked against what the
+    /// reader was shown — the option was offered, an approval was not
+    /// withheld, a comment is present where one is needed — and carries the
+    /// subject binding copied from it. Everything else is as for
+    /// [`Self::send_gate_decision`]: an ordinary `m.room.message` that
+    /// references the gate's event, validated before the focus check.
+    pub async fn send_gate_decision_v2(
+        &self,
+        room_id: &str,
+        gate: &crate::gate_v2::GateV2Decision,
+        option_id: &str,
+        comment: Option<&str>,
+        in_reply_to: &str,
+    ) -> CoreResult<()> {
+        let content = crate::gate_v2::decision_request(gate, option_id, comment, in_reply_to)?;
         let timeline = self.active_timeline_for(room_id)?;
         timeline
             .room()

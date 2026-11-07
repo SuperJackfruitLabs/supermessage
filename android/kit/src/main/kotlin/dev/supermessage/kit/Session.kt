@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationMode
@@ -553,6 +554,36 @@ class Session(
                 comment = comment,
                 inReplyTo = eventId,
                 prompt = prompt,
+            )
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Answer a gate.v2 from its card. [gate] is the card's
+     * `CustomEventDecision.gateV2`, handed back as the core drew it: the core
+     * checks the answer against what the reader was shown and binds it to the
+     * subject they saw. Otherwise as [answerGate].
+     */
+    suspend fun answerGateV2(
+        eventId: String?,
+        gate: GateV2Decision,
+        optionId: String,
+        comment: String?,
+        roomId: String,
+    ): Boolean {
+        if (eventId == null) return false
+        return try {
+            client.sendGateDecisionV2(
+                roomId = roomId,
+                gate = gate,
+                optionId = optionId,
+                comment = comment,
+                inReplyTo = eventId,
             )
             true
         } catch (e: CancellationException) {

@@ -153,6 +153,18 @@ pub struct CustomEventDecision {
     /// `Option`, because not every decision has one: a permission request is
     /// identified by the event it arrived on and needs no separate subject.
     pub subject: Option<String>,
+    /// The whole gate, when it arrived as gate.v2 (`crate::gate_v2`): every
+    /// option with its meaning, the subject's preview and its binding.
+    ///
+    /// A host that draws v2 draws from this and answers with
+    /// `send_gate_decision_v2`; one that does not keeps drawing
+    /// [`Self::options`], which for a v2 gate holds only what a decision.v1
+    /// can answer and never an approval of a subject it cannot show. `None`
+    /// for every v1 gate and permission request, and then absent from the
+    /// JSON, so their wire is unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub gate_v2: Option<crate::gate_v2::GateV2Decision>,
 }
 
 /// A decision the board has accepted, as the room reports it.
@@ -320,7 +332,7 @@ impl CustomEventRegistry {
 ///
 /// Cosmetic only — the bound that actually protects this process lives in the
 /// core, at `timeline::CUSTOM_PAYLOAD_MAX_BYTES`, before any of this runs.
-fn bound_text(value: &str, max_chars: usize) -> String {
+pub(crate) fn bound_text(value: &str, max_chars: usize) -> String {
     if value.chars().count() <= max_chars {
         return value.to_string();
     }
@@ -381,7 +393,10 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
             id: option.id,
         })
         .collect();
-    if options.is_empty() {
+    // A gate.v2 is still a decision when the legacy list is empty — a gate
+    // whose options are all v2-only — because its own options, preview and
+    // the reason approvals were withheld are on `gate_v2`.
+    if options.is_empty() && decision.gate_v2.is_none() {
         return None;
     }
     Some(CustomEventDecision {
@@ -390,6 +405,8 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
         // Not bounded, for the same reason an option id is not: it is an
         // identifier handed back verbatim, and a truncated one names nothing.
         subject: decision.subject,
+        // Bounded by `crate::gate_v2` when it was built.
+        gate_v2: decision.gate_v2,
     })
 }
 
@@ -411,7 +428,15 @@ const LINK_MAX_CHARS: usize = 2048;
 /// `http://` is refused too. Every URL this suite emits is https, so accepting
 /// plaintext would only ever admit something that did not come from us.
 pub fn safe_link(content: &Value, key: &str) -> Option<String> {
-    let raw = content.get(key)?.as_str()?.trim();
+    safe_url(content.get(key)?.as_str()?)
+}
+
+/// [`safe_link`] for a string already in hand — a gate.v2 preview's link
+/// block (`crate::gate_v2`), which is one level further down than a renderer
+/// reads with `safe_link`. The same rule, so there is one definition of a URL
+/// a host may open.
+pub fn safe_url(raw: &str) -> Option<String> {
+    let raw = raw.trim();
     if raw.len() > LINK_MAX_CHARS || !raw.is_char_boundary(raw.len()) {
         return None;
     }
@@ -812,6 +837,7 @@ impl CustomEventRenderer for PermissionRequestRenderer {
                 prompt: format!("Allow {title}?"),
                 options,
                 subject: None,
+                gate_v2: None,
             }),
         }
     }
@@ -934,6 +960,7 @@ impl CustomEventRenderer for GateRenderer {
                     .unwrap_or_else(|| format!("Approve \"{card_title}\"?")),
                 options,
                 subject: Some(gate_id),
+                gate_v2: None,
             }),
         }
     }
@@ -950,6 +977,7 @@ pub fn default_registry() -> &'static CustomEventRegistry {
         registry.register(Box::new(TurnActivityRenderer));
         registry.register(Box::new(PermissionRequestRenderer));
         registry.register(Box::new(GateRenderer));
+        registry.register(Box::new(crate::gate_v2::GateV2Renderer));
         registry
     })
 }
@@ -1391,6 +1419,7 @@ mod tests {
             prompt: "Allow restart?".into(),
             options: vec![option("allow", "Allow"), option("deny", "Deny")],
             subject: None,
+            gate_v2: None,
         });
         assert_eq!(
             decision_from(&registry),
@@ -1398,6 +1427,7 @@ mod tests {
                 prompt: "Allow restart?".into(),
                 options: vec![option("allow", "Allow"), option("deny", "Deny")],
                 subject: None,
+                gate_v2: None,
             })
         );
     }
@@ -1408,6 +1438,7 @@ mod tests {
             prompt: "P".repeat(FIELD_VALUE_MAX_CHARS + 50),
             options: vec![option("id", &"L".repeat(FIELD_LABEL_MAX_CHARS + 50))],
             subject: None,
+            gate_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.prompt.chars().count(), FIELD_VALUE_MAX_CHARS + 1);
@@ -1426,6 +1457,7 @@ mod tests {
             prompt: "Allow?".into(),
             options: vec![option(&long_id, "Allow")],
             subject: None,
+            gate_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options[0].id, long_id);
@@ -1439,6 +1471,7 @@ mod tests {
             prompt: "Allow?".into(),
             options,
             subject: None,
+            gate_v2: None,
         });
         assert_eq!(
             decision_from(&registry).expect("a decision").options.len(),
@@ -1457,6 +1490,7 @@ mod tests {
             prompt: "Allow?".into(),
             options,
             subject: None,
+            gate_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options.len(), 2);
@@ -1474,6 +1508,7 @@ mod tests {
                 option("no-label", ""),
             ],
             subject: None,
+            gate_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options, vec![option("allow", "Allow")]);
@@ -1485,6 +1520,7 @@ mod tests {
             prompt: "Allow?".into(),
             options: vec![option("", ""), option("", "")],
             subject: None,
+            gate_v2: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -1495,6 +1531,7 @@ mod tests {
             prompt: "Allow?".into(),
             options: vec![],
             subject: None,
+            gate_v2: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -2006,13 +2043,14 @@ mod tests {
             TURN_ACTIVITY_EVENT_TYPE,
             PERMISSION_REQUEST_EVENT_TYPE,
             GATE_EVENT_TYPE,
+            crate::gate_v2::GATE_V2_EVENT_TYPE,
         ] {
             assert!(
                 registry.get(event_type).is_some(),
                 "{event_type} is not registered"
             );
         }
-        assert_eq!(registry.len(), 4);
+        assert_eq!(registry.len(), 5);
     }
 }
 

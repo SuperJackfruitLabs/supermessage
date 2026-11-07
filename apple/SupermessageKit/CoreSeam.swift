@@ -143,6 +143,10 @@ public protocol MessageSending: Sendable {
         roomId: String, gateId: String, optionId: String, comment: String?,
         inReplyTo: String, prompt: String
     ) async throws
+    func sendGateDecisionV2(
+        roomId: String, gate: GateV2Decision, optionId: String, comment: String?,
+        inReplyTo: String
+    ) async throws
     func setTyping(roomId: String, typing: Bool) async throws
 }
 

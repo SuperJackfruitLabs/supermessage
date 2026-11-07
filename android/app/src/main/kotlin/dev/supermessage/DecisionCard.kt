@@ -74,6 +74,9 @@ import uniffi.supermessage_core.CustomEventDecisionOption
 import uniffi.supermessage_core.CustomEventField
 import uniffi.supermessage_core.CustomEventOutcome
 import uniffi.supermessage_core.CustomEventView
+import uniffi.supermessage_core.GateOptionV2
+import uniffi.supermessage_core.GatePreviewBlock
+import uniffi.supermessage_core.GateV2Decision
 
 /**
  * A suite event — a Superpipeline card or run, a permission request, station
@@ -201,6 +204,8 @@ class DecisionAnswers internal constructor(
         handler: suspend (GateAnswer) -> Boolean,
         haptics: HapticFeedback,
         onLanded: () -> Unit,
+        /** The part the option played, when known from more than its id (a gate.v2 meaning). */
+        role: DecisionOptionRole? = null,
     ) {
         if (answeredKeys.containsKey(key) || sendingKeys[key] == true) return
         sendingKeys[key] = true
@@ -215,7 +220,7 @@ class DecisionAnswers internal constructor(
             }
             // Answered first, so no frame sees neither state.
             if (landed) {
-                answeredKeys[key] = AnsweredHere(receiptOutcome(option), Instant.now())
+                answeredKeys[key] = AnsweredHere(receiptOutcome(option, role), Instant.now())
                 haptics.play(Haptic.Success)
                 onLanded()
                 onAnswered(key, option.id)
@@ -606,9 +611,129 @@ private fun PendingBody(
         }
         Summary(digest.summary)
         Details(digest.rest, detailsOpenInitially)
+        decision.gateV2?.let { gate ->
+            // What is being approved, exactly — before the buttons that
+            // approve it. The core withheld every approving option when this
+            // could not be drawn in full, and says so.
+            GatePreviewBlocks(gate.preview)
+            gate.approvalsWithheld?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("decision-approvals-withheld"),
+                )
+            }
+        }
         if (reasoning != null) ReasoningDisclosure(reasoning)
         LinkButton(link)
         DecisionButtons(decision, answers, answerKey, onDecide)
+    }
+}
+
+/**
+ * A gate.v2 subject's preview — what the reader approves, exactly.
+ *
+ * Every string is plain [Text], never parsed as markdown, with its line
+ * breaks kept: a person approves bytes they can see, character for character.
+ * A link block's URL already passed the core's `safe_url` (`https://`,
+ * printable ASCII), so it may be opened; its label is text.
+ */
+@Composable
+private fun GatePreviewBlocks(blocks: List<GatePreviewBlock>) {
+    if (blocks.isEmpty()) return
+    val uri = LocalUriHandler.current
+    val scheme = MaterialTheme.colorScheme
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        blocks.forEach { block ->
+            when (block) {
+                is GatePreviewBlock.Text -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    block.label?.let {
+                        Text(it, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                    }
+                    Text(
+                        block.text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(scheme.surfaceVariant)
+                            .padding(10.dp)
+                            .testTag("gate-preview-text"),
+                    )
+                }
+                is GatePreviewBlock.Field -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(block.label, style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                    Text(block.value, style = MaterialTheme.typography.bodyMedium)
+                }
+                is GatePreviewBlock.Link -> TextButton(onClick = { uri.openUri(block.url) }) {
+                    Text("${block.label} ↗", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One answer as the card draws it.
+ *
+ * From a gate.v2 option it is drawn by **meaning**, never by id; from a legacy
+ * option by id, exactly as before. Presentation only — which options exist,
+ * and which a reader may approve, is the core's.
+ */
+internal data class DecisionChoice(
+    val id: String,
+    val label: String,
+    val role: DecisionOptionRole,
+    val comment: CommentAsk,
+) {
+    enum class CommentAsk {
+        /** Sent as tapped. */
+        NONE,
+        /** A v1 `request_changes`: asked for, sent without if left empty. */
+        OPTIONAL,
+        /** A gate.v2 `needs_comment`: never sent empty — the core refuses it too. */
+        REQUIRED,
+    }
+
+    /** What the receipt names. */
+    val record: CustomEventDecisionOption get() = CustomEventDecisionOption(label = label, id = id)
+
+    /** Whether [text] leaves a required comment unwritten. */
+    fun lacksComment(text: String): Boolean = comment == CommentAsk.REQUIRED && text.isBlank()
+
+    companion object {
+        fun legacy(option: CustomEventDecisionOption) = DecisionChoice(
+            id = option.id,
+            label = option.label,
+            role = DecisionOptionRole.of(option),
+            comment = if (option.id == GateAnswer.REQUEST_CHANGES) CommentAsk.OPTIONAL else CommentAsk.NONE,
+        )
+
+        fun v2(option: GateOptionV2) = DecisionChoice(
+            id = option.id,
+            label = option.label,
+            role = DecisionOptionRole.of(option.meaning),
+            comment = if (option.needsComment) CommentAsk.REQUIRED else CommentAsk.NONE,
+        )
+
+        /**
+         * Every answer in [decision], and which of them lead. A gate.v2 is
+         * drawn from its own options, and every approving one is a main
+         * action (a publishing gate approves automatically or manually); a
+         * legacy decision keeps its one primary, the first answer that is not
+         * a rejection.
+         */
+        fun of(decision: CustomEventDecision): Pair<List<DecisionChoice>, List<DecisionChoice>> {
+            val gate = decision.gateV2
+            return if (gate != null) {
+                val all = gate.options.map { v2(it) }
+                all to all.filter { it.role == DecisionOptionRole.APPROVE }
+            } else {
+                val all = decision.options.map { legacy(it) }
+                all to listOfNotNull(all.firstOrNull { it.role != DecisionOptionRole.REJECT })
+            }
+        }
     }
 }
 
@@ -630,45 +755,47 @@ private fun DecisionButtons(
     onDecide: (suspend (GateAnswer) -> Boolean)?,
 ) {
     val haptics = LocalHapticFeedback.current
-    val primary = decision.options.firstOrNull { DecisionOptionRole.of(it) != DecisionOptionRole.REJECT }
-    val secondaries = decision.options.filter { it !== primary && DecisionOptionRole.of(it) != DecisionOptionRole.REJECT }
-    val rejections = decision.options.filter { DecisionOptionRole.of(it) == DecisionOptionRole.REJECT }
+    val (choices, primaries) = DecisionChoice.of(decision)
+    val secondaries = choices.filter { it !in primaries && it.role != DecisionOptionRole.REJECT }
+    val rejections = choices.filter { it.role == DecisionOptionRole.REJECT }
 
-    // The option awaiting a comment, if one is. Only `request_changes` ever
-    // sets this: approve and reject are decisions, and request-changes is
-    // feedback that becomes the rework's context — Superpipeline merges it into
-    // the card's handoff, so an empty one costs the next agent the reason.
-    var commenting by remember { mutableStateOf<CustomEventDecisionOption?>(null) }
+    // The option awaiting a comment, if one is: a v1 `request_changes`, or a
+    // gate.v2 option that needs one. Request-changes is feedback that becomes
+    // the rework's context — Superpipeline merges it into the card's handoff,
+    // so an empty one costs the next agent the reason.
+    var commenting by remember { mutableStateOf<DecisionChoice?>(null) }
     // Kept until the answer lands, so a failed send does not cost the typing.
     var comment by remember { mutableStateOf("") }
 
     val interactive = onDecide != null
     val enabled = interactive && !answers.sending(answerKey)
 
-    fun send(option: CustomEventDecisionOption, text: String?) {
+    fun send(choice: DecisionChoice, text: String?) {
         val handler = onDecide ?: return
         val trimmed = text?.trim()
         answers.send(
             key = answerKey,
-            option = option,
+            option = choice.record,
             answer = GateAnswer(
                 subject = decision.subject,
-                optionId = option.id,
+                optionId = choice.id,
                 comment = if (trimmed.isNullOrEmpty()) null else trimmed,
                 prompt = decision.prompt,
+                gateV2 = decision.gateV2,
             ),
             handler = handler,
             haptics = haptics,
             onLanded = { comment = "" },
+            role = choice.role,
         )
     }
 
-    fun tapped(option: CustomEventDecisionOption) {
-        if (option.id == GateAnswer.REQUEST_CHANGES) commenting = option else send(option, null)
+    fun tapped(choice: DecisionChoice) {
+        if (choice.comment != DecisionChoice.CommentAsk.NONE) commenting = choice else send(choice, null)
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (primary != null) {
+        primaries.forEach { primary ->
             DecisionButton(
                 text = primary.label,
                 kind = ButtonKind.Primary,
@@ -728,13 +855,17 @@ private fun DecisionButtons(
         // Back key and a tap outside all leave it.
         AlertDialog(
             onDismissRequest = { commenting = null; comment = "" },
-            title = { Text("Request changes") },
+            title = { Text(pendingOption.label) },
             text = {
                 // In the dialog's own composition, where the field exists.
                 LaunchedEffect(Unit) { focus.requestFocus() }
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "This goes back to the agent as the reason, so it can pick the work up again.",
+                        if (pendingOption.comment == DecisionChoice.CommentAsk.REQUIRED) {
+                            "This answer needs a comment. It goes back to the agent as the reason."
+                        } else {
+                            "This goes back to the agent as the reason, so it can pick the work up again."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                     )
                     OutlinedTextField(
@@ -748,9 +879,12 @@ private fun DecisionButtons(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        send(pendingOption, comment)
+                        if (!pendingOption.lacksComment(comment)) send(pendingOption, comment)
                         commenting = null
                     },
+                    // A required comment is required: the core refuses it
+                    // empty, and a Send that does nothing reads as a failure.
+                    enabled = !pendingOption.lacksComment(comment),
                     modifier = Modifier.testTag("decision-comment-send"),
                 ) { Text("Send") }
             },
@@ -880,6 +1014,8 @@ data class GateAnswer(
     val optionId: String,
     val comment: String?,
     val prompt: String,
+    /** The gate.v2 the card was drawn from, when it was one; answered with `Session.answerGateV2`. */
+    val gateV2: GateV2Decision? = null,
 ) {
     companion object {
         /** Superpipeline's only option id that expects a comment. */

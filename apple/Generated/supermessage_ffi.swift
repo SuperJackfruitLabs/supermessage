@@ -940,6 +940,19 @@ public protocol CoreProtocol : AnyObject {
     func sendGateDecisionTo(roomId: String, gateId: String, optionId: String, comment: String?, inReplyTo: String, prompt: String) throws 
     
     /**
+     * Answer a gate.v2 from its card (`supermessage_core::gate_v2`).
+     *
+     * `gate` is the `CustomEventDecision::gate_v2` the card was drawn from,
+     * handed back unchanged: the core checks the answer against it (the
+     * option was offered, an approval was not withheld, a comment is present
+     * where `needs_comment` says one is required) and copies its subject
+     * binding into the `dev.superpipeline.gate.decision.v2` it sends. The
+     * sentence left in the room is the core's, as for
+     * [`Core::send_gate_decision`].
+     */
+    func sendGateDecisionV2(roomId: String, gate: GateV2Decision, optionId: String, comment: String?, inReplyTo: String) throws 
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -1848,6 +1861,28 @@ open func sendGateDecisionTo(roomId: String, gateId: String, optionId: String, c
         FfiConverterOptionString.lower(comment),
         FfiConverterString.lower(inReplyTo),
         FfiConverterString.lower(prompt),$0
+    )
+}
+}
+    
+    /**
+     * Answer a gate.v2 from its card (`supermessage_core::gate_v2`).
+     *
+     * `gate` is the `CustomEventDecision::gate_v2` the card was drawn from,
+     * handed back unchanged: the core checks the answer against it (the
+     * option was offered, an approval was not withheld, a comment is present
+     * where `needs_comment` says one is required) and copies its subject
+     * binding into the `dev.superpipeline.gate.decision.v2` it sends. The
+     * sentence left in the room is the core's, as for
+     * [`Core::send_gate_decision`].
+     */
+open func sendGateDecisionV2(roomId: String, gate: GateV2Decision, optionId: String, comment: String?, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterTypeGateV2Decision_lower(gate),
+        FfiConverterString.lower(optionId),
+        FfiConverterOptionString.lower(comment),
+        FfiConverterString.lower(inReplyTo),$0
     )
 }
 }
@@ -5062,6 +5097,8 @@ fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
 
 
 
+
+
 /**
  * What the dock above the composer says after the reader wrote to an agent —
  * see `core::acknowledgement`. A free function for the same reason as
@@ -6252,6 +6289,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to() != 20932) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2() != 3925) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384) {

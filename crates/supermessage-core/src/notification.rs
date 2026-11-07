@@ -629,7 +629,13 @@ fn activity_for_event(
     }
     if event.sender() == own_user {
         if matches!(note.suppress, Some(NotificationSuppression::Own)) {
-            if suite_type.as_deref() == Some(crate::timeline::GATE_DECISION_SUITE_TYPE) {
+            if matches!(
+                suite_type.as_deref(),
+                Some(
+                    crate::timeline::GATE_DECISION_SUITE_TYPE
+                        | crate::gate_v2::GATE_DECISION_V2_SUITE_TYPE
+                )
+            ) {
                 return Some(NotificationActivity {
                     gate_id: text("gate_id"),
                     references: reference(),
@@ -849,6 +855,7 @@ mod tests {
                 })
                 .collect(),
             subject: subject.map(str::to_string),
+            gate_v2: None,
         }
     }
 
@@ -1412,6 +1419,25 @@ mod tests {
         assert_eq!(activity.gate_id.as_deref(), Some("gate-9"));
         assert_eq!(activity.option_id.as_deref(), Some("approve"));
         assert_eq!(activity.references.as_deref(), Some("$gate"));
+    }
+
+    #[test]
+    fn this_accounts_own_v2_answers_are_read_back_too() {
+        let mut decided = message(json!({
+            "msgtype": "m.text",
+            "body": "Approved — post automatically",
+            "suite_event_type": crate::gate_v2::GATE_DECISION_V2_SUITE_TYPE,
+            "gate_id": "gate-9",
+            "option_id": "approve_automatic",
+            "comment": null,
+            "subject": { "id": "aps_1", "digest": "sha256:1" },
+            "m.relates_to": { "rel_type": "m.reference", "event_id": "$gate" }
+        }));
+        decided["sender"] = json!("@me:hs");
+        let activity = activity_of(decided);
+        assert_eq!(activity.kind, ActivityKind::OwnAnswer);
+        assert_eq!(activity.gate_id.as_deref(), Some("gate-9"));
+        assert_eq!(activity.option_id.as_deref(), Some("approve_automatic"));
     }
 
     #[test]

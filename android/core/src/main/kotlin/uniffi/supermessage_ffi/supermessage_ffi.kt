@@ -48,6 +48,7 @@ import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeFirstRunScript
 import uniffi.supermessage_core.FfiConverterTypeFirstRunStep
 import uniffi.supermessage_core.FfiConverterTypeGateAnswers
+import uniffi.supermessage_core.FfiConverterTypeGateV2Decision
 import uniffi.supermessage_core.FfiConverterTypeLiveActivityToken
 import uniffi.supermessage_core.FfiConverterTypeLiveActivityTokenKind
 import uniffi.supermessage_core.FfiConverterTypeMatrixLinkTarget
@@ -97,6 +98,7 @@ import uniffi.supermessage_core.FfiConverterTypeWidgetWrite
 import uniffi.supermessage_core.FirstRunScript
 import uniffi.supermessage_core.FirstRunStep
 import uniffi.supermessage_core.GateAnswers
+import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.LiveActivityToken
 import uniffi.supermessage_core.LiveActivityTokenKind
 import uniffi.supermessage_core.MatrixLinkTarget
@@ -153,6 +155,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
 import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunScript
 import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunStep
 import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
+import uniffi.supermessage_core.RustBuffer as RustBufferGateV2Decision
 import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityToken
 import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityTokenKind
 import uniffi.supermessage_core.RustBuffer as RustBufferMatrixLinkTarget
@@ -1220,6 +1223,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1350,6 +1355,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gate`: RustBufferGateV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_message(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`mentions`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1879,6 +1886,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_message(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_permission_answer(
@@ -2302,6 +2311,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to() != 20932.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2() != 3925.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384.toShort()) {
@@ -3190,6 +3202,19 @@ public interface CoreInterface {
      * same content, validated the same way, sent straight to `room_id`.
      */
     fun `sendGateDecisionTo`(`roomId`: kotlin.String, `gateId`: kotlin.String, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String, `prompt`: kotlin.String)
+    
+    /**
+     * Answer a gate.v2 from its card (`supermessage_core::gate_v2`).
+     *
+     * `gate` is the `CustomEventDecision::gate_v2` the card was drawn from,
+     * handed back unchanged: the core checks the answer against it (the
+     * option was offered, an approval was not withheld, a comment is present
+     * where `needs_comment` says one is required) and copies its subject
+     * binding into the `dev.superpipeline.gate.decision.v2` it sends. The
+     * sentence left in the room is the core's, as for
+     * [`Core::send_gate_decision`].
+     */
+    fun `sendGateDecisionV2`(`roomId`: kotlin.String, `gate`: GateV2Decision, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String)
     
     /**
      * Send a plain-text message to the focused room.
@@ -4319,6 +4344,29 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(
         it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`gateId`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),FfiConverterString.lower(`prompt`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Answer a gate.v2 from its card (`supermessage_core::gate_v2`).
+     *
+     * `gate` is the `CustomEventDecision::gate_v2` the card was drawn from,
+     * handed back unchanged: the core checks the answer against it (the
+     * option was offered, an approval was not withheld, a comment is present
+     * where `needs_comment` says one is required) and copies its subject
+     * binding into the `dev.superpipeline.gate.decision.v2` it sends. The
+     * sentence left in the room is the core's, as for
+     * [`Core::send_gate_decision`].
+     */
+    @Throws(FfiException::class)override fun `sendGateDecisionV2`(`roomId`: kotlin.String, `gate`: GateV2Decision, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2(
+        it, FfiConverterString.lower(`roomId`),FfiConverterTypeGateV2Decision.lower(`gate`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),_status)
 }
     }
     
@@ -7793,6 +7841,10 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
         }
     }
 }
+
+
+
+
 
 
 

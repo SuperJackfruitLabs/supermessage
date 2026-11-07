@@ -306,7 +306,16 @@ internal fun RoomPane(
                         // the send failed.
                         onDecide = { row, answer ->
                             val gateId = answer.subject
-                            if (gateId == null) {
+                            val gateV2 = answer.gateV2
+                            if (gateV2 != null) {
+                                session.answerGateV2(
+                                    eventId = row.item.eventId,
+                                    gate = gateV2,
+                                    optionId = answer.optionId,
+                                    comment = answer.comment,
+                                    roomId = currentRoomId,
+                                )
+                            } else if (gateId == null) {
                                 // A permission request has no gate; route it
                                 // to the permission sender (iOS
                                 // `TimelineCollectionView.swift:1022-1031`).

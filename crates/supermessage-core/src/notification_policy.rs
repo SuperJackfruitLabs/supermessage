@@ -674,6 +674,7 @@ mod tests {
                 })
                 .collect(),
             subject: subject.map(str::to_string),
+            gate_v2: None,
         }
     }
 

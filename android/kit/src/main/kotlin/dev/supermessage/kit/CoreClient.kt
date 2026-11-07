@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.supermessage_core.Acknowledgement
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.NotificationDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
@@ -340,6 +341,21 @@ class CoreClient(
         prompt: String,
     ) {
         run { it.sendGateDecision(roomId, gateId, optionId, comment, inReplyTo, prompt) }
+    }
+
+    /**
+     * Answer a gate.v2. [gate] is the card's own `CustomEventDecision.gateV2`,
+     * handed back unchanged: the core checks the answer against it and copies
+     * its subject binding into the decision it sends.
+     */
+    suspend fun sendGateDecisionV2(
+        roomId: String,
+        gate: GateV2Decision,
+        optionId: String,
+        comment: String?,
+        inReplyTo: String,
+    ) {
+        run { it.sendGateDecisionV2(roomId, gate, optionId, comment, inReplyTo) }
     }
 
     /**

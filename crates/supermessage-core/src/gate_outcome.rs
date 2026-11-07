@@ -165,13 +165,17 @@ struct Gate<'a> {
 }
 
 fn gate_of(item: &TimelineItemDto) -> Option<Gate<'_>> {
+    let event_type = item.detail.as_deref()?;
     if !matches!(item.kind.as_str(), "message" | "customMessage")
-        || item.detail.as_deref() != Some(GATE_EVENT_TYPE)
+        || !matches!(
+            event_type,
+            GATE_EVENT_TYPE | crate::gate_v2::GATE_V2_EVENT_TYPE
+        )
     {
         return None;
     }
     let payload = &item.custom_payload.as_ref()?.0;
-    let identity = crate::embedded::decision_identity(GATE_EVENT_TYPE, payload)?;
+    let identity = crate::embedded::decision_identity(event_type, payload)?;
     Some(Gate {
         identity,
         gate_id: payload.get("gate_id")?.as_str()?,
@@ -433,6 +437,46 @@ mod tests {
     fn is_receipt(row: &TimelineRow) -> bool {
         let (buttons, outcome) = state(row);
         !buttons && outcome.is_some()
+    }
+
+    /// A gate.v2 prose message's payload, as `crate::gate_v2` keeps it.
+    fn v2_gate(gate_id: &str) -> Value {
+        json!({
+            "msgtype": "m.text",
+            "suite_event_type": crate::gate_v2::GATE_V2_EVENT_TYPE,
+            "schema_version": 1,
+            "board_id": "brd_1",
+            "gate_id": gate_id,
+            "card_title": "Launch post",
+            "stage_key": "verify",
+            "prompt": "Approve \"Launch post\"?",
+            "options": [
+                { "id": "approve", "label": "Approve", "meaning": "approve", "needs_comment": false },
+                { "id": "reject", "label": "Reject", "meaning": "reject", "needs_comment": false }
+            ]
+        })
+    }
+
+    #[test]
+    fn an_outcome_closes_a_v2_card_and_its_hidden_v1_companion() {
+        let mut rows = vec![
+            row(
+                "g",
+                "message",
+                Some("m.text"),
+                HUB,
+                crate::gate_v2::GATE_V2_EVENT_TYPE,
+                v2_gate("gate_1"),
+            ),
+            companion_gate("c", "gate_1"),
+        ];
+        assert!(is_pending(&rows[0]), "a v2 gate starts pending");
+        reconcile(&mut rows);
+        assert_eq!(rows[1].view, ItemView::None, "the companion stays hidden");
+        rows.push(outcome_event("o", HUB, outcome(Some("gate_1"), "$c")));
+        reconcile(&mut rows);
+        assert!(is_receipt(&rows[0]));
+        assert_eq!(rows[1].view, ItemView::None);
     }
 
     #[test]

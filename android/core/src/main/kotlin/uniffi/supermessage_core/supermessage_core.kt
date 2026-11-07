@@ -1479,7 +1479,19 @@ data class CustomEventDecision (
      * `Option`, because not every decision has one: a permission request is
      * identified by the event it arrived on and needs no separate subject.
      */
-    var `subject`: kotlin.String?
+    var `subject`: kotlin.String?, 
+    /**
+     * The whole gate, when it arrived as gate.v2 (`crate::gate_v2`): every
+     * option with its meaning, the subject's preview and its binding.
+     *
+     * A host that draws v2 draws from this and answers with
+     * `send_gate_decision_v2`; one that does not keeps drawing
+     * [`Self::options`], which for a v2 gate holds only what a decision.v1
+     * can answer and never an approval of a subject it cannot show. `None`
+     * for every v1 gate and permission request, and then absent from the
+     * JSON, so their wire is unchanged.
+     */
+    var `gateV2`: GateV2Decision? = null
 ) {
     
     companion object
@@ -1494,19 +1506,22 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterString.read(buf),
             FfiConverterSequenceTypeCustomEventDecisionOption.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalTypeGateV2Decision.read(buf),
         )
     }
 
     override fun allocationSize(value: CustomEventDecision) = (
             FfiConverterString.allocationSize(value.`prompt`) +
             FfiConverterSequenceTypeCustomEventDecisionOption.allocationSize(value.`options`) +
-            FfiConverterOptionalString.allocationSize(value.`subject`)
+            FfiConverterOptionalString.allocationSize(value.`subject`) +
+            FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`gateV2`)
     )
 
     override fun write(value: CustomEventDecision, buf: ByteBuffer) {
             FfiConverterString.write(value.`prompt`, buf)
             FfiConverterSequenceTypeCustomEventDecisionOption.write(value.`options`, buf)
             FfiConverterOptionalString.write(value.`subject`, buf)
+            FfiConverterOptionalTypeGateV2Decision.write(value.`gateV2`, buf)
     }
 }
 
@@ -1810,6 +1825,155 @@ public object FfiConverterTypeGateAnswers: FfiConverterRustBuffer<GateAnswers> {
             FfiConverterString.write(value.`gateId`, buf)
             FfiConverterString.write(value.`prompt`, buf)
             FfiConverterSequenceString.write(value.`optionIds`, buf)
+    }
+}
+
+
+
+/**
+ * One answer a gate.v2 offers.
+ */
+data class GateOptionV2 (
+    /**
+     * Handed back verbatim; never drawn, never cut.
+     */
+    var `id`: kotlin.String, 
+    /**
+     * Free text from the board, bounded. Display only.
+     */
+    var `label`: kotlin.String, 
+    var `meaning`: GateOptionMeaning, 
+    /**
+     * The host must ask for text, and the core refuses to send this option
+     * without it.
+     */
+    var `needsComment`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateOptionV2: FfiConverterRustBuffer<GateOptionV2> {
+    override fun read(buf: ByteBuffer): GateOptionV2 {
+        return GateOptionV2(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeGateOptionMeaning.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateOptionV2) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterTypeGateOptionMeaning.allocationSize(value.`meaning`) +
+            FfiConverterBoolean.allocationSize(value.`needsComment`)
+    )
+
+    override fun write(value: GateOptionV2, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterTypeGateOptionMeaning.write(value.`meaning`, buf)
+            FfiConverterBoolean.write(value.`needsComment`, buf)
+    }
+}
+
+
+
+/**
+ * The subject a decision.v2 is bound to, copied back from the gate shown.
+ */
+data class GateSubjectBinding (
+    var `id`: kotlin.String, 
+    var `digest`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateSubjectBinding: FfiConverterRustBuffer<GateSubjectBinding> {
+    override fun read(buf: ByteBuffer): GateSubjectBinding {
+        return GateSubjectBinding(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateSubjectBinding) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`digest`)
+    )
+
+    override fun write(value: GateSubjectBinding, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`digest`, buf)
+    }
+}
+
+
+
+/**
+ * A gate.v2 as a host draws and answers it. Rides on
+ * `CustomEventDecision::gate_v2`.
+ */
+data class GateV2Decision (
+    var `gateId`: kotlin.String, 
+    /**
+     * What this client may offer, in the gate's order. Approving options
+     * are already gone when the preview could not be shown in full.
+     */
+    var `options`: List<GateOptionV2>, 
+    /**
+     * Empty for a gate bound to no subject.
+     */
+    var `preview`: List<GatePreviewBlock>, 
+    /**
+     * [`APPROVALS_WITHHELD_NOTE`] when approving options were withheld.
+     */
+    var `approvalsWithheld`: kotlin.String?, 
+    /**
+     * Present on a subject-bound gate; copied into the answer.
+     */
+    var `subject`: GateSubjectBinding?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decision> {
+    override fun read(buf: ByteBuffer): GateV2Decision {
+        return GateV2Decision(
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeGateOptionV2.read(buf),
+            FfiConverterSequenceTypeGatePreviewBlock.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalTypeGateSubjectBinding.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateV2Decision) = (
+            FfiConverterString.allocationSize(value.`gateId`) +
+            FfiConverterSequenceTypeGateOptionV2.allocationSize(value.`options`) +
+            FfiConverterSequenceTypeGatePreviewBlock.allocationSize(value.`preview`) +
+            FfiConverterOptionalString.allocationSize(value.`approvalsWithheld`) +
+            FfiConverterOptionalTypeGateSubjectBinding.allocationSize(value.`subject`)
+    )
+
+    override fun write(value: GateV2Decision, buf: ByteBuffer) {
+            FfiConverterString.write(value.`gateId`, buf)
+            FfiConverterSequenceTypeGateOptionV2.write(value.`options`, buf)
+            FfiConverterSequenceTypeGatePreviewBlock.write(value.`preview`, buf)
+            FfiConverterOptionalString.write(value.`approvalsWithheld`, buf)
+            FfiConverterOptionalTypeGateSubjectBinding.write(value.`subject`, buf)
     }
 }
 
@@ -6615,6 +6779,171 @@ public object FfiConverterTypeFirstRunStep: FfiConverterRustBuffer<FirstRunStep>
 
 
 /**
+ * What a gate.v2 option means. A host draws by this, never by id.
+ */
+
+enum class GateOptionMeaning {
+    
+    /**
+     * The main action. A publishing gate has two (automatic and manual).
+     */
+    APPROVE,
+    /**
+     * Destructive.
+     */
+    REJECT,
+    /**
+     * Sends the work back; always carries a comment in practice.
+     */
+    REVISE,
+    /**
+     * One of several neutral choices.
+     */
+    CHOOSE,
+    /**
+     * Neutral: not now.
+     */
+    DEFER;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateOptionMeaning: FfiConverterRustBuffer<GateOptionMeaning> {
+    override fun read(buf: ByteBuffer) = try {
+        GateOptionMeaning.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: GateOptionMeaning) = 4UL
+
+    override fun write(value: GateOptionMeaning, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * One block of a subject's preview — what the reader must see before
+ * approving. Every string is text to draw verbatim: no markdown, no links
+ * detected in it, line breaks kept.
+ */
+sealed class GatePreviewBlock {
+    
+    /**
+     * The exact bytes of the thing approved — an X post — character for
+     * character.
+     */
+    data class Text(
+        val `label`: kotlin.String?, 
+        val `text`: kotlin.String) : GatePreviewBlock() {
+        companion object
+    }
+    
+    data class Field(
+        val `label`: kotlin.String, 
+        val `value`: kotlin.String) : GatePreviewBlock() {
+        companion object
+    }
+    
+    /**
+     * `url` passed `custom_events::safe_url`: `https://`, printable ASCII.
+     */
+    data class Link(
+        val `label`: kotlin.String, 
+        val `url`: kotlin.String) : GatePreviewBlock() {
+        companion object
+    }
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGatePreviewBlock : FfiConverterRustBuffer<GatePreviewBlock>{
+    override fun read(buf: ByteBuffer): GatePreviewBlock {
+        return when(buf.getInt()) {
+            1 -> GatePreviewBlock.Text(
+                FfiConverterOptionalString.read(buf),
+                FfiConverterString.read(buf),
+                )
+            2 -> GatePreviewBlock.Field(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                )
+            3 -> GatePreviewBlock.Link(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                )
+            else -> throw RuntimeException("invalid enum value, something is very wrong!!")
+        }
+    }
+
+    override fun allocationSize(value: GatePreviewBlock) = when(value) {
+        is GatePreviewBlock.Text -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterOptionalString.allocationSize(value.`label`)
+                + FfiConverterString.allocationSize(value.`text`)
+            )
+        }
+        is GatePreviewBlock.Field -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`label`)
+                + FfiConverterString.allocationSize(value.`value`)
+            )
+        }
+        is GatePreviewBlock.Link -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`label`)
+                + FfiConverterString.allocationSize(value.`url`)
+            )
+        }
+    }
+
+    override fun write(value: GatePreviewBlock, buf: ByteBuffer) {
+        when(value) {
+            is GatePreviewBlock.Text -> {
+                buf.putInt(1)
+                FfiConverterOptionalString.write(value.`label`, buf)
+                FfiConverterString.write(value.`text`, buf)
+                Unit
+            }
+            is GatePreviewBlock.Field -> {
+                buf.putInt(2)
+                FfiConverterString.write(value.`label`, buf)
+                FfiConverterString.write(value.`value`, buf)
+                Unit
+            }
+            is GatePreviewBlock.Link -> {
+                buf.putInt(3)
+                FfiConverterString.write(value.`label`, buf)
+                FfiConverterString.write(value.`url`, buf)
+                Unit
+            }
+        }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
+    }
+}
+
+
+
+
+
+/**
  * The render decision for one item.
  */
 sealed class ItemView {
@@ -9435,6 +9764,70 @@ public object FfiConverterOptionalTypeGateAnswers: FfiConverterRustBuffer<GateAn
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeGateSubjectBinding: FfiConverterRustBuffer<GateSubjectBinding?> {
+    override fun read(buf: ByteBuffer): GateSubjectBinding? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeGateSubjectBinding.read(buf)
+    }
+
+    override fun allocationSize(value: GateSubjectBinding?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeGateSubjectBinding.allocationSize(value)
+        }
+    }
+
+    override fun write(value: GateSubjectBinding?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeGateSubjectBinding.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decision?> {
+    override fun read(buf: ByteBuffer): GateV2Decision? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeGateV2Decision.read(buf)
+    }
+
+    override fun allocationSize(value: GateV2Decision?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeGateV2Decision.allocationSize(value)
+        }
+    }
+
+    override fun write(value: GateV2Decision?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeGateV2Decision.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeMediaMetaDto: FfiConverterRustBuffer<MediaMetaDto?> {
     override fun read(buf: ByteBuffer): MediaMetaDto? {
         if (buf.get().toInt() == 0) {
@@ -10343,6 +10736,34 @@ public object FfiConverterSequenceTypeCustomEventField: FfiConverterRustBuffer<L
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeGateOptionV2: FfiConverterRustBuffer<List<GateOptionV2>> {
+    override fun read(buf: ByteBuffer): List<GateOptionV2> {
+        val len = buf.getInt()
+        return List<GateOptionV2>(len) {
+            FfiConverterTypeGateOptionV2.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<GateOptionV2>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeGateOptionV2.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<GateOptionV2>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeGateOptionV2.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer<List<Mentionable>> {
     override fun read(buf: ByteBuffer): List<Mentionable> {
         val len = buf.getInt()
@@ -10753,6 +11174,34 @@ public object FfiConverterSequenceTypeWidgetRecap: FfiConverterRustBuffer<List<W
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeWidgetRecap.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeGatePreviewBlock: FfiConverterRustBuffer<List<GatePreviewBlock>> {
+    override fun read(buf: ByteBuffer): List<GatePreviewBlock> {
+        val len = buf.getInt()
+        return List<GatePreviewBlock>(len) {
+            FfiConverterTypeGatePreviewBlock.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<GatePreviewBlock>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeGatePreviewBlock.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<GatePreviewBlock>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeGatePreviewBlock.write(it, buf)
         }
     }
 }
