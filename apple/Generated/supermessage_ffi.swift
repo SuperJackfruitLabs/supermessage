@@ -910,6 +910,16 @@ public protocol CoreProtocol : AnyObject {
     func searchMessages(term: String, roomId: String?) throws  -> [SearchResultDto]
     
     /**
+     * Answer a manual-delivery follow-up from its card
+     * (`supermessage_core::delivery_v2`): `record_live_url` with the live
+     * link as `text`, or `switch_to_automatic`. `delivery` is the card's
+     * `CustomEventDecision::delivery_v2`, handed back unchanged; the core
+     * refuses a withheld switch, an empty or non-`https://` link, and sends
+     * the `dev.superpipeline.delivery.answer.v2` referencing `in_reply_to`.
+     */
+    func sendDeliveryAnswerV2(roomId: String, delivery: GateV2Decision, optionId: String, text: String?, inReplyTo: String) throws 
+    
+    /**
      * Answer a superpipeline approval gate.
      *
      * `option_id` must be one of `approve`, `request_changes` or
@@ -953,6 +963,14 @@ public protocol CoreProtocol : AnyObject {
     func sendGateDecisionV2(roomId: String, gate: GateV2Decision, optionId: String, comment: String?, inReplyTo: String) throws 
     
     /**
+     * [`Core::send_gate_decision_v2`] for a room that need not be open — a
+     * notification's `NotificationAnswer::GateV2`, whose `gate` the core
+     * rebuilt from what the notification carried. Checked and built exactly
+     * as the card's answer is.
+     */
+    func sendGateDecisionV2To(roomId: String, gate: GateV2Decision, optionId: String, comment: String?, inReplyTo: String) throws 
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -969,6 +987,19 @@ public protocol CoreProtocol : AnyObject {
      * need not be open.
      */
     func sendPermissionAnswer(roomId: String, optionId: String) throws 
+    
+    /**
+     * Answer a question.v2 from its card (`supermessage_core::question_v2`).
+     *
+     * `question` is the `CustomEventDecision::question_v2` the card was
+     * drawn from, handed back unchanged. `option_id` picks one of its
+     * options, with `text` when that option asks for input; `None` answers a
+     * free-text question with `text` alone. The core refuses an option the
+     * question did not offer, a required input left empty, text over its
+     * limit and a `url` input that is not `https://`, then sends the
+     * `dev.superpipeline.question.answer.v2` referencing `in_reply_to`.
+     */
+    func sendQuestionAnswerV2(roomId: String, question: QuestionV2Decision, optionId: String?, text: String?, inReplyTo: String) throws 
     
     /**
      * Reply to `in_reply_to`, an event id in the focused room.
@@ -1816,6 +1847,25 @@ open func searchMessages(term: String, roomId: String?)throws  -> [SearchResultD
 }
     
     /**
+     * Answer a manual-delivery follow-up from its card
+     * (`supermessage_core::delivery_v2`): `record_live_url` with the live
+     * link as `text`, or `switch_to_automatic`. `delivery` is the card's
+     * `CustomEventDecision::delivery_v2`, handed back unchanged; the core
+     * refuses a withheld switch, an empty or non-`https://` link, and sends
+     * the `dev.superpipeline.delivery.answer.v2` referencing `in_reply_to`.
+     */
+open func sendDeliveryAnswerV2(roomId: String, delivery: GateV2Decision, optionId: String, text: String?, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_delivery_answer_v2(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterTypeGateV2Decision_lower(delivery),
+        FfiConverterString.lower(optionId),
+        FfiConverterOptionString.lower(text),
+        FfiConverterString.lower(inReplyTo),$0
+    )
+}
+}
+    
+    /**
      * Answer a superpipeline approval gate.
      *
      * `option_id` must be one of `approve`, `request_changes` or
@@ -1888,6 +1938,23 @@ open func sendGateDecisionV2(roomId: String, gate: GateV2Decision, optionId: Str
 }
     
     /**
+     * [`Core::send_gate_decision_v2`] for a room that need not be open — a
+     * notification's `NotificationAnswer::GateV2`, whose `gate` the core
+     * rebuilt from what the notification carried. Checked and built exactly
+     * as the card's answer is.
+     */
+open func sendGateDecisionV2To(roomId: String, gate: GateV2Decision, optionId: String, comment: String?, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2_to(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterTypeGateV2Decision_lower(gate),
+        FfiConverterString.lower(optionId),
+        FfiConverterOptionString.lower(comment),
+        FfiConverterString.lower(inReplyTo),$0
+    )
+}
+}
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -1914,6 +1981,28 @@ open func sendPermissionAnswer(roomId: String, optionId: String)throws  {try rus
     uniffi_supermessage_ffi_fn_method_core_send_permission_answer(self.uniffiClonePointer(),
         FfiConverterString.lower(roomId),
         FfiConverterString.lower(optionId),$0
+    )
+}
+}
+    
+    /**
+     * Answer a question.v2 from its card (`supermessage_core::question_v2`).
+     *
+     * `question` is the `CustomEventDecision::question_v2` the card was
+     * drawn from, handed back unchanged. `option_id` picks one of its
+     * options, with `text` when that option asks for input; `None` answers a
+     * free-text question with `text` alone. The core refuses an option the
+     * question did not offer, a required input left empty, text over its
+     * limit and a `url` input that is not `https://`, then sends the
+     * `dev.superpipeline.question.answer.v2` referencing `in_reply_to`.
+     */
+open func sendQuestionAnswerV2(roomId: String, question: QuestionV2Decision, optionId: String?, text: String?, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_question_answer_v2(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterTypeQuestionV2Decision_lower(question),
+        FfiConverterOptionString.lower(optionId),
+        FfiConverterOptionString.lower(text),
+        FfiConverterString.lower(inReplyTo),$0
     )
 }
 }
@@ -5099,6 +5188,8 @@ fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
 
 
 
+
+
 /**
  * What the dock above the composer says after the reader wrote to an agent —
  * see `core::acknowledgement`. A free function for the same reason as
@@ -6285,6 +6376,9 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_search_messages() != 28627) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_delivery_answer_v2() != 25249) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision() != 31962) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6294,10 +6388,16 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2() != 3925) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2_to() != 24924) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_permission_answer() != 53383) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_question_answer_v2() != 6828) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_reply() != 4056) {

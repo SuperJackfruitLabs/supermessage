@@ -36,9 +36,11 @@
 use serde_json::Value;
 
 use crate::custom_events::{GATE_EVENT_TYPE, PERMISSION_REQUEST_EVENT_TYPE};
+use crate::delivery_v2::DELIVERY_V2_EVENT_TYPE;
 use crate::dto::TimelineRow;
 use crate::gate_v2::GATE_V2_EVENT_TYPE;
 use crate::item_view::ItemView;
+use crate::question_v2::QUESTION_V2_EVENT_TYPE;
 
 /// The key an AgentPod permission request rides under on its prose message.
 pub const EMBEDDED_PERMISSION_KEY: &str = "dev.agentpod.permission";
@@ -66,6 +68,11 @@ pub const EMBEDDED_SUITE_KEYS: [(&str, &str); 2] = [
 /// fields that validate, is read as gate.v2 (`crate::gate_v2`) in place of
 /// the v1 card it carries beside them. Anything less — no marker, or v2
 /// fields the corpus would refuse — reads the v1 card exactly as before.
+///
+/// The same for an agent's question (`crate::question_v2`) and a
+/// manual-delivery follow-up (`crate::delivery_v2`), which this client draws
+/// only from v2: without valid v2 fields they stay prose, as they always
+/// were here.
 pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
     let permission = content
         .get(EMBEDDED_PERMISSION_KEY)
@@ -73,6 +80,12 @@ pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
     if !permission {
         if let Some(payload) = crate::gate_v2::embedded_payload(content) {
             return Some((GATE_V2_EVENT_TYPE, payload));
+        }
+        if let Some(payload) = crate::question_v2::embedded_payload(content) {
+            return Some((QUESTION_V2_EVENT_TYPE, payload));
+        }
+        if let Some(payload) = crate::delivery_v2::embedded_payload(content) {
+            return Some((DELIVERY_V2_EVENT_TYPE, payload));
         }
     }
     EMBEDDED_SUITE_KEYS.iter().find_map(|(key, event_type)| {
@@ -87,11 +100,14 @@ pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
 /// the message that does not (nearly all of them) never pays for a parse.
 ///
 /// The gate.v2 marker, `dev.superpipeline.gate.v2`, contains the gate key's
-/// text, so a v2 message that carries no v1 card is found too.
+/// text, so a v2 message that carries no v1 card is found too. The question
+/// and follow-up markers do not, so they are searched for by name.
 pub fn may_carry_embedded(raw_json: &str) -> bool {
     EMBEDDED_SUITE_KEYS
         .iter()
         .any(|(key, _)| raw_json.contains(key))
+        || raw_json.contains(QUESTION_V2_EVENT_TYPE)
+        || raw_json.contains(DELIVERY_V2_EVENT_TYPE)
 }
 
 /// What makes two carriers of a decision the same decision.
@@ -110,6 +126,18 @@ pub fn decision_identity(event_type: &str, payload: &Value) -> Option<String> {
         GATE_EVENT_TYPE | GATE_V2_EVENT_TYPE => {
             let gate = payload.get("gate_id")?.as_str()?;
             (!gate.is_empty()).then(|| format!("gate:{gate}"))
+        }
+        // A question is its elicitation.
+        QUESTION_V2_EVENT_TYPE => {
+            let id = payload.get("elicitation_id")?.as_str()?;
+            (!id.is_empty()).then(|| format!("question:{id}"))
+        }
+        // A follow-up names the gate it follows, and is a different decision
+        // from that gate: the gate's own receipt must not close it
+        // (`crate::gate_outcome`).
+        DELIVERY_V2_EVENT_TYPE => {
+            let gate = payload.get("gate_id")?.as_str()?;
+            (!gate.is_empty()).then(|| format!("delivery:{gate}"))
         }
         _ => None,
     }
@@ -436,6 +464,64 @@ mod tests {
         assert!(may_carry_embedded(
             r#"{"content":{"suite_event_type":"dev.superpipeline.gate.v2"}}"#
         ));
+    }
+
+    fn corpus_accept(suite_type: &str, index: usize) -> Value {
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+        ))
+        .unwrap();
+        corpus["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["suiteEventType"] == suite_type)
+            .unwrap()["accept"][index]["content"]
+            .clone()
+    }
+
+    #[test]
+    fn a_question_v2_and_a_delivery_v2_are_read_as_their_cards() {
+        let mut question = corpus_accept(QUESTION_V2_EVENT_TYPE, 0);
+        question["dev.superpipeline.elicitation"] = json!({ "elicitation_id": "elc_7f3c" });
+        let (event_type, payload) = embedded_suite_event(&question).unwrap();
+        assert_eq!(event_type, QUESTION_V2_EVENT_TYPE);
+        assert_eq!(
+            decision_identity(event_type, &payload).as_deref(),
+            Some("question:elc_7f3c")
+        );
+        let delivery = corpus_accept(DELIVERY_V2_EVENT_TYPE, 0);
+        let (event_type, payload) = embedded_suite_event(&delivery).unwrap();
+        assert_eq!(event_type, DELIVERY_V2_EVENT_TYPE);
+        // Not the gate it follows: that gate's receipt must not close it.
+        assert_eq!(
+            decision_identity(event_type, &payload).as_deref(),
+            Some("delivery:gate_8f3a")
+        );
+        assert!(may_carry_embedded(
+            r#"{"content":{"suite_event_type":"dev.superpipeline.question.v2"}}"#
+        ));
+        assert!(may_carry_embedded(
+            r#"{"content":{"suite_event_type":"dev.superpipeline.delivery.v2"}}"#
+        ));
+    }
+
+    #[test]
+    fn a_question_or_follow_up_whose_v2_fields_do_not_validate_stays_prose() {
+        let mut question = corpus_accept(QUESTION_V2_EVENT_TYPE, 0);
+        question["options"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("meaning");
+        // The v1 question card is not drawn by this client, so: prose.
+        question["dev.superpipeline.elicitation"] = json!({ "elicitation_id": "elc_7f3c" });
+        assert_eq!(embedded_suite_event(&question), None);
+        let mut delivery = corpus_accept(DELIVERY_V2_EVENT_TYPE, 0);
+        delivery["options"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("input");
+        assert_eq!(embedded_suite_event(&delivery), None);
     }
 
     #[test]

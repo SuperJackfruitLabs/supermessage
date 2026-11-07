@@ -368,6 +368,57 @@ impl Core {
         Ok(())
     }
 
+    /// Answer a question.v2 from its card (`supermessage_core::question_v2`).
+    ///
+    /// `question` is the `CustomEventDecision::question_v2` the card was
+    /// drawn from, handed back unchanged. `option_id` picks one of its
+    /// options, with `text` when that option asks for input; `None` answers a
+    /// free-text question with `text` alone. The core refuses an option the
+    /// question did not offer, a required input left empty, text over its
+    /// limit and a `url` input that is not `https://`, then sends the
+    /// `dev.superpipeline.question.answer.v2` referencing `in_reply_to`.
+    pub fn send_question_answer_v2(
+        &self,
+        room_id: String,
+        question: supermessage_core::question_v2::QuestionV2Decision,
+        option_id: Option<String>,
+        text: Option<String>,
+        in_reply_to: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.focused_timeline().send_question_answer_v2(
+            &room_id,
+            &question,
+            option_id.as_deref(),
+            text.as_deref(),
+            &in_reply_to,
+        ))?;
+        Ok(())
+    }
+
+    /// Answer a manual-delivery follow-up from its card
+    /// (`supermessage_core::delivery_v2`): `record_live_url` with the live
+    /// link as `text`, or `switch_to_automatic`. `delivery` is the card's
+    /// `CustomEventDecision::delivery_v2`, handed back unchanged; the core
+    /// refuses a withheld switch, an empty or non-`https://` link, and sends
+    /// the `dev.superpipeline.delivery.answer.v2` referencing `in_reply_to`.
+    pub fn send_delivery_answer_v2(
+        &self,
+        room_id: String,
+        delivery: supermessage_core::gate_v2::GateV2Decision,
+        option_id: String,
+        text: Option<String>,
+        in_reply_to: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.focused_timeline().send_delivery_answer_v2(
+            &room_id,
+            &delivery,
+            &option_id,
+            text.as_deref(),
+            &in_reply_to,
+        ))?;
+        Ok(())
+    }
+
     /// Set how loudly a room may interrupt. `Default` unsets the room's own
     /// rule so the account default applies again.
     pub fn set_room_notifications(
@@ -937,6 +988,28 @@ impl Core {
             comment.as_deref(),
             &in_reply_to,
             &prompt,
+        ))?;
+        Ok(())
+    }
+
+    /// [`Core::send_gate_decision_v2`] for a room that need not be open — a
+    /// notification's `NotificationAnswer::GateV2`, whose `gate` the core
+    /// rebuilt from what the notification carried. Checked and built exactly
+    /// as the card's answer is.
+    pub fn send_gate_decision_v2_to(
+        &self,
+        room_id: String,
+        gate: supermessage_core::gate_v2::GateV2Decision,
+        option_id: String,
+        comment: Option<String>,
+        in_reply_to: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.send_gate_decision_v2_to(
+            &room_id,
+            &gate,
+            &option_id,
+            comment.as_deref(),
+            &in_reply_to,
         ))?;
         Ok(())
     }

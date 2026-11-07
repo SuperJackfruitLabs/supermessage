@@ -335,14 +335,75 @@ unchanged and read by `core::gate_v2`'s tests.
   link is not a safe `https://` URL. Revise, reject and the card's link stay.
 - **Hosts without v2.** `CustomEventDecision.options` for a v2 gate holds only
   superpipeline's three ids and never an approval of a subject, so the desktop
-  and the notification actions answer with `decision.v1` as before and cannot
-  approve a post they do not show.
+  and the widgets answer with `decision.v1` as before and cannot approve a
+  post they do not show. The desktop card says when the gate offers more than
+  it can send ("Open the card, or answer on your phone, for the rest of this
+  one", or the core's withheld-approvals line).
+- **Notifications.** A gate.v2 notification answers with `decision.v2`
+  (`NotificationAnswer::GateV2`, sent with `send_gate_decision_v2_to`): each
+  action sends the gate's one option of its meaning (`GateAnswers.v2`, carried
+  in the user info under `sm.gateV2.*`). A notification shows no preview, so a
+  subject-bound gate never offers Approve: it gets the `GATE_REVIEW` category
+  (Request changes, typed / Reject / Open), as does any gate with no approval
+  to offer. The core refuses to rebuild an approving answer for a
+  subject-bound gate whatever the user info says.
 - **The answer.** iOS and Android answer a v2 card with
   `Core::send_gate_decision_v2`, handing back the card's `gate_v2`; the core
   refuses an option not offered or withheld and an empty comment where one is
   needed, and sends `dev.superpipeline.gate.decision.v2`: `gate_id`,
   `option_id`, `comment` (`null` when none), `subject: {id, digest}` for a
   subject-bound gate, and the `m.reference` to the gate's event.
+
+### 5b. question.v2 and delivery.v2 — questions and follow-ups in the envelope
+
+charter `decisions/2026-11-07-the-envelope-covers-questions-and-follow-ups.md`.
+Both ride on a prose `m.room.message` with a real `body` and a
+`suite_event_type` marker, and both are pinned by the same fixture (version 4).
+
+- **An option may ask for input.** Beside `needs_comment`, a question's or a
+  follow-up's option may carry `input: {kind: "text" | "url", label,
+  required, max_length}` (snake_case on the Matrix wire — `maxLength` is
+  refused). `core::gate_v2::OptionInput` carries it to the hosts, which draw a
+  field and refuse a required one empty; the core refuses it again
+  (`checked_input`): empty when required, over `max_length` characters, or —
+  for `url` — not an `https://` URL `safe_url` accepts. A gate.v2 option's
+  `input` is not read: a `decision.v2` has no field for its text.
+- **question.v2** (`core::question_v2`, registered as
+  `dev.superpipeline.question.v2`, label "Question"). Carries
+  `elicitation_id`, `question`, the card fields and `options` with `meaning`
+  (`choose`, or `approve`/`reject` on a strict decision). A question with no
+  options carries `free_text: {max_length}` (1–2000) and is answered by typing.
+  The corpus's refusals — an option with no meaning, `maxLength`, duplicate
+  ids, `free_text` beside options, no body — and a question with neither
+  options nor `free_text` stay prose. The v1 card under
+  `dev.superpipeline.elicitation` is never drawn by this client, so a question
+  without valid v2 fields reads exactly as before: prose, answerable by
+  replying a number or a label. `CustomEventDecision.question_v2` holds the
+  question; `options` holds only the options a plain reply answers (each id is
+  its label, which the hub matches as a typed reply), so the desktop answers
+  those and says when the rest needs a phone or the board.
+- **question.answer.v2.** `Core::send_question_answer_v2(room, question,
+  option_id?, text?, in_reply_to)`: `elicitation_id`, `option_id` (plus
+  `text` when that option has an input) or `text` alone for a free-text
+  question, the `m.reference` to the question's message, and a real `body`
+  (the label; "Label: text"; or the text).
+- **delivery.v2** (`core::delivery_v2`, label "Delivery"). The follow-up a
+  subject-bound gate resolved `approve_manual` gets: `gate_id`, the subject
+  and its preview (drawn verbatim, as gate.v2's), and the options
+  `record_live_url` (meaning `defer`, a required `url` input) and
+  `switch_to_automatic` (meaning `approve`). Any other option, or
+  `record_live_url` without a required `url` input, leaves it prose.
+  `switch_to_automatic` is withheld by gate.v2's rule — offered only when the
+  preview is complete and every block drawable — with
+  `approvals_withheld` saying why. `CustomEventDecision.delivery_v2` is a
+  `GateV2Decision`; `options` is empty. Its identity is `delivery:<gate_id>`,
+  not the gate's.
+- **delivery.answer.v2.** `Core::send_delivery_answer_v2(room, delivery,
+  option_id, text?, in_reply_to)`: `gate_id`, `option_id`, `text` (the live
+  `https://` URL) for `record_live_url`, and the `m.reference` to the
+  follow-up. Body: "Live at <url>", or the option's label.
+- **Notifications.** A question or a follow-up notifies in the DECISION
+  category ("Open" only): their text cannot be checked from a lock screen.
 
 ## 6. Quiet events — what must never interrupt, at three layers
 
@@ -430,6 +491,21 @@ draw it without buttons or amber, naming `decided_by`.
 3. **The reference**, only when the outcome carries no `gate_id`: the gate
    whose carrier has that event id, and through its identity every other
    carrier.
+
+**A follow-up's receipt.** A delivery.v2 follow-up (§5b) is settled by the
+same receipt, referencing the follow-up's message, with `decision`
+`record_live_url`, `switch_to_automatic` or `settled_elsewhere` (the board
+stopped owing it: a link recorded on the web, the approval expired, the card
+archived; `decided_by` is then `null`). Those three close only a follow-up's
+card, and every other decision only a gate's: the follow-up names the gate it
+follows, and the gate's own `approve_manual` receipt — the one that prompts
+it — must not close it on arrival.
+
+**Wording.** `summary` uses the hub's own words: Approved, Approved for
+automatic delivery, Approved for manual delivery, Changes requested, Rejected,
+Live link recorded, Switched to automatic delivery, Settled on the board — "by
+<decided_by>" when named — and "Decided" for a decision this build does not
+know.
 
 **Order does not matter.** The pass runs over the whole materialised timeline
 after every batch, so a gate is a receipt whenever both events are loaded —

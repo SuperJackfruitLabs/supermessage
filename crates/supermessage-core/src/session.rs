@@ -493,6 +493,27 @@ impl Session {
         Ok(())
     }
 
+    /// Answers a gate.v2 in `room_id`, whether or not that room is open — a
+    /// notification's action (`crate::notification_policy`, which rebuilds
+    /// `gate` from what the notification carried). Byte-for-byte what
+    /// [`FocusedTimeline::send_gate_decision_v2`] sends: both build it with
+    /// `crate::gate_v2::decision_request`, validated before anything else.
+    pub async fn send_gate_decision_v2_to(
+        &self,
+        room_id: &str,
+        gate: &crate::gate_v2::GateV2Decision,
+        option_id: &str,
+        comment: Option<&str>,
+        in_reply_to: &str,
+    ) -> CoreResult<()> {
+        let content = crate::gate_v2::decision_request(gate, option_id, comment, in_reply_to)?;
+        let room = self.room_to_answer_in(room_id).await?;
+        room.send_raw("m.room.message", content)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
     /// What the notification for `event_id` in `room_id` should say — the
     /// question a push asks, with no room open and usually no app running.
     ///

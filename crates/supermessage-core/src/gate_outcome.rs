@@ -49,6 +49,16 @@
 //!    closes the gate whose carrier has that event id, and through its
 //!    identity every other carrier of the same gate.
 //!
+//! ## A follow-up is closed the same way, and only by its own receipt
+//!
+//! A manual-delivery follow-up (`crate::delivery_v2`) names the gate it
+//! follows, so `gate_id` alone would let the gate's `approve_manual` receipt
+//! — which is what prompts the follow-up — close it the moment it arrives.
+//! The decision tells them apart: a follow-up is settled with
+//! [`FOLLOW_UP_DECISIONS`] (`record_live_url`, `switch_to_automatic`,
+//! `settled_elsewhere`), and only those close a follow-up — and they never
+//! close (or re-word) the gate's own card.
+//!
 //! ## Order does not matter
 //!
 //! A cold sync can deliver the outcome before the gate; back-pagination
@@ -73,6 +83,13 @@ use crate::item_view::ItemView;
 /// The receipt's type — the custom event's Matrix type, and the
 /// `suite_event_type` an `m.room.message` carrying it declares.
 pub const GATE_OUTCOME_EVENT_TYPE: &str = "dev.superpipeline.gate.outcome.v1";
+
+/// The decisions that settle a delivery.v2 follow-up rather than a gate.
+pub const FOLLOW_UP_DECISIONS: [&str; 3] = [
+    "record_live_url",
+    "switch_to_automatic",
+    "settled_elsewhere",
+];
 
 /// How long a `decided_by` may be on a card. A handle, not a paragraph.
 const DECIDED_BY_MAX_CHARS: usize = 60;
@@ -162,6 +179,8 @@ struct Gate<'a> {
     board_id: Option<&'a str>,
     event_id: Option<&'a str>,
     sender: Option<&'a str>,
+    /// A delivery.v2 follow-up rather than the gate itself.
+    follow_up: bool,
 }
 
 fn gate_of(item: &TimelineItemDto) -> Option<Gate<'_>> {
@@ -169,7 +188,9 @@ fn gate_of(item: &TimelineItemDto) -> Option<Gate<'_>> {
     if !matches!(item.kind.as_str(), "message" | "customMessage")
         || !matches!(
             event_type,
-            GATE_EVENT_TYPE | crate::gate_v2::GATE_V2_EVENT_TYPE
+            GATE_EVENT_TYPE
+                | crate::gate_v2::GATE_V2_EVENT_TYPE
+                | crate::delivery_v2::DELIVERY_V2_EVENT_TYPE
         )
     {
         return None;
@@ -185,12 +206,17 @@ fn gate_of(item: &TimelineItemDto) -> Option<Gate<'_>> {
             .filter(|b| !b.is_empty()),
         event_id: item.event_id.as_deref(),
         sender: item.sender.as_deref(),
+        follow_up: event_type == crate::delivery_v2::DELIVERY_V2_EVENT_TYPE,
     })
 }
 
 /// The rule in this module's header, for one outcome and one gate carrier.
 fn closes(outcome: &Outcome, gate: &Gate<'_>) -> bool {
     if gate.sender != Some(outcome.sender.as_str()) {
+        return false;
+    }
+    // A follow-up's receipt closes only the follow-up, a gate's only the gate.
+    if FOLLOW_UP_DECISIONS.contains(&outcome.decision.as_str()) != gate.follow_up {
         return false;
     }
     if let (Some(ours), Some(theirs)) = (outcome.board_id.as_deref(), gate.board_id) {
@@ -208,8 +234,16 @@ fn closes(outcome: &Outcome, gate: &Gate<'_>) -> bool {
 fn summary(decision: &str, decided_by: Option<&str>) -> String {
     let verb = match decision {
         "approve" => "Approved",
+        // The two approvals a publishing gate offers, in the hub's own words
+        // (`OUTCOME_VERBS`, agentpod `gate-decision.ts`).
+        "approve_automatic" => "Approved for automatic delivery",
+        "approve_manual" => "Approved for manual delivery",
         "request_changes" => "Changes requested",
         "reject" => "Rejected",
+        // A follow-up's, in the hub's words too (`delivery-answer.ts`).
+        "record_live_url" => "Live link recorded",
+        "switch_to_automatic" => "Switched to automatic delivery",
+        "settled_elsewhere" => "Settled on the board",
         // A decision this build has no word for. Said without guessing at a
         // past tense for a verb nothing here knows.
         _ => "Decided",
@@ -477,6 +511,174 @@ mod tests {
         reconcile(&mut rows);
         assert!(is_receipt(&rows[0]));
         assert_eq!(rows[1].view, ItemView::None);
+    }
+
+    /// A delivery.v2 follow-up's payload, as `crate::delivery_v2` keeps it.
+    fn follow_up(id: &str, gate_id: &str) -> TimelineRow {
+        row(
+            id,
+            "message",
+            Some("m.text"),
+            HUB,
+            crate::delivery_v2::DELIVERY_V2_EVENT_TYPE,
+            json!({
+                "msgtype": "m.text",
+                "suite_event_type": crate::delivery_v2::DELIVERY_V2_EVENT_TYPE,
+                "schema_version": 1,
+                "board_id": "brd_1",
+                "card_id": "crd_1",
+                "gate_id": gate_id,
+                "stage_key": "approve",
+                "card_title": "Launch post",
+                "subject": {
+                    "id": "aps_1",
+                    "digest": "sha256:1",
+                    "preview": [{ "type": "text", "label": "Post", "text": "Hello." }],
+                    "preview_complete": true
+                },
+                "options": [
+                    {
+                        "id": "record_live_url", "label": "Record the live link",
+                        "meaning": "defer", "needs_comment": false,
+                        "input": {
+                            "kind": "url", "label": "Live link",
+                            "required": true, "max_length": 2000
+                        }
+                    },
+                    {
+                        "id": "switch_to_automatic", "label": "Post it automatically",
+                        "meaning": "approve", "needs_comment": false, "delivery": "automatic"
+                    }
+                ]
+            }),
+        )
+    }
+
+    fn follow_up_outcome(decision: &str, decided_by: Option<&str>) -> Value {
+        json!({
+            "suite_event_type": GATE_OUTCOME_EVENT_TYPE,
+            "gate_id": "gate_1",
+            "board_id": "brd_1",
+            "decision": decision,
+            "decided_by": decided_by,
+            "m.relates_to": { "rel_type": "m.reference", "event_id": "$f" }
+        })
+    }
+
+    #[test]
+    fn a_follow_up_outcome_closes_the_delivery_card_and_not_the_gate() {
+        let mut gate_outcome = outcome(Some("gate_1"), "$g");
+        gate_outcome["decision"] = json!("approve_manual");
+        let mut rows = vec![
+            prose_gate("g", "gate_1"),
+            outcome_event("o1", HUB, gate_outcome),
+            follow_up("f", "gate_1"),
+        ];
+        reconcile(&mut rows);
+        assert!(is_receipt(&rows[0]));
+        assert!(
+            is_pending(&rows[2]),
+            "the gate's approve_manual must not close the follow-up it prompts"
+        );
+        assert_eq!(
+            state(&rows[0]).1.unwrap().summary,
+            "Approved for manual delivery by rakesh"
+        );
+
+        rows.push(outcome_event(
+            "o2",
+            HUB,
+            follow_up_outcome("record_live_url", Some("rakesh")),
+        ));
+        reconcile(&mut rows);
+        assert!(is_receipt(&rows[2]));
+        assert_eq!(
+            state(&rows[2]).1.unwrap().summary,
+            "Live link recorded by rakesh"
+        );
+        // The gate's receipt still says what the gate decided.
+        assert_eq!(
+            state(&rows[0]).1.unwrap().summary,
+            "Approved for manual delivery by rakesh"
+        );
+    }
+
+    #[test]
+    fn a_follow_up_settled_elsewhere_or_switched_reads_in_words() {
+        for (decision, decided_by, said) in [
+            ("settled_elsewhere", None, "Settled on the board"),
+            (
+                "switch_to_automatic",
+                Some("rakesh"),
+                "Switched to automatic delivery by rakesh",
+            ),
+        ] {
+            let mut rows = vec![
+                follow_up("f", "gate_1"),
+                outcome_event("o", HUB, follow_up_outcome(decision, decided_by)),
+            ];
+            reconcile(&mut rows);
+            assert!(is_receipt(&rows[0]), "{decision}");
+            assert_eq!(state(&rows[0]).1.unwrap().summary, said);
+        }
+    }
+
+    #[test]
+    fn a_follow_up_receipt_from_someone_else_closes_nothing() {
+        let mut rows = vec![
+            follow_up("f", "gate_1"),
+            outcome_event(
+                "o",
+                "@mallory:hs",
+                follow_up_outcome("record_live_url", Some("rakesh")),
+            ),
+        ];
+        reconcile(&mut rows);
+        assert!(is_pending(&rows[0]));
+    }
+
+    #[test]
+    fn the_publishing_approvals_read_as_the_hub_words_them() {
+        assert_eq!(
+            summary("approve_automatic", Some("priya")),
+            "Approved for automatic delivery by priya"
+        );
+        assert_eq!(
+            summary("approve_manual", None),
+            "Approved for manual delivery"
+        );
+        assert_eq!(summary("something_new", None), "Decided");
+    }
+
+    #[test]
+    fn every_corpus_outcome_is_read_and_every_reject_closes_nothing() {
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+        ))
+        .unwrap();
+        let entry = corpus["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["suiteEventType"] == GATE_OUTCOME_EVENT_TYPE)
+            .unwrap()
+            .clone();
+        for case in entry["accept"].as_array().unwrap() {
+            let content = case["content"].clone();
+            let it = outcome_event("o", HUB, content).item;
+            assert!(outcome_of(&it).is_some(), "{}", case["why"]);
+        }
+        // A reject with no reference and no gate, or no decision, is not
+        // read at all; one that names a gate but quotes a reply still closes
+        // by gate_id — what matters is that none closes another sender's card
+        // or a card of the wrong kind, which the tests above pin.
+        for case in entry["reject"].as_array().unwrap() {
+            let why = case["why"].as_str().unwrap();
+            let it = outcome_event("o", HUB, case["content"].clone()).item;
+            if why == "no decision" {
+                assert!(outcome_of(&it).is_none(), "{why}");
+            }
+        }
     }
 
     #[test]

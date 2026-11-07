@@ -46,6 +46,7 @@ fn gate(room: &str, event: &str, gate_id: &str, at_ms: u64) -> NotificationDto {
             gate_id: gate_id.into(),
             prompt: "Ship v2".into(),
             option_ids: vec!["approve".into(), "request_changes".into(), "reject".into()],
+            v2: None,
         }),
         ..note(room, event, activity(ActivityKind::Decision, at_ms))
     }

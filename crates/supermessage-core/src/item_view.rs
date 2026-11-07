@@ -91,6 +91,11 @@ pub enum PlaceholderKind {
 }
 
 /// The render decision for one item.
+///
+/// The custom-event variant is much larger than the rest since it carries the
+/// gate, question and follow-up records, and stays unboxed on purpose: this
+/// crosses UniFFI, which has no `Box` in a variant, and lives once per row.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, serde::Serialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase", tag = "render")]
 pub enum ItemView {
