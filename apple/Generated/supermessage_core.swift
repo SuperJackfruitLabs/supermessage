@@ -1275,6 +1275,18 @@ public struct CustomEventDecision {
      * identified by the event it arrived on and needs no separate subject.
      */
     public var subject: String?
+    /**
+     * The whole gate, when it arrived as gate.v2 (`crate::gate_v2`): every
+     * option with its meaning, the subject's preview and its binding.
+     *
+     * A host that draws v2 draws from this and answers with
+     * `send_gate_decision_v2`; one that does not keeps drawing
+     * [`Self::options`], which for a v2 gate holds only what a decision.v1
+     * can answer and never an approval of a subject it cannot show. `None`
+     * for every v1 gate and permission request, and then absent from the
+     * JSON, so their wire is unchanged.
+     */
+    public var gateV2: GateV2Decision?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1291,10 +1303,22 @@ public struct CustomEventDecision {
          *
          * `Option`, because not every decision has one: a permission request is
          * identified by the event it arrived on and needs no separate subject.
-         */subject: String?) {
+         */subject: String?, 
+        /**
+         * The whole gate, when it arrived as gate.v2 (`crate::gate_v2`): every
+         * option with its meaning, the subject's preview and its binding.
+         *
+         * A host that draws v2 draws from this and answers with
+         * `send_gate_decision_v2`; one that does not keeps drawing
+         * [`Self::options`], which for a v2 gate holds only what a decision.v1
+         * can answer and never an approval of a subject it cannot show. `None`
+         * for every v1 gate and permission request, and then absent from the
+         * JSON, so their wire is unchanged.
+         */gateV2: GateV2Decision? = nil) {
         self.prompt = prompt
         self.options = options
         self.subject = subject
+        self.gateV2 = gateV2
     }
 }
 
@@ -1311,6 +1335,9 @@ extension CustomEventDecision: Equatable, Hashable {
         if lhs.subject != rhs.subject {
             return false
         }
+        if lhs.gateV2 != rhs.gateV2 {
+            return false
+        }
         return true
     }
 
@@ -1318,6 +1345,7 @@ extension CustomEventDecision: Equatable, Hashable {
         hasher.combine(prompt)
         hasher.combine(options)
         hasher.combine(subject)
+        hasher.combine(gateV2)
     }
 }
 
@@ -1331,7 +1359,8 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
             try CustomEventDecision(
                 prompt: FfiConverterString.read(from: &buf), 
                 options: FfiConverterSequenceTypeCustomEventDecisionOption.read(from: &buf), 
-                subject: FfiConverterOptionString.read(from: &buf)
+                subject: FfiConverterOptionString.read(from: &buf), 
+                gateV2: FfiConverterOptionTypeGateV2Decision.read(from: &buf)
         )
     }
 
@@ -1339,6 +1368,7 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
         FfiConverterString.write(value.prompt, into: &buf)
         FfiConverterSequenceTypeCustomEventDecisionOption.write(value.options, into: &buf)
         FfiConverterOptionString.write(value.subject, into: &buf)
+        FfiConverterOptionTypeGateV2Decision.write(value.gateV2, into: &buf)
     }
 }
 
@@ -1948,6 +1978,300 @@ public func FfiConverterTypeGateAnswers_lift(_ buf: RustBuffer) throws -> GateAn
 #endif
 public func FfiConverterTypeGateAnswers_lower(_ value: GateAnswers) -> RustBuffer {
     return FfiConverterTypeGateAnswers.lower(value)
+}
+
+
+/**
+ * One answer a gate.v2 offers.
+ */
+public struct GateOptionV2 {
+    /**
+     * Handed back verbatim; never drawn, never cut.
+     */
+    public var id: String
+    /**
+     * Free text from the board, bounded. Display only.
+     */
+    public var label: String
+    public var meaning: GateOptionMeaning
+    /**
+     * The host must ask for text, and the core refuses to send this option
+     * without it.
+     */
+    public var needsComment: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Handed back verbatim; never drawn, never cut.
+         */id: String, 
+        /**
+         * Free text from the board, bounded. Display only.
+         */label: String, meaning: GateOptionMeaning, 
+        /**
+         * The host must ask for text, and the core refuses to send this option
+         * without it.
+         */needsComment: Bool) {
+        self.id = id
+        self.label = label
+        self.meaning = meaning
+        self.needsComment = needsComment
+    }
+}
+
+
+
+extension GateOptionV2: Equatable, Hashable {
+    public static func ==(lhs: GateOptionV2, rhs: GateOptionV2) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.label != rhs.label {
+            return false
+        }
+        if lhs.meaning != rhs.meaning {
+            return false
+        }
+        if lhs.needsComment != rhs.needsComment {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(label)
+        hasher.combine(meaning)
+        hasher.combine(needsComment)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateOptionV2: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateOptionV2 {
+        return
+            try GateOptionV2(
+                id: FfiConverterString.read(from: &buf), 
+                label: FfiConverterString.read(from: &buf), 
+                meaning: FfiConverterTypeGateOptionMeaning.read(from: &buf), 
+                needsComment: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GateOptionV2, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterTypeGateOptionMeaning.write(value.meaning, into: &buf)
+        FfiConverterBool.write(value.needsComment, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateOptionV2_lift(_ buf: RustBuffer) throws -> GateOptionV2 {
+    return try FfiConverterTypeGateOptionV2.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateOptionV2_lower(_ value: GateOptionV2) -> RustBuffer {
+    return FfiConverterTypeGateOptionV2.lower(value)
+}
+
+
+/**
+ * The subject a decision.v2 is bound to, copied back from the gate shown.
+ */
+public struct GateSubjectBinding {
+    public var id: String
+    public var digest: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, digest: String) {
+        self.id = id
+        self.digest = digest
+    }
+}
+
+
+
+extension GateSubjectBinding: Equatable, Hashable {
+    public static func ==(lhs: GateSubjectBinding, rhs: GateSubjectBinding) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.digest != rhs.digest {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(digest)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateSubjectBinding: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateSubjectBinding {
+        return
+            try GateSubjectBinding(
+                id: FfiConverterString.read(from: &buf), 
+                digest: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GateSubjectBinding, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.digest, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateSubjectBinding_lift(_ buf: RustBuffer) throws -> GateSubjectBinding {
+    return try FfiConverterTypeGateSubjectBinding.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateSubjectBinding_lower(_ value: GateSubjectBinding) -> RustBuffer {
+    return FfiConverterTypeGateSubjectBinding.lower(value)
+}
+
+
+/**
+ * A gate.v2 as a host draws and answers it. Rides on
+ * `CustomEventDecision::gate_v2`.
+ */
+public struct GateV2Decision {
+    public var gateId: String
+    /**
+     * What this client may offer, in the gate's order. Approving options
+     * are already gone when the preview could not be shown in full.
+     */
+    public var options: [GateOptionV2]
+    /**
+     * Empty for a gate bound to no subject.
+     */
+    public var preview: [GatePreviewBlock]
+    /**
+     * [`APPROVALS_WITHHELD_NOTE`] when approving options were withheld.
+     */
+    public var approvalsWithheld: String?
+    /**
+     * Present on a subject-bound gate; copied into the answer.
+     */
+    public var subject: GateSubjectBinding?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(gateId: String, 
+        /**
+         * What this client may offer, in the gate's order. Approving options
+         * are already gone when the preview could not be shown in full.
+         */options: [GateOptionV2], 
+        /**
+         * Empty for a gate bound to no subject.
+         */preview: [GatePreviewBlock], 
+        /**
+         * [`APPROVALS_WITHHELD_NOTE`] when approving options were withheld.
+         */approvalsWithheld: String?, 
+        /**
+         * Present on a subject-bound gate; copied into the answer.
+         */subject: GateSubjectBinding?) {
+        self.gateId = gateId
+        self.options = options
+        self.preview = preview
+        self.approvalsWithheld = approvalsWithheld
+        self.subject = subject
+    }
+}
+
+
+
+extension GateV2Decision: Equatable, Hashable {
+    public static func ==(lhs: GateV2Decision, rhs: GateV2Decision) -> Bool {
+        if lhs.gateId != rhs.gateId {
+            return false
+        }
+        if lhs.options != rhs.options {
+            return false
+        }
+        if lhs.preview != rhs.preview {
+            return false
+        }
+        if lhs.approvalsWithheld != rhs.approvalsWithheld {
+            return false
+        }
+        if lhs.subject != rhs.subject {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(gateId)
+        hasher.combine(options)
+        hasher.combine(preview)
+        hasher.combine(approvalsWithheld)
+        hasher.combine(subject)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateV2Decision: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateV2Decision {
+        return
+            try GateV2Decision(
+                gateId: FfiConverterString.read(from: &buf), 
+                options: FfiConverterSequenceTypeGateOptionV2.read(from: &buf), 
+                preview: FfiConverterSequenceTypeGatePreviewBlock.read(from: &buf), 
+                approvalsWithheld: FfiConverterOptionString.read(from: &buf), 
+                subject: FfiConverterOptionTypeGateSubjectBinding.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GateV2Decision, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.gateId, into: &buf)
+        FfiConverterSequenceTypeGateOptionV2.write(value.options, into: &buf)
+        FfiConverterSequenceTypeGatePreviewBlock.write(value.preview, into: &buf)
+        FfiConverterOptionString.write(value.approvalsWithheld, into: &buf)
+        FfiConverterOptionTypeGateSubjectBinding.write(value.subject, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateV2Decision_lift(_ buf: RustBuffer) throws -> GateV2Decision {
+    return try FfiConverterTypeGateV2Decision.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateV2Decision_lower(_ value: GateV2Decision) -> RustBuffer {
+    return FfiConverterTypeGateV2Decision.lower(value)
 }
 
 
@@ -11226,6 +11550,204 @@ extension FirstRunStep: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * What a gate.v2 option means. A host draws by this, never by id.
+ */
+
+public enum GateOptionMeaning {
+    
+    /**
+     * The main action. A publishing gate has two (automatic and manual).
+     */
+    case approve
+    /**
+     * Destructive.
+     */
+    case reject
+    /**
+     * Sends the work back; always carries a comment in practice.
+     */
+    case revise
+    /**
+     * One of several neutral choices.
+     */
+    case choose
+    /**
+     * Neutral: not now.
+     */
+    case `defer`
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateOptionMeaning: FfiConverterRustBuffer {
+    typealias SwiftType = GateOptionMeaning
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateOptionMeaning {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .approve
+        
+        case 2: return .reject
+        
+        case 3: return .revise
+        
+        case 4: return .choose
+        
+        case 5: return .`defer`
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GateOptionMeaning, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .approve:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .reject:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .revise:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .choose:
+            writeInt(&buf, Int32(4))
+        
+        
+        case .`defer`:
+            writeInt(&buf, Int32(5))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateOptionMeaning_lift(_ buf: RustBuffer) throws -> GateOptionMeaning {
+    return try FfiConverterTypeGateOptionMeaning.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateOptionMeaning_lower(_ value: GateOptionMeaning) -> RustBuffer {
+    return FfiConverterTypeGateOptionMeaning.lower(value)
+}
+
+
+
+extension GateOptionMeaning: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * One block of a subject's preview — what the reader must see before
+ * approving. Every string is text to draw verbatim: no markdown, no links
+ * detected in it, line breaks kept.
+ */
+
+public enum GatePreviewBlock {
+    
+    /**
+     * The exact bytes of the thing approved — an X post — character for
+     * character.
+     */
+    case text(label: String?, text: String
+    )
+    case field(label: String, value: String
+    )
+    /**
+     * `url` passed `custom_events::safe_url`: `https://`, printable ASCII.
+     */
+    case link(label: String, url: String
+    )
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGatePreviewBlock: FfiConverterRustBuffer {
+    typealias SwiftType = GatePreviewBlock
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GatePreviewBlock {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .text(label: try FfiConverterOptionString.read(from: &buf), text: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 2: return .field(label: try FfiConverterString.read(from: &buf), value: try FfiConverterString.read(from: &buf)
+        )
+        
+        case 3: return .link(label: try FfiConverterString.read(from: &buf), url: try FfiConverterString.read(from: &buf)
+        )
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: GatePreviewBlock, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case let .text(label,text):
+            writeInt(&buf, Int32(1))
+            FfiConverterOptionString.write(label, into: &buf)
+            FfiConverterString.write(text, into: &buf)
+            
+        
+        case let .field(label,value):
+            writeInt(&buf, Int32(2))
+            FfiConverterString.write(label, into: &buf)
+            FfiConverterString.write(value, into: &buf)
+            
+        
+        case let .link(label,url):
+            writeInt(&buf, Int32(3))
+            FfiConverterString.write(label, into: &buf)
+            FfiConverterString.write(url, into: &buf)
+            
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGatePreviewBlock_lift(_ buf: RustBuffer) throws -> GatePreviewBlock {
+    return try FfiConverterTypeGatePreviewBlock.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGatePreviewBlock_lower(_ value: GatePreviewBlock) -> RustBuffer {
+    return FfiConverterTypeGatePreviewBlock.lower(value)
+}
+
+
+
+extension GatePreviewBlock: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * The render decision for one item.
  */
 
@@ -14353,6 +14875,54 @@ fileprivate struct FfiConverterOptionTypeGateAnswers: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeGateSubjectBinding: FfiConverterRustBuffer {
+    typealias SwiftType = GateSubjectBinding?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGateSubjectBinding.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGateSubjectBinding.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeGateV2Decision: FfiConverterRustBuffer {
+    typealias SwiftType = GateV2Decision?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGateV2Decision.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGateV2Decision.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeMediaMetaDto: FfiConverterRustBuffer {
     typealias SwiftType = MediaMetaDto?
 
@@ -15054,6 +15624,31 @@ fileprivate struct FfiConverterSequenceTypeCustomEventField: FfiConverterRustBuf
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeGateOptionV2: FfiConverterRustBuffer {
+    typealias SwiftType = [GateOptionV2]
+
+    public static func write(_ value: [GateOptionV2], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGateOptionV2.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GateOptionV2] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GateOptionV2]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGateOptionV2.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeMentionable: FfiConverterRustBuffer {
     typealias SwiftType = [Mentionable]
 
@@ -15421,6 +16016,31 @@ fileprivate struct FfiConverterSequenceTypeWidgetRecap: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeWidgetRecap.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGatePreviewBlock: FfiConverterRustBuffer {
+    typealias SwiftType = [GatePreviewBlock]
+
+    public static func write(_ value: [GatePreviewBlock], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGatePreviewBlock.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GatePreviewBlock] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GatePreviewBlock]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGatePreviewBlock.read(from: &buf))
         }
         return seq
     }

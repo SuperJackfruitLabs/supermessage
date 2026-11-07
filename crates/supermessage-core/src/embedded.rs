@@ -37,6 +37,7 @@ use serde_json::Value;
 
 use crate::custom_events::{GATE_EVENT_TYPE, PERMISSION_REQUEST_EVENT_TYPE};
 use crate::dto::TimelineRow;
+use crate::gate_v2::GATE_V2_EVENT_TYPE;
 use crate::item_view::ItemView;
 
 /// The key an AgentPod permission request rides under on its prose message.
@@ -60,7 +61,20 @@ pub const EMBEDDED_SUITE_KEYS: [(&str, &str); 2] = [
 ///
 /// `None` unless the value is a JSON object: anything else is not the schema,
 /// and the message stays the prose it also is.
+///
+/// A gate the message also declares as gate.v2 (`suite_event_type`), with v2
+/// fields that validate, is read as gate.v2 (`crate::gate_v2`) in place of
+/// the v1 card it carries beside them. Anything less — no marker, or v2
+/// fields the corpus would refuse — reads the v1 card exactly as before.
 pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
+    let permission = content
+        .get(EMBEDDED_PERMISSION_KEY)
+        .is_some_and(Value::is_object);
+    if !permission {
+        if let Some(payload) = crate::gate_v2::embedded_payload(content) {
+            return Some((GATE_V2_EVENT_TYPE, payload));
+        }
+    }
     EMBEDDED_SUITE_KEYS.iter().find_map(|(key, event_type)| {
         content
             .get(*key)
@@ -71,6 +85,9 @@ pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
 
 /// Whether `raw_json` could carry an embedded key at all — a text search, so
 /// the message that does not (nearly all of them) never pays for a parse.
+///
+/// The gate.v2 marker, `dev.superpipeline.gate.v2`, contains the gate key's
+/// text, so a v2 message that carries no v1 card is found too.
 pub fn may_carry_embedded(raw_json: &str) -> bool {
     EMBEDDED_SUITE_KEYS
         .iter()
@@ -88,7 +105,9 @@ pub fn decision_identity(event_type: &str, payload: &Value) -> Option<String> {
             let seq = payload.get("request_seq")?.as_u64()?;
             Some(format!("permission:{session}:{seq}"))
         }
-        GATE_EVENT_TYPE => {
+        // One gate, whichever version carries it: the v2 prose message and
+        // the legacy v1 event that follows it are the same decision.
+        GATE_EVENT_TYPE | GATE_V2_EVENT_TYPE => {
             let gate = payload.get("gate_id")?.as_str()?;
             (!gate.is_empty()).then(|| format!("gate:{gate}"))
         }
@@ -351,6 +370,72 @@ mod tests {
         ];
         assert!(reconcile(&mut rows).is_empty());
         assert!(is_card(&rows[1]));
+    }
+
+    /// The corpus's publishing gate (gate.v2), with the v1 card the hub
+    /// carries beside it.
+    fn v2_message() -> Value {
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+        ))
+        .unwrap();
+        let mut content = corpus["events"][2]["accept"][0]["content"].clone();
+        content[EMBEDDED_GATE_KEY] = v1_card();
+        content
+    }
+
+    fn v1_card() -> Value {
+        json!({
+            "schema_version": 2,
+            "gate_id": "gate_8f3a",
+            "card_title": "Announce the release",
+            "stage_key": "approve",
+            "options": [
+                { "id": "request_changes", "label": "Request changes" },
+                { "id": "reject", "label": "Reject" }
+            ]
+        })
+    }
+
+    #[test]
+    fn a_message_declaring_a_valid_gate_v2_is_read_as_v2() {
+        let (event_type, payload) = embedded_suite_event(&v2_message()).unwrap();
+        assert_eq!(event_type, GATE_V2_EVENT_TYPE);
+        assert_eq!(payload["gate_id"], "gate_8f3a");
+    }
+
+    #[test]
+    fn a_message_whose_v2_fields_do_not_validate_reads_its_v1_card() {
+        let mut broken = v2_message();
+        broken["options"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("meaning");
+        assert_eq!(
+            embedded_suite_event(&broken),
+            Some((GATE_EVENT_TYPE, v1_card()))
+        );
+    }
+
+    #[test]
+    fn a_v1_only_message_reads_exactly_as_before() {
+        let content = json!({ "msgtype": "m.text", "body": "…", EMBEDDED_GATE_KEY: v1_card() });
+        assert_eq!(
+            embedded_suite_event(&content),
+            Some((GATE_EVENT_TYPE, v1_card()))
+        );
+    }
+
+    #[test]
+    fn a_v2_gate_is_the_same_decision_as_its_v1_event() {
+        let (_, payload) = embedded_suite_event(&v2_message()).unwrap();
+        assert_eq!(
+            decision_identity(GATE_V2_EVENT_TYPE, &payload),
+            decision_identity(GATE_EVENT_TYPE, &v1_card())
+        );
+        assert!(may_carry_embedded(
+            r#"{"content":{"suite_event_type":"dev.superpipeline.gate.v2"}}"#
+        ));
     }
 
     #[test]

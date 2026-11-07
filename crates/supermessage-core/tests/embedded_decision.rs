@@ -197,3 +197,120 @@ async fn the_prose_arriving_after_the_card_takes_its_place() {
     assert_eq!(cards(&after), vec!["$prose".to_string()]);
     assert_eq!(cards(&applied(&sink)), vec!["$prose".to_string()]);
 }
+
+/// The corpus's publishing gate as the hub sends it: the prose message with
+/// gate.v2 fields and the v1 card beside them, then the legacy v1 event.
+fn gate_v2_prose(event_id: &str) -> Raw<AnySyncTimelineEvent> {
+    let corpus: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+    ))
+    .unwrap();
+    let mut content = corpus["events"][2]["accept"][0]["content"].clone();
+    content["dev.superpipeline.gate"] = gate_v1_card();
+    raw(json!({
+        "type": "m.room.message",
+        "event_id": event_id,
+        "sender": "@board_press:example.org",
+        "origin_server_ts": 1_000,
+        "content": content,
+    }))
+}
+
+/// What the hub's v1 card offers for that gate: the approvals dropped.
+fn gate_v1_card() -> Value {
+    json!({
+        "schema_version": 2,
+        "board_id": "brd_7c1f",
+        "card_id": "crd_6b40",
+        "gate_id": "gate_8f3a",
+        "stage_key": "approve",
+        "card_title": "Announce the release",
+        "prompt": "Approve \"Announce the release\"?",
+        "options": [
+            { "id": "request_changes", "label": "Request changes" },
+            { "id": "reject", "label": "Reject" }
+        ]
+    })
+}
+
+fn gate_v1_event(event_id: &str) -> Raw<AnySyncTimelineEvent> {
+    let mut content = gate_v1_card();
+    content["body"] = json!("Approval needed — \"Announce the release\".");
+    raw(json!({
+        "type": "dev.superpipeline.gate.v1",
+        "event_id": event_id,
+        "sender": "@board_press:example.org",
+        "origin_server_ts": 1_001,
+        "content": content,
+    }))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_gate_v2_is_one_card_drawn_from_v2_with_its_approvals_and_preview() {
+    use supermessage_core::custom_events::CustomEventView;
+    use supermessage_core::gate_v2::{GateOptionMeaning, GatePreviewBlock};
+
+    install_ring_provider();
+    let room_id = room_id!("!gate:example.org");
+    let server = MatrixMockServer::new().await;
+    let client = server.client_builder().build().await;
+    client.event_cache().subscribe().unwrap();
+    server.mock_room_state_encryption().plain().mount().await;
+    server
+        .sync_room(
+            &client,
+            JoinedRoomBuilder::new(room_id)
+                .add_timeline_event(gate_v2_prose("$prose"))
+                .add_timeline_event(gate_v1_event("$legacy")),
+        )
+        .await;
+
+    let sink = Arc::new(Envelopes::default());
+    let focused = FocusedTimeline::default();
+    focused
+        .subscribe(&client, room_id.as_str(), sink.clone())
+        .await
+        .unwrap();
+    let rows = settled(&focused, |rows| {
+        row(rows, "$prose").is_some() && row(rows, "$legacy").is_some()
+    })
+    .await;
+    assert_eq!(
+        cards(&rows),
+        vec!["$prose".to_string()],
+        "one card, on the prose"
+    );
+    assert_eq!(cards(&applied(&sink)), vec!["$prose".to_string()]);
+
+    let ItemView::CustomEvent {
+        view:
+            CustomEventView::Rendered {
+                decision: Some(decision),
+                ..
+            },
+        ..
+    } = &row(&rows, "$prose").unwrap().view
+    else {
+        panic!("the prose is a pending card");
+    };
+    let gate = decision.gate_v2.as_ref().expect("drawn from v2");
+    let meanings: Vec<(&str, GateOptionMeaning)> = gate
+        .options
+        .iter()
+        .map(|o| (o.id.as_str(), o.meaning))
+        .collect();
+    assert_eq!(
+        meanings,
+        [
+            ("approve_manual", GateOptionMeaning::Approve),
+            ("approve_automatic", GateOptionMeaning::Approve),
+            ("request_changes", GateOptionMeaning::Revise),
+            ("reject", GateOptionMeaning::Reject),
+        ]
+    );
+    assert!(matches!(
+        &gate.preview[0],
+        GatePreviewBlock::Text { text, .. }
+            if text == "Our next release ships today.\n\nThanks to everyone who tested it."
+    ));
+}
