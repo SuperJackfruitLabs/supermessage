@@ -234,7 +234,9 @@ struct CustomEventCard: View {
                 // and letting it truncate rather than wrap. `fixedSize
                 // (vertical:)` says take the height you need, which for the one
                 // sentence a reader has to answer is not negotiable.
-                Text(decision.prompt)
+                // A question.v2 carries its whole question; the prompt is the
+                // same sentence cut at 300 characters.
+                Text(decision.questionV2?.question ?? decision.prompt)
                     .font(.headline)
                     .foregroundStyle(Theme.content)
                     .fixedSize(horizontal: false, vertical: true)
@@ -247,10 +249,11 @@ struct CustomEventCard: View {
 
             summary(digest)
             details(digest.rest)
-            if let gate = decision.gateV2 {
+            if let gate = decision.gateV2 ?? decision.deliveryV2 {
                 // What is being approved, exactly — before the buttons that
                 // approve it. The core withheld every approving option when
-                // this could not be drawn in full, and says so.
+                // this could not be drawn in full, and says so. A delivery
+                // follow-up shows the post it is about the same way.
                 GatePreviewBlocks(blocks: gate.preview)
                 if let withheld = gate.approvalsWithheld {
                     Text(withheld)
@@ -505,6 +508,12 @@ private struct DecisionButtons: View {
     /// one costs the next agent the reason.
     @State private var commenting: DecisionChoice?
     @State private var comment = ""
+    /// The option awaiting its input — a question's typed answer, a
+    /// follow-up's live link. Never sent while `inputProblem` says why not.
+    @State private var inputting: DecisionChoice?
+    @State private var inputText = ""
+    /// A free-text question's answer, typed in the card.
+    @State private var freeText = ""
     @State private var sending = false
     /// Bumped when a send does not land, which is what the error haptic
     /// watches. A count rather than a flag so two failures in a row are two.
@@ -526,14 +535,20 @@ private struct DecisionButtons: View {
     /// options, by meaning; anything else from the legacy list, by id.
     private var choices: [DecisionChoice] {
         if let gate = decision.gateV2 { return gate.options.map(DecisionChoice.init) }
+        if let question = decision.questionV2 { return question.options.map(DecisionChoice.init) }
+        if let delivery = decision.deliveryV2 { return delivery.options.map(DecisionChoice.init) }
         return decision.options.map(DecisionChoice.init(legacy:))
+    }
+    /// Drawn from the decision envelope — by meaning, never by id.
+    private var isEnvelope: Bool {
+        decision.gateV2 != nil || decision.questionV2 != nil || decision.deliveryV2 != nil
     }
     /// The main action. A gate.v2 can have more than one — a publishing gate
     /// approves automatically or manually — and each is a main action. A
     /// legacy decision keeps its one: the first answer that is not a
     /// rejection.
     private var primaries: [DecisionChoice] {
-        if decision.gateV2 != nil { return choices.filter { $0.role == .approve } }
+        if isEnvelope { return choices.filter { $0.role == .approve } }
         return choices.first { $0.role != .reject }.map { [$0] } ?? []
     }
     private var secondaries: [DecisionChoice] {
@@ -546,6 +561,9 @@ private struct DecisionButtons: View {
 
     var body: some View {
         VStack(spacing: 8) {
+            if let free = decision.questionV2?.freeText {
+                freeTextBox(maxLength: Int(free.maxLength))
+            }
             ForEach(Array(primaries.enumerated()), id: \.offset) { _, primary in
                 // The label colour is set rather than inherited. `signal-soft`
                 // on `signal` is the pair the token contract holds at 6:1 in
@@ -611,6 +629,65 @@ private struct DecisionButtons: View {
                 Text("This goes back to the agent as the reason, so it can pick the work up again.")
             }
         }
+        // On its own view: two alerts on one view do not both present.
+        .background {
+            Color.clear.alert(
+                inputting?.input?.label ?? "",
+                isPresented: Binding(
+                    get: { inputting != nil },
+                    set: { if !$0 { inputting = nil; inputText = "" } })
+            ) {
+                if inputting?.input?.kind == .url {
+                    TextField("https://", text: $inputText)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } else {
+                    TextField(inputting?.input?.label ?? "", text: $inputText)
+                }
+                Button("Cancel", role: .cancel) { inputting = nil; inputText = "" }
+                Button("Send") {
+                    if let choice = inputting, choice.inputProblem(inputText) == nil {
+                        send(choice, comment: nil, text: inputText)
+                    }
+                    inputting = nil
+                    inputText = ""
+                }
+                // The core refuses the same things; a Send that does nothing
+                // reads as a failure.
+                .disabled(inputting?.inputProblem(inputText) != nil)
+            } message: {
+                Text(inputting?.inputProblem(inputText) ?? inputting?.label ?? "")
+            }
+        }
+    }
+
+    /// A question with nothing to choose: the answer is typed here.
+    @ViewBuilder
+    private func freeTextBox(maxLength: Int) -> some View {
+        let trimmed = freeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let over = freeText.count > maxLength
+        VStack(alignment: .trailing, spacing: 6) {
+            TextField("Your answer", text: $freeText, axis: .vertical)
+                .lineLimit(2...6)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityIdentifier("question-free-text")
+            HStack {
+                Text(over ? "At most \(maxLength) characters" : "\(freeText.count)/\(maxLength)")
+                    .metaFace()
+                    .foregroundStyle(over ? Theme.danger : Theme.contentMuted)
+                Spacer()
+                Button {
+                    send(DecisionChoice(freeText: trimmed), comment: nil, text: trimmed)
+                } label: {
+                    OptionLabel(text: "Send answer", colour: Theme.signalSoft)
+                        .font(.headline)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Theme.signal)
+                .disabled(!answerable || sending || trimmed.isEmpty || over)
+            }
+        }
     }
 
     @ViewBuilder
@@ -643,28 +720,39 @@ private struct DecisionButtons: View {
 
     private func tapped(_ choice: DecisionChoice) {
         guard answerable else { return }
-        if choice.comment != .none {
+        if choice.input != nil {
+            inputting = choice
+        } else if choice.comment != .none {
             commenting = choice
         } else {
             send(choice, comment: nil)
         }
     }
 
-    private func send(_ choice: DecisionChoice, comment: String?) {
+    private func send(_ choice: DecisionChoice, comment: String?, text: String? = nil) {
         guard let onDecide else { return }
         let trimmed = comment?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let typed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
         let answer = GateAnswer(
             subject: decision.subject,
             optionId: choice.id,
             comment: (trimmed?.isEmpty ?? true) ? nil : trimmed,
             prompt: decision.prompt,
-            gateV2: decision.gateV2)
+            gateV2: decision.gateV2,
+            questionV2: decision.questionV2,
+            deliveryV2: decision.deliveryV2,
+            text: (typed?.isEmpty ?? true) ? nil : typed)
         sending = true
         Task {
             let landed = await onDecide(answer)
             sending = false
             // Only on success. See `CustomEventCard.answer`.
-            if landed { onLanded(choice) } else { failures += 1 }
+            if landed {
+                if choice.id.isEmpty { freeText = "" }
+                onLanded(choice)
+            } else {
+                failures += 1
+            }
         }
     }
 }
@@ -688,12 +776,16 @@ struct DecisionChoice: Equatable {
     let label: String
     let role: DecisionOptionRole
     let comment: CommentAsk
+    /// What this option asks for before it is sent — a question's typed
+    /// answer, a follow-up's live link. `nil` on a gate and a legacy option.
+    let input: OptionInput?
 
     init(legacy option: CustomEventDecisionOption) {
         id = option.id
         label = option.label
         role = DecisionOptionRole(option)
         comment = option.id == GateAnswer.requestChanges ? .optional : .none
+        input = nil
     }
 
     init(_ option: GateOptionV2) {
@@ -701,6 +793,34 @@ struct DecisionChoice: Equatable {
         label = option.label
         role = DecisionOptionRole(option.meaning)
         comment = option.needsComment ? .required : .none
+        input = option.input
+    }
+
+    /// A free-text answer: no option, so an empty id, and the text itself as
+    /// what the receipt names.
+    init(freeText text: String) {
+        id = ""
+        label = text
+        role = .other
+        comment = .none
+        input = nil
+    }
+
+    /// Why `text` cannot be sent for this option's input, or `nil` when it
+    /// can. The core checks the same three things (`checked_input`).
+    func inputProblem(_ text: String) -> String? {
+        guard let input else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return input.required ? "\(input.label) is needed." : nil
+        }
+        if trimmed.count > Int(input.maxLength) {
+            return "At most \(input.maxLength) characters."
+        }
+        if input.kind == .url, !trimmed.lowercased().hasPrefix("https://") || trimmed.count <= 8 {
+            return "The link must start with https://."
+        }
+        return nil
     }
 
     /// What the receipt names.
@@ -816,6 +936,14 @@ struct GateAnswer {
     /// The gate.v2 the card was drawn from, when it was one. Answered with
     /// `Session.answerGateV2`, which hands it back to the core.
     var gateV2: GateV2Decision? = nil
+    /// The question.v2 the card was drawn from — answered with
+    /// `Session.answerQuestionV2`. An empty `optionId` is a free-text answer.
+    var questionV2: QuestionV2Decision? = nil
+    /// The delivery.v2 follow-up the card was drawn from — answered with
+    /// `Session.answerDeliveryV2`.
+    var deliveryV2: GateV2Decision? = nil
+    /// An option's input, or a free-text answer.
+    var text: String? = nil
 }
 
 #if DEBUG

@@ -43,6 +43,10 @@ public enum NotificationAnswerer {
                 try await client.sendGateDecisionTo(
                     roomId: roomId, gateId: gateId, optionId: optionId, comment: comment,
                     inReplyTo: gateEventId, prompt: prompt)
+            case let .gateV2(roomId, gateEventId, gate, optionId, comment):
+                try await client.sendGateDecisionV2To(
+                    roomId: roomId, gate: gate, optionId: optionId, comment: comment,
+                    inReplyTo: gateEventId)
             }
             return true
         } catch {

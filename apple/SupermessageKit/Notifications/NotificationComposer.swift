@@ -8,6 +8,7 @@ extension NotificationActionSpec: @retroactive @unchecked Sendable {}
 extension NotificationContext: @retroactive @unchecked Sendable {}
 extension NotificationTextInput: @retroactive @unchecked Sendable {}
 extension PlannedNotification: @retroactive @unchecked Sendable {}
+extension GateAnswersV2: @retroactive @unchecked Sendable {}
 
 /// One local notification this app has decided to post.
 ///
@@ -32,6 +33,10 @@ public struct LocalNotification: Equatable, Sendable {
         /// is the operator's decision of 2026-09-27; before it, gates only
         /// opened.
         case gate = "GATE"
+        /// A gate a notification may answer but never approve — a gate.v2
+        /// bound to a subject (a notification cannot show its preview), or a
+        /// gate that offers no approval: Request changes, Reject and Open.
+        case gateReview = "GATE_REVIEW"
         /// A decision that must be read in the app before it is answered — a
         /// pending request the roster cannot identify, a permission request
         /// whose answers do not map onto Allow once / Reject, a gate with
@@ -51,11 +56,15 @@ public struct LocalNotification: Equatable, Sendable {
         /// Which of `approve`, `request_changes` and `reject` this gate
         /// offers. An action outside this set opens the room.
         public let optionIds: [String]
+        /// Set for a gate.v2: which of its options each action sends, and
+        /// the subject the decision.v2 is bound to.
+        public let v2: GateAnswersV2?
 
-        public init(gateId: String, prompt: String, optionIds: [String]) {
+        public init(gateId: String, prompt: String, optionIds: [String], v2: GateAnswersV2? = nil) {
             self.gateId = gateId
             self.prompt = prompt
             self.optionIds = optionIds
+            self.v2 = v2
         }
     }
 
@@ -126,7 +135,9 @@ public struct LocalNotification: Equatable, Sendable {
             permission: allowOptionId.flatMap { allow in
                 rejectOptionId.map { PermissionAnswers(allowOptionId: allow, rejectOptionId: $0) }
             },
-            gate: gate.map { GateAnswers(gateId: $0.gateId, prompt: $0.prompt, optionIds: $0.optionIds) })
+            gate: gate.map {
+                GateAnswers(gateId: $0.gateId, prompt: $0.prompt, optionIds: $0.optionIds, v2: $0.v2)
+            })
     }
 }
 
@@ -136,6 +147,7 @@ extension LocalNotification.Category {
         case .message: self = .message
         case .permission: self = .permission
         case .gate: self = .gate
+        case .gateReview: self = .gateReview
         case .decision: self = .decision
         }
     }
@@ -145,6 +157,7 @@ extension LocalNotification.Category {
         case .message: .message
         case .permission: .permission
         case .gate: .gate
+        case .gateReview: .gateReview
         case .decision: .decision
         }
     }
@@ -152,7 +165,9 @@ extension LocalNotification.Category {
 
 extension LocalNotification.Gate {
     init(_ answers: GateAnswers) {
-        self.init(gateId: answers.gateId, prompt: answers.prompt, optionIds: answers.optionIds)
+        self.init(
+            gateId: answers.gateId, prompt: answers.prompt, optionIds: answers.optionIds,
+            v2: answers.v2)
     }
 }
 

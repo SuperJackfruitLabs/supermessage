@@ -41,6 +41,10 @@ extension GateOptionV2: @retroactive @unchecked Sendable {}
 extension GatePreviewBlock: @retroactive @unchecked Sendable {}
 extension GateSubjectBinding: @retroactive @unchecked Sendable {}
 extension GateV2Decision: @retroactive @unchecked Sendable {}
+extension OptionInput: @retroactive @unchecked Sendable {}
+extension OptionInputKind: @retroactive @unchecked Sendable {}
+extension QuestionFreeText: @retroactive @unchecked Sendable {}
+extension QuestionV2Decision: @retroactive @unchecked Sendable {}
 extension FfiError: @retroactive @unchecked Sendable {}
 extension FfiEvent: @retroactive @unchecked Sendable {}
 extension ItemView: @retroactive @unchecked Sendable {}

@@ -491,6 +491,45 @@ public final class Session {
         }
     }
 
+    /// Answer a question.v2 from its card. `optionId` `nil` answers a
+    /// free-text question with `text`; otherwise `text` is the chosen
+    /// option's input, when it asks for one. Same contract as `answerGateV2`.
+    @discardableResult
+    public func answerQuestionV2(
+        _ eventId: String?, question: QuestionV2Decision, optionId: String?, text: String?,
+        in roomId: String
+    ) async -> Bool {
+        guard let eventId else { return false }
+        do {
+            try await client.sendQuestionAnswerV2(
+                roomId: roomId, question: question, optionId: optionId, text: text,
+                inReplyTo: eventId)
+            decisionAnswered?(roomId, eventId, optionId ?? "")
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Answer a manual-delivery follow-up from its card: the live link as
+    /// `text`, or `switch_to_automatic`. Same contract as `answerGateV2`.
+    @discardableResult
+    public func answerDeliveryV2(
+        _ eventId: String?, delivery: GateV2Decision, optionId: String, text: String?,
+        in roomId: String
+    ) async -> Bool {
+        guard let eventId else { return false }
+        do {
+            try await client.sendDeliveryAnswerV2(
+                roomId: roomId, delivery: delivery, optionId: optionId, text: text,
+                inReplyTo: eventId)
+            decisionAnswered?(roomId, eventId, optionId)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Rewrite a message this account sent.
     ///
     /// Takes the **event** id for the same reason `toggleReaction` does: an

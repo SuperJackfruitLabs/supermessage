@@ -20,6 +20,8 @@ import dev.supermessage.MainActivity
 import dev.supermessage.R
 import dev.supermessage.kit.notify.Poster
 import uniffi.supermessage_core.GateAnswers
+import uniffi.supermessage_core.GateAnswersV2
+import uniffi.supermessage_core.GateSubjectBinding
 import uniffi.supermessage_core.NotificationActionSpec
 import uniffi.supermessage_core.NotificationCategory
 import uniffi.supermessage_core.PermissionAnswers
@@ -229,7 +231,29 @@ internal class AndroidPoster(
                         it,
                         info.getString("sm.gatePrompt").orEmpty(),
                         info.getString("sm.gateOptions").orEmpty().split(' ').filter(String::isNotEmpty),
+                        gateV2FromExtras(info),
                     )
+                },
+            )
+        }
+
+        /**
+         * A gate.v2's answers, read back from the core's user info
+         * (`notification_policy::KEY_GATE_V2*`), so a note posted again still
+         * answers with decision.v2. Null for a v1 gate.
+         */
+        internal fun gateV2FromExtras(info: Bundle): GateAnswersV2? {
+            if (info.getString("sm.gateV2") == null) return null
+            val subjectId = info.getString("sm.gateSubjectId")
+            val subjectDigest = info.getString("sm.gateSubjectDigest")
+            return GateAnswersV2(
+                approveOptionId = info.getString("sm.gateV2.approve"),
+                reviseOptionId = info.getString("sm.gateV2.revise"),
+                rejectOptionId = info.getString("sm.gateV2.reject"),
+                subject = if (subjectId != null && subjectDigest != null) {
+                    GateSubjectBinding(subjectId, subjectDigest)
+                } else {
+                    null
                 },
             )
         }
