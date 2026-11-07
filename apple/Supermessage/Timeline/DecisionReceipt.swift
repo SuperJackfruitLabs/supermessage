@@ -23,6 +23,12 @@ struct DecisionAnswerRecord: Equatable {
     /// for a verb we do not know is how a receipt ends up saying something
     /// the reader did not do.
     var outcome: String {
+        // A free-text answer to a question names what was said.
+        if option.id.isEmpty { return "You answered \u{201C}\(option.label)\u{201D}" }
+        // The publishing gate's two approvals and a follow-up's answers, in
+        // the hub's own words (`OUTCOME_VERBS`; `core::gate_outcome`'s
+        // summaries), so this line and the room's receipt agree.
+        if let said = Self.hubWords[option.id] { return "\(said) by you" }
         switch role ?? DecisionOptionRole(option) {
         case .approve: return "Approved by you"
         case .requestChanges: return "Changes requested by you"
@@ -30,6 +36,13 @@ struct DecisionAnswerRecord: Equatable {
         case .other: return "You chose \u{201C}\(option.label)\u{201D}"
         }
     }
+
+    static let hubWords: [String: String] = [
+        "approve_automatic": "Approved for automatic delivery",
+        "approve_manual": "Approved for manual delivery",
+        "record_live_url": "Live link recorded",
+        "switch_to_automatic": "Switched to automatic delivery",
+    ]
 }
 
 /// Which part an option plays on the card.

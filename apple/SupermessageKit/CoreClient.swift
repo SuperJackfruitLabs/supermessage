@@ -330,6 +330,35 @@ public actor CoreClient {
         }
     }
 
+    /// Answer a question.v2. `question` is the card's own
+    /// `CustomEventDecision.questionV2`; `optionId` is one of its options
+    /// (with `text` when that option asks for input), or `nil` for a
+    /// free-text answer. The core refuses what the card should not have sent.
+    public func sendQuestionAnswerV2(
+        roomId: String, question: QuestionV2Decision, optionId: String?, text: String?,
+        inReplyTo: String
+    ) async throws {
+        try await run {
+            try $0.sendQuestionAnswerV2(
+                roomId: roomId, question: question, optionId: optionId, text: text,
+                inReplyTo: inReplyTo)
+        }
+    }
+
+    /// Answer a manual-delivery follow-up: the live link as `text` for
+    /// `record_live_url`, or `switch_to_automatic`. `delivery` is the card's
+    /// own `CustomEventDecision.deliveryV2`.
+    public func sendDeliveryAnswerV2(
+        roomId: String, delivery: GateV2Decision, optionId: String, text: String?,
+        inReplyTo: String
+    ) async throws {
+        try await run {
+            try $0.sendDeliveryAnswerV2(
+                roomId: roomId, delivery: delivery, optionId: optionId, text: text,
+                inReplyTo: inReplyTo)
+        }
+    }
+
     public func setTyping(roomId: String, typing: Bool) async throws {
         try await run { try $0.setTyping(roomId: roomId, typing: typing) }
     }
@@ -352,6 +381,17 @@ public actor CoreClient {
             try $0.sendGateDecisionTo(
                 roomId: roomId, gateId: gateId, optionId: optionId, comment: comment,
                 inReplyTo: inReplyTo, prompt: prompt)
+        }
+    }
+
+    public func sendGateDecisionV2To(
+        roomId: String, gate: GateV2Decision, optionId: String, comment: String?,
+        inReplyTo: String
+    ) async throws {
+        try await run {
+            try $0.sendGateDecisionV2To(
+                roomId: roomId, gate: gate, optionId: optionId, comment: comment,
+                inReplyTo: inReplyTo)
         }
     }
 

@@ -166,6 +166,14 @@ struct PreviewClient: SessionClient {
         roomId: String, gate: GateV2Decision, optionId: String, comment: String?,
         inReplyTo: String
     ) async throws {}
+    func sendQuestionAnswerV2(
+        roomId: String, question: QuestionV2Decision, optionId: String?, text: String?,
+        inReplyTo: String
+    ) async throws {}
+    func sendDeliveryAnswerV2(
+        roomId: String, delivery: GateV2Decision, optionId: String, text: String?,
+        inReplyTo: String
+    ) async throws {}
     func setTyping(roomId: String, typing: Bool) async throws {}
 
     // MARK: NotificationAnswering

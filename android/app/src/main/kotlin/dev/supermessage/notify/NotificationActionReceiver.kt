@@ -169,6 +169,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
     private fun decisionOf(answer: NotificationAnswer, userInfo: Map<String, String>): Decision? = when (answer) {
         is NotificationAnswer.Permission -> userInfo[KEY_EVENT_ID]?.let { Decision(answer.roomId, it, answer.optionId) }
         is NotificationAnswer.Gate -> Decision(answer.roomId, answer.gateEventId, answer.optionId)
+        is NotificationAnswer.GateV2 -> Decision(answer.roomId, answer.gateEventId, answer.optionId)
     }
 
     private data class Decision(val roomId: String, val eventId: String, val optionId: String)
@@ -176,6 +177,7 @@ class NotificationActionReceiver : BroadcastReceiver() {
     private fun roomOf(response: NotificationResponse.Answer): String = when (val a = response.answer) {
         is uniffi.supermessage_core.NotificationAnswer.Permission -> a.roomId
         is uniffi.supermessage_core.NotificationAnswer.Gate -> a.roomId
+        is uniffi.supermessage_core.NotificationAnswer.GateV2 -> a.roomId
     }
 
     companion object {
@@ -229,6 +231,14 @@ internal class LazyCoreAnswering(private val core: () -> CoreInterface) : Notifi
         inReplyTo: String,
         prompt: String,
     ) = client().sendGateDecisionTo(roomId, gateId, optionId, comment, inReplyTo, prompt)
+
+    override suspend fun sendGateDecisionV2To(
+        roomId: String,
+        gate: uniffi.supermessage_core.GateV2Decision,
+        optionId: String,
+        comment: String?,
+        inReplyTo: String,
+    ) = client().sendGateDecisionV2To(roomId, gate, optionId, comment, inReplyTo)
 }
 
 /**

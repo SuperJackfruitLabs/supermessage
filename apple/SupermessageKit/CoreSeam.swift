@@ -147,6 +147,14 @@ public protocol MessageSending: Sendable {
         roomId: String, gate: GateV2Decision, optionId: String, comment: String?,
         inReplyTo: String
     ) async throws
+    func sendQuestionAnswerV2(
+        roomId: String, question: QuestionV2Decision, optionId: String?, text: String?,
+        inReplyTo: String
+    ) async throws
+    func sendDeliveryAnswerV2(
+        roomId: String, delivery: GateV2Decision, optionId: String, text: String?,
+        inReplyTo: String
+    ) async throws
     func setTyping(roomId: String, typing: Bool) async throws
 }
 
@@ -216,6 +224,23 @@ public protocol NotificationAnswering: Sendable {
         roomId: String, gateId: String, optionId: String, comment: String?,
         inReplyTo: String, prompt: String
     ) async throws
+    /// A gate.v2's decision.v2, with no room open — a notification's
+    /// `NotificationAnswer.gateV2`, whose `gate` the core rebuilt.
+    func sendGateDecisionV2To(
+        roomId: String, gate: GateV2Decision, optionId: String, comment: String?,
+        inReplyTo: String
+    ) async throws
+}
+
+/// A conformer that predates gate.v2 notifications — a test double — answers
+/// nothing with them, and says so, rather than failing to compile.
+extension NotificationAnswering {
+    public func sendGateDecisionV2To(
+        roomId: String, gate: GateV2Decision, optionId: String, comment: String?,
+        inReplyTo: String
+    ) async throws {
+        throw CancellationError()
+    }
 }
 
 /// Blocking and reporting (issue #60). `RoomInfoPanel`, `AccountPanel`,

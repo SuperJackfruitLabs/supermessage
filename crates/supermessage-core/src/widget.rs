@@ -847,13 +847,31 @@ fn decision_from(
                 ..base
             })
         }
-        NotificationCategory::Gate => {
+        // A gate the notification may not approve has no Approve among its
+        // `option_ids`, so its widget draws none either. A widget answers
+        // with a decision.v1 (`notification_policy::answer_for_widget`),
+        // which for a gate.v2 is what its v1 card offers too.
+        NotificationCategory::Gate | NotificationCategory::GateReview => {
             let gate = note.gate.as_ref()?;
             Some(WidgetDecision {
                 kind: WidgetDecisionKind::Gate,
                 options: gate
                     .option_ids
                     .iter()
+                    // A gate.v2's slot is answerable by a decision.v1 only when
+                    // the option filling it has the v1 id itself.
+                    .filter(|id| match &gate.v2 {
+                        None => true,
+                        Some(v2) => {
+                            let filled = match id.as_str() {
+                                "approve" => v2.approve_option_id.as_deref(),
+                                "request_changes" => v2.revise_option_id.as_deref(),
+                                "reject" => v2.reject_option_id.as_deref(),
+                                _ => None,
+                            };
+                            filled == Some(id.as_str())
+                        }
+                    })
                     .map(|id| WidgetOption {
                         id: id.clone(),
                         label: gate_label(id).to_string(),

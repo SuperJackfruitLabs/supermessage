@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.GateV2Decision
+import uniffi.supermessage_core.QuestionV2Decision
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.Mentionable
 import uniffi.supermessage_core.NotificationMode
@@ -583,6 +584,63 @@ class Session(
                 gate = gate,
                 optionId = optionId,
                 comment = comment,
+                inReplyTo = eventId,
+            )
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Answer a question.v2 from its card. [optionId] null answers a free-text
+     * question with [text]; otherwise [text] is the chosen option's input,
+     * when it asks for one. Otherwise as [answerGateV2].
+     */
+    suspend fun answerQuestionV2(
+        eventId: String?,
+        question: QuestionV2Decision,
+        optionId: String?,
+        text: String?,
+        roomId: String,
+    ): Boolean {
+        if (eventId == null) return false
+        return try {
+            client.sendQuestionAnswerV2(
+                roomId = roomId,
+                question = question,
+                optionId = optionId,
+                text = text,
+                inReplyTo = eventId,
+            )
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Answer a manual-delivery follow-up from its card: the live link as
+     * [text], or `switch_to_automatic`. Otherwise as [answerGateV2].
+     */
+    suspend fun answerDeliveryV2(
+        eventId: String?,
+        delivery: GateV2Decision,
+        optionId: String,
+        text: String?,
+        roomId: String,
+    ): Boolean {
+        if (eventId == null) return false
+        return try {
+            client.sendDeliveryAnswerV2(
+                roomId = roomId,
+                delivery = delivery,
+                optionId = optionId,
+                text = text,
                 inReplyTo = eventId,
             )
             true

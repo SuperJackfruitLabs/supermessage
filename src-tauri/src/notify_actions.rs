@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use supermessage_core::error::CoreResult;
+use supermessage_core::gate_v2::GateV2Decision;
 use supermessage_core::notification_policy::{self, NotificationAnswer, NotificationResponse};
 use supermessage_core::session::Session;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -54,6 +55,16 @@ pub trait Answerer: Send + Sync {
         in_reply_to: &str,
         prompt: &str,
     ) -> impl Future<Output = CoreResult<()>> + Send;
+
+    /// A gate.v2's decision.v2 (`Session::send_gate_decision_v2_to`).
+    fn gate_v2(
+        &self,
+        room_id: &str,
+        gate: &GateV2Decision,
+        option_id: &str,
+        comment: Option<&str>,
+        in_reply_to: &str,
+    ) -> impl Future<Output = CoreResult<()>> + Send;
 }
 
 impl Answerer for Session {
@@ -75,6 +86,18 @@ impl Answerer for Session {
         prompt: &str,
     ) -> CoreResult<()> {
         self.send_gate_decision_to(room_id, gate_id, option_id, comment, in_reply_to, prompt)
+            .await
+    }
+
+    async fn gate_v2(
+        &self,
+        room_id: &str,
+        gate: &GateV2Decision,
+        option_id: &str,
+        comment: Option<&str>,
+        in_reply_to: &str,
+    ) -> CoreResult<()> {
+        self.send_gate_decision_v2_to(room_id, gate, option_id, comment, in_reply_to)
             .await
     }
 }
@@ -205,6 +228,17 @@ async fn send(answer: &NotificationAnswer, answerer: &impl Answerer) -> CoreResu
                 )
                 .await
         }
+        NotificationAnswer::GateV2 {
+            room_id,
+            gate_event_id,
+            gate,
+            option_id,
+            comment,
+        } => {
+            answerer
+                .gate_v2(room_id, gate, option_id, comment.as_deref(), gate_event_id)
+                .await
+        }
     }
 }
 
@@ -285,6 +319,20 @@ mod tests {
             ))
             .await
         }
+        async fn gate_v2(
+            &self,
+            room_id: &str,
+            gate: &GateV2Decision,
+            option_id: &str,
+            comment: Option<&str>,
+            in_reply_to: &str,
+        ) -> CoreResult<()> {
+            self.outcome(format!(
+                "gate.v2 {room_id} {} {option_id} {comment:?} {in_reply_to}",
+                gate.gate_id
+            ))
+            .await
+        }
     }
 
     impl Opener for Recording {
@@ -339,6 +387,7 @@ mod tests {
                 gate_id: "gate-7".into(),
                 prompt: "Ship it?".into(),
                 option_ids: options.iter().map(|o| o.to_string()).collect(),
+                v2: None,
             }),
         }
     }

@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.withTimeoutOrNull
+import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.NotificationAnswer
 
 /**
@@ -25,6 +26,19 @@ interface NotificationAnswering {
         inReplyTo: String,
         prompt: String,
     )
+
+    /**
+     * A gate.v2's decision.v2 — a notification's `NotificationAnswer.GateV2`,
+     * whose [gate] the core rebuilt from what the notification carried. A
+     * double that predates it refuses, so the answer reads as not sent.
+     */
+    suspend fun sendGateDecisionV2To(
+        roomId: String,
+        gate: GateV2Decision,
+        optionId: String,
+        comment: String?,
+        inReplyTo: String,
+    ): Unit = throw UnsupportedOperationException("gate.v2 answers are not supported here")
 }
 
 /**
@@ -72,6 +86,13 @@ object NotificationAnswerer {
                         comment = answer.comment,
                         inReplyTo = answer.gateEventId,
                         prompt = answer.prompt,
+                    )
+                    is NotificationAnswer.GateV2 -> client.sendGateDecisionV2To(
+                        roomId = answer.roomId,
+                        gate = answer.gate,
+                        optionId = answer.optionId,
+                        comment = answer.comment,
+                        inReplyTo = answer.gateEventId,
                     )
                 }
                 true

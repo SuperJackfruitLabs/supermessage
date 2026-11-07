@@ -1966,7 +1966,14 @@ fn embedded_from_raw(
     // A gate.v2 carries the exact post it asks about, so its own, larger
     // bound — already applied when it was chosen over the v1 card
     // (`crate::gate_v2::embedded_payload`).
-    let max_bytes = if event_type == crate::gate_v2::GATE_V2_EVENT_TYPE {
+    // A question and a follow-up were measured against the same bound when
+    // they were chosen (`crate::question_v2`, `crate::delivery_v2`).
+    let max_bytes = if matches!(
+        event_type,
+        crate::gate_v2::GATE_V2_EVENT_TYPE
+            | crate::question_v2::QUESTION_V2_EVENT_TYPE
+            | crate::delivery_v2::DELIVERY_V2_EVENT_TYPE
+    ) {
         crate::gate_v2::GATE_V2_PAYLOAD_MAX_BYTES
     } else {
         CUSTOM_PAYLOAD_MAX_BYTES
@@ -2900,6 +2907,55 @@ impl FocusedTimeline {
         in_reply_to: &str,
     ) -> CoreResult<()> {
         let content = crate::gate_v2::decision_request(gate, option_id, comment, in_reply_to)?;
+        let timeline = self.active_timeline_for(room_id)?;
+        timeline
+            .room()
+            .send_raw("m.room.message", content)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Answers a question.v2 (`crate::question_v2`) from its card, in the
+    /// open room.
+    ///
+    /// `question` is the [`crate::question_v2::QuestionV2Decision`] the card
+    /// was drawn from, handed back by the host. `option_id` picks one of its
+    /// options — with `text` when that option asks for input — or, `None`,
+    /// answers a free-text question with `text` alone. Checked against what
+    /// the reader was shown before the focus check, like
+    /// [`Self::send_gate_decision_v2`].
+    pub async fn send_question_answer_v2(
+        &self,
+        room_id: &str,
+        question: &crate::question_v2::QuestionV2Decision,
+        option_id: Option<&str>,
+        text: Option<&str>,
+        in_reply_to: &str,
+    ) -> CoreResult<()> {
+        let content = crate::question_v2::answer_request(question, option_id, text, in_reply_to)?;
+        let timeline = self.active_timeline_for(room_id)?;
+        timeline
+            .room()
+            .send_raw("m.room.message", content)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Answers a delivery.v2 follow-up (`crate::delivery_v2`) from its card,
+    /// in the open room: the live link (`text`) for `record_live_url`, or
+    /// `switch_to_automatic`. `delivery` is the card's
+    /// `CustomEventDecision::delivery_v2`, handed back unchanged.
+    pub async fn send_delivery_answer_v2(
+        &self,
+        room_id: &str,
+        delivery: &crate::gate_v2::GateV2Decision,
+        option_id: &str,
+        text: Option<&str>,
+        in_reply_to: &str,
+    ) -> CoreResult<()> {
+        let content = crate::delivery_v2::answer_request(delivery, option_id, text, in_reply_to)?;
         let timeline = self.active_timeline_for(room_id)?;
         timeline
             .room()

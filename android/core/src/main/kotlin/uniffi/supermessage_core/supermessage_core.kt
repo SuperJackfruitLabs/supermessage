@@ -1491,7 +1491,27 @@ data class CustomEventDecision (
      * for every v1 gate and permission request, and then absent from the
      * JSON, so their wire is unchanged.
      */
-    var `gateV2`: GateV2Decision? = null
+    var `gateV2`: GateV2Decision? = null, 
+    /**
+     * An agent's question, when it arrived as question.v2
+     * (`crate::question_v2`): its options by meaning, each option's input,
+     * or a free-text answer when it offers none. Answered with
+     * `send_question_answer_v2`. [`Self::options`] then holds only the
+     * options a plain reply can answer (each id is its label, which the hub
+     * matches as a typed reply), so a host that knows nothing of v2 still
+     * answers honestly. `None` otherwise, and absent from the JSON.
+     */
+    var `questionV2`: QuestionV2Decision? = null, 
+    /**
+     * A manual-delivery follow-up, when the message is delivery.v2
+     * (`crate::delivery_v2`) — the same shape as a gate.v2: the gate it
+     * follows, the subject's preview, and the options (record the live
+     * link, switch to automatic) with an approving one already withheld
+     * when the preview could not be drawn in full. Answered with
+     * `send_delivery_answer_v2`. [`Self::options`] is empty: no plain reply
+     * answers a follow-up.
+     */
+    var `deliveryV2`: GateV2Decision? = null
 ) {
     
     companion object
@@ -1507,6 +1527,8 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterSequenceTypeCustomEventDecisionOption.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalTypeGateV2Decision.read(buf),
+            FfiConverterOptionalTypeQuestionV2Decision.read(buf),
+            FfiConverterOptionalTypeGateV2Decision.read(buf),
         )
     }
 
@@ -1514,7 +1536,9 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterString.allocationSize(value.`prompt`) +
             FfiConverterSequenceTypeCustomEventDecisionOption.allocationSize(value.`options`) +
             FfiConverterOptionalString.allocationSize(value.`subject`) +
-            FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`gateV2`)
+            FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`gateV2`) +
+            FfiConverterOptionalTypeQuestionV2Decision.allocationSize(value.`questionV2`) +
+            FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`deliveryV2`)
     )
 
     override fun write(value: CustomEventDecision, buf: ByteBuffer) {
@@ -1522,6 +1546,8 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterSequenceTypeCustomEventDecisionOption.write(value.`options`, buf)
             FfiConverterOptionalString.write(value.`subject`, buf)
             FfiConverterOptionalTypeGateV2Decision.write(value.`gateV2`, buf)
+            FfiConverterOptionalTypeQuestionV2Decision.write(value.`questionV2`, buf)
+            FfiConverterOptionalTypeGateV2Decision.write(value.`deliveryV2`, buf)
     }
 }
 
@@ -1795,9 +1821,14 @@ data class GateAnswers (
     var `prompt`: kotlin.String, 
     /**
      * Which of `approve`, `request_changes` and `reject` the gate offers, in
-     * that order.
+     * that order. For a gate.v2, the action slots its options fill
+     * ([`GateAnswersV2`]).
      */
-    var `optionIds`: List<kotlin.String>
+    var `optionIds`: List<kotlin.String>, 
+    /**
+     * Set for a gate.v2: which option each action sends.
+     */
+    var `v2`: GateAnswersV2? = null
 ) {
     
     companion object
@@ -1812,19 +1843,82 @@ public object FfiConverterTypeGateAnswers: FfiConverterRustBuffer<GateAnswers> {
             FfiConverterString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterSequenceString.read(buf),
+            FfiConverterOptionalTypeGateAnswersV2.read(buf),
         )
     }
 
     override fun allocationSize(value: GateAnswers) = (
             FfiConverterString.allocationSize(value.`gateId`) +
             FfiConverterString.allocationSize(value.`prompt`) +
-            FfiConverterSequenceString.allocationSize(value.`optionIds`)
+            FfiConverterSequenceString.allocationSize(value.`optionIds`) +
+            FfiConverterOptionalTypeGateAnswersV2.allocationSize(value.`v2`)
     )
 
     override fun write(value: GateAnswers, buf: ByteBuffer) {
             FfiConverterString.write(value.`gateId`, buf)
             FfiConverterString.write(value.`prompt`, buf)
             FfiConverterSequenceString.write(value.`optionIds`, buf)
+            FfiConverterOptionalTypeGateAnswersV2.write(value.`v2`, buf)
+    }
+}
+
+
+
+/**
+ * Which gate.v2 option each of a GATE notification's actions sends — by
+ * meaning, since a v2 gate chooses its own ids — and the subject an answer
+ * is bound to. Present exactly when the gate arrived as gate.v2; its
+ * actions then answer with a decision.v2.
+ */
+data class GateAnswersV2 (
+    /**
+     * The one approving option, never set for a subject-bound gate: a
+     * notification cannot show what would be approved.
+     */
+    var `approveOptionId`: kotlin.String?, 
+    /**
+     * The one option meaning `revise`; "Request changes" always carries
+     * what the reader typed.
+     */
+    var `reviseOptionId`: kotlin.String?, 
+    /**
+     * The one option meaning `reject` that needs no comment.
+     */
+    var `rejectOptionId`: kotlin.String?, 
+    /**
+     * Copied into the decision.v2, as the card copies it.
+     */
+    var `subject`: GateSubjectBinding?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateAnswersV2: FfiConverterRustBuffer<GateAnswersV2> {
+    override fun read(buf: ByteBuffer): GateAnswersV2 {
+        return GateAnswersV2(
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalTypeGateSubjectBinding.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateAnswersV2) = (
+            FfiConverterOptionalString.allocationSize(value.`approveOptionId`) +
+            FfiConverterOptionalString.allocationSize(value.`reviseOptionId`) +
+            FfiConverterOptionalString.allocationSize(value.`rejectOptionId`) +
+            FfiConverterOptionalTypeGateSubjectBinding.allocationSize(value.`subject`)
+    )
+
+    override fun write(value: GateAnswersV2, buf: ByteBuffer) {
+            FfiConverterOptionalString.write(value.`approveOptionId`, buf)
+            FfiConverterOptionalString.write(value.`reviseOptionId`, buf)
+            FfiConverterOptionalString.write(value.`rejectOptionId`, buf)
+            FfiConverterOptionalTypeGateSubjectBinding.write(value.`subject`, buf)
     }
 }
 
@@ -1847,7 +1941,13 @@ data class GateOptionV2 (
      * The host must ask for text, and the core refuses to send this option
      * without it.
      */
-    var `needsComment`: kotlin.Boolean
+    var `needsComment`: kotlin.Boolean, 
+    /**
+     * The input this option asks for, on a question.v2 or delivery.v2
+     * option. Always `None` on a gate.v2 option: a decision.v2 carries a
+     * comment, never an input's text.
+     */
+    var `input`: OptionInput? = null
 ) {
     
     companion object
@@ -1863,6 +1963,7 @@ public object FfiConverterTypeGateOptionV2: FfiConverterRustBuffer<GateOptionV2>
             FfiConverterString.read(buf),
             FfiConverterTypeGateOptionMeaning.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterOptionalTypeOptionInput.read(buf),
         )
     }
 
@@ -1870,7 +1971,8 @@ public object FfiConverterTypeGateOptionV2: FfiConverterRustBuffer<GateOptionV2>
             FfiConverterString.allocationSize(value.`id`) +
             FfiConverterString.allocationSize(value.`label`) +
             FfiConverterTypeGateOptionMeaning.allocationSize(value.`meaning`) +
-            FfiConverterBoolean.allocationSize(value.`needsComment`)
+            FfiConverterBoolean.allocationSize(value.`needsComment`) +
+            FfiConverterOptionalTypeOptionInput.allocationSize(value.`input`)
     )
 
     override fun write(value: GateOptionV2, buf: ByteBuffer) {
@@ -1878,6 +1980,7 @@ public object FfiConverterTypeGateOptionV2: FfiConverterRustBuffer<GateOptionV2>
             FfiConverterString.write(value.`label`, buf)
             FfiConverterTypeGateOptionMeaning.write(value.`meaning`, buf)
             FfiConverterBoolean.write(value.`needsComment`, buf)
+            FfiConverterOptionalTypeOptionInput.write(value.`input`, buf)
     }
 }
 
@@ -1921,6 +2024,10 @@ public object FfiConverterTypeGateSubjectBinding: FfiConverterRustBuffer<GateSub
 /**
  * A gate.v2 as a host draws and answers it. Rides on
  * `CustomEventDecision::gate_v2`.
+ *
+ * Also the shape of a delivery.v2 follow-up (`crate::delivery_v2`), which
+ * names the gate it follows, carries the same subject and preview, and
+ * withholds its approving option by the same rule.
  */
 data class GateV2Decision (
     var `gateId`: kotlin.String, 
@@ -2649,6 +2756,58 @@ public object FfiConverterTypeNotificationTextInput: FfiConverterRustBuffer<Noti
 
 
 /**
+ * An option that asks for input before it is sent: the host draws a field
+ * labelled `label`, refuses to send a `required` one empty, and never sends
+ * more than `max_length` characters. The core checks all three again
+ * ([`checked_input`]).
+ */
+data class OptionInput (
+    var `kind`: OptionInputKind, 
+    /**
+     * Display text, bounded.
+     */
+    var `label`: kotlin.String, 
+    var `required`: kotlin.Boolean, 
+    /**
+     * In characters. At least 1, at most [`INPUT_MAX_LENGTH`].
+     */
+    var `maxLength`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeOptionInput: FfiConverterRustBuffer<OptionInput> {
+    override fun read(buf: ByteBuffer): OptionInput {
+        return OptionInput(
+            FfiConverterTypeOptionInputKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: OptionInput) = (
+            FfiConverterTypeOptionInputKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterBoolean.allocationSize(value.`required`) +
+            FfiConverterUInt.allocationSize(value.`maxLength`)
+    )
+
+    override fun write(value: OptionInput, buf: ByteBuffer) {
+            FfiConverterTypeOptionInputKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterBoolean.write(value.`required`, buf)
+            FfiConverterUInt.write(value.`maxLength`, buf)
+    }
+}
+
+
+
+/**
  * The two option ids a PERMISSION notification's actions send.
  */
 data class PermissionAnswers (
@@ -2947,6 +3106,94 @@ public object FfiConverterTypePushRegistration: FfiConverterRustBuffer<PushRegis
             FfiConverterString.write(value.`deviceDisplayName`, buf)
             FfiConverterString.write(value.`lang`, buf)
             FfiConverterString.write(value.`gatewayUrl`, buf)
+    }
+}
+
+
+
+/**
+ * A question with nothing to choose: the reader types the answer.
+ */
+data class QuestionFreeText (
+    /**
+     * In characters, 1 to [`FREE_TEXT_MAX_LENGTH`].
+     */
+    var `maxLength`: kotlin.UInt
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeQuestionFreeText: FfiConverterRustBuffer<QuestionFreeText> {
+    override fun read(buf: ByteBuffer): QuestionFreeText {
+        return QuestionFreeText(
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: QuestionFreeText) = (
+            FfiConverterUInt.allocationSize(value.`maxLength`)
+    )
+
+    override fun write(value: QuestionFreeText, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`maxLength`, buf)
+    }
+}
+
+
+
+/**
+ * A question.v2 as a host draws and answers it. Rides on
+ * `CustomEventDecision::question_v2`.
+ */
+data class QuestionV2Decision (
+    /**
+     * Handed back verbatim in the answer.
+     */
+    var `elicitationId`: kotlin.String, 
+    /**
+     * The question, bounded at 2,000 characters — the decision's `prompt`
+     * is the same sentence cut at 300, so a host draws this one.
+     */
+    var `question`: kotlin.String, 
+    /**
+     * In the question's order. Empty exactly when `free_text` is set.
+     */
+    var `options`: List<GateOptionV2>, 
+    var `freeText`: QuestionFreeText?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer<QuestionV2Decision> {
+    override fun read(buf: ByteBuffer): QuestionV2Decision {
+        return QuestionV2Decision(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeGateOptionV2.read(buf),
+            FfiConverterOptionalTypeQuestionFreeText.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: QuestionV2Decision) = (
+            FfiConverterString.allocationSize(value.`elicitationId`) +
+            FfiConverterString.allocationSize(value.`question`) +
+            FfiConverterSequenceTypeGateOptionV2.allocationSize(value.`options`) +
+            FfiConverterOptionalTypeQuestionFreeText.allocationSize(value.`freeText`)
+    )
+
+    override fun write(value: QuestionV2Decision, buf: ByteBuffer) {
+            FfiConverterString.write(value.`elicitationId`, buf)
+            FfiConverterString.write(value.`question`, buf)
+            FfiConverterSequenceTypeGateOptionV2.write(value.`options`, buf)
+            FfiConverterOptionalTypeQuestionFreeText.write(value.`freeText`, buf)
     }
 }
 
@@ -6945,6 +7192,10 @@ public object FfiConverterTypeGatePreviewBlock : FfiConverterRustBuffer<GatePrev
 
 /**
  * The render decision for one item.
+ *
+ * The custom-event variant is much larger than the rest since it carries the
+ * gate, question and follow-up records, and stays unboxed on purpose: this
+ * crosses UniFFI, which has no `Box` in a variant, and lives once per row.
  */
 sealed class ItemView {
     
@@ -7635,6 +7886,10 @@ public object FfiConverterTypeMembership: FfiConverterRustBuffer<Membership> {
 /**
  * An answer given from a notification, ready to send with no room open
  * (`NotificationRouter.swift:36-52`). Field order is the order Swift labels.
+ *
+ * `GateV2` carries the gate it answers, so it is far larger than the rest;
+ * it stays unboxed because this crosses UniFFI, which has no `Box` in a
+ * variant, and one answer exists per tapped notification.
  */
 sealed class NotificationAnswer {
     
@@ -7662,6 +7917,23 @@ sealed class NotificationAnswer {
         companion object
     }
     
+    /**
+     * A gate.v2: a `dev.superpipeline.gate.decision.v2` referencing
+     * `gate_event_id`, sent with `send_gate_decision_v2_to`. `gate` is
+     * rebuilt from what the notification carried — the one option the
+     * action sends and the subject binding — so the core checks it exactly
+     * as it checks a card's answer. It never holds an approving option for a
+     * subject-bound gate.
+     */
+    data class GateV2(
+        val `roomId`: kotlin.String, 
+        val `gateEventId`: kotlin.String, 
+        val `gate`: GateV2Decision, 
+        val `optionId`: kotlin.String, 
+        val `comment`: kotlin.String?) : NotificationAnswer() {
+        companion object
+    }
+    
 
     
     companion object
@@ -7684,6 +7956,13 @@ public object FfiConverterTypeNotificationAnswer : FfiConverterRustBuffer<Notifi
                 FfiConverterString.read(buf),
                 FfiConverterOptionalString.read(buf),
                 FfiConverterString.read(buf),
+                )
+            3 -> NotificationAnswer.GateV2(
+                FfiConverterString.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterTypeGateV2Decision.read(buf),
+                FfiConverterString.read(buf),
+                FfiConverterOptionalString.read(buf),
                 )
             else -> throw RuntimeException("invalid enum value, something is very wrong!!")
         }
@@ -7710,6 +7989,17 @@ public object FfiConverterTypeNotificationAnswer : FfiConverterRustBuffer<Notifi
                 + FfiConverterString.allocationSize(value.`prompt`)
             )
         }
+        is NotificationAnswer.GateV2 -> {
+            // Add the size for the Int that specifies the variant plus the size needed for all fields
+            (
+                4UL
+                + FfiConverterString.allocationSize(value.`roomId`)
+                + FfiConverterString.allocationSize(value.`gateEventId`)
+                + FfiConverterTypeGateV2Decision.allocationSize(value.`gate`)
+                + FfiConverterString.allocationSize(value.`optionId`)
+                + FfiConverterOptionalString.allocationSize(value.`comment`)
+            )
+        }
     }
 
     override fun write(value: NotificationAnswer, buf: ByteBuffer) {
@@ -7728,6 +8018,15 @@ public object FfiConverterTypeNotificationAnswer : FfiConverterRustBuffer<Notifi
                 FfiConverterString.write(value.`optionId`, buf)
                 FfiConverterOptionalString.write(value.`comment`, buf)
                 FfiConverterString.write(value.`prompt`, buf)
+                Unit
+            }
+            is NotificationAnswer.GateV2 -> {
+                buf.putInt(3)
+                FfiConverterString.write(value.`roomId`, buf)
+                FfiConverterString.write(value.`gateEventId`, buf)
+                FfiConverterTypeGateV2Decision.write(value.`gate`, buf)
+                FfiConverterString.write(value.`optionId`, buf)
+                FfiConverterOptionalString.write(value.`comment`, buf)
                 Unit
             }
         }.let { /* this makes the `when` an expression, which ensures it is exhaustive */ }
@@ -7757,6 +8056,14 @@ enum class NotificationCategory {
      * A superpipeline gate answerable as Approve / Request changes / Reject.
      */
     GATE,
+    /**
+     * A gate a notification may answer but never approve — a gate.v2 bound
+     * to a subject, whose preview a notification cannot show, or a gate
+     * that offers no approval: Request changes (typed) / Reject / Open. No
+     * Approve button, because one that only opened the app would still
+     * read as approving.
+     */
+    GATE_REVIEW,
     /**
      * A decision that must be read in the app first. Only "Open".
      */
@@ -7984,6 +8291,46 @@ public object FfiConverterTypeNotificationSuppression: FfiConverterRustBuffer<No
     override fun allocationSize(value: NotificationSuppression) = 4UL
 
     override fun write(value: NotificationSuppression, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * What an option's input takes. charter →
+ * `decisions/2026-11-07-the-envelope-covers-questions-and-follow-ups.md`.
+ */
+
+enum class OptionInputKind {
+    
+    /**
+     * Free text.
+     */
+    TEXT,
+    /**
+     * An `https://` URL — the live link a manual delivery owes.
+     */
+    URL;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeOptionInputKind: FfiConverterRustBuffer<OptionInputKind> {
+    override fun read(buf: ByteBuffer) = try {
+        OptionInputKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: OptionInputKind) = 4UL
+
+    override fun write(value: OptionInputKind, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -9764,6 +10111,38 @@ public object FfiConverterOptionalTypeGateAnswers: FfiConverterRustBuffer<GateAn
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeGateAnswersV2: FfiConverterRustBuffer<GateAnswersV2?> {
+    override fun read(buf: ByteBuffer): GateAnswersV2? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeGateAnswersV2.read(buf)
+    }
+
+    override fun allocationSize(value: GateAnswersV2?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeGateAnswersV2.allocationSize(value)
+        }
+    }
+
+    override fun write(value: GateAnswersV2?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeGateAnswersV2.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeGateSubjectBinding: FfiConverterRustBuffer<GateSubjectBinding?> {
     override fun read(buf: ByteBuffer): GateSubjectBinding? {
         if (buf.get().toInt() == 0) {
@@ -9956,6 +10335,38 @@ public object FfiConverterOptionalTypeNotificationTextInput: FfiConverterRustBuf
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeOptionInput: FfiConverterRustBuffer<OptionInput?> {
+    override fun read(buf: ByteBuffer): OptionInput? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeOptionInput.read(buf)
+    }
+
+    override fun allocationSize(value: OptionInput?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeOptionInput.allocationSize(value)
+        }
+    }
+
+    override fun write(value: OptionInput?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeOptionInput.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypePermissionAnswers: FfiConverterRustBuffer<PermissionAnswers?> {
     override fun read(buf: ByteBuffer): PermissionAnswers? {
         if (buf.get().toInt() == 0) {
@@ -9978,6 +10389,70 @@ public object FfiConverterOptionalTypePermissionAnswers: FfiConverterRustBuffer<
         } else {
             buf.put(1)
             FfiConverterTypePermissionAnswers.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeQuestionFreeText: FfiConverterRustBuffer<QuestionFreeText?> {
+    override fun read(buf: ByteBuffer): QuestionFreeText? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeQuestionFreeText.read(buf)
+    }
+
+    override fun allocationSize(value: QuestionFreeText?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeQuestionFreeText.allocationSize(value)
+        }
+    }
+
+    override fun write(value: QuestionFreeText?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeQuestionFreeText.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeQuestionV2Decision: FfiConverterRustBuffer<QuestionV2Decision?> {
+    override fun read(buf: ByteBuffer): QuestionV2Decision? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeQuestionV2Decision.read(buf)
+    }
+
+    override fun allocationSize(value: QuestionV2Decision?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeQuestionV2Decision.allocationSize(value)
+        }
+    }
+
+    override fun write(value: QuestionV2Decision?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeQuestionV2Decision.write(value, buf)
         }
     }
 }

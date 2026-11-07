@@ -77,6 +77,9 @@ import uniffi.supermessage_core.CustomEventView
 import uniffi.supermessage_core.GateOptionV2
 import uniffi.supermessage_core.GatePreviewBlock
 import uniffi.supermessage_core.GateV2Decision
+import uniffi.supermessage_core.OptionInput
+import uniffi.supermessage_core.OptionInputKind
+import uniffi.supermessage_core.QuestionV2Decision
 
 /**
  * A suite event — a Superpipeline card or run, a permission request, station
@@ -600,7 +603,9 @@ private fun PendingBody(
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             // The question itself, first and in plain language, allowed the
             // height to ask it: no line limit.
-            Text(decision.prompt, style = MaterialTheme.typography.titleMedium)
+            // A question.v2 carries its whole question; the prompt is the same
+            // sentence cut at 300 characters.
+            Text(decision.questionV2?.question ?: decision.prompt, style = MaterialTheme.typography.titleMedium)
             // Who is asking. A decision from nobody in particular is one a
             // reader cannot weigh.
             Text(
@@ -611,7 +616,7 @@ private fun PendingBody(
         }
         Summary(digest.summary)
         Details(digest.rest, detailsOpenInitially)
-        decision.gateV2?.let { gate ->
+        (decision.gateV2 ?: decision.deliveryV2)?.let { gate ->
             // What is being approved, exactly — before the buttons that
             // approve it. The core withheld every approving option when this
             // could not be drawn in full, and says so.
@@ -686,6 +691,8 @@ internal data class DecisionChoice(
     val label: String,
     val role: DecisionOptionRole,
     val comment: CommentAsk,
+    /** What the option asks for before it is sent — a question's typed answer, a follow-up's live link. */
+    val input: OptionInput? = null,
 ) {
     enum class CommentAsk {
         /** Sent as tapped. */
@@ -702,6 +709,23 @@ internal data class DecisionChoice(
     /** Whether [text] leaves a required comment unwritten. */
     fun lacksComment(text: String): Boolean = comment == CommentAsk.REQUIRED && text.isBlank()
 
+    /**
+     * Why [text] cannot be sent for this option's input, or null when it can.
+     * The core checks the same three things (`checked_input`).
+     */
+    fun inputProblem(text: String): String? {
+        val input = input ?: return null
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return if (input.required) "${input.label} is needed." else null
+        if (trimmed.length > input.maxLength.toInt()) return "At most ${input.maxLength} characters."
+        if (input.kind == OptionInputKind.URL &&
+            (!trimmed.lowercase().startsWith("https://") || trimmed.length <= "https://".length)
+        ) {
+            return "The link must start with https://."
+        }
+        return null
+    }
+
     companion object {
         fun legacy(option: CustomEventDecisionOption) = DecisionChoice(
             id = option.id,
@@ -715,6 +739,15 @@ internal data class DecisionChoice(
             label = option.label,
             role = DecisionOptionRole.of(option.meaning),
             comment = if (option.needsComment) CommentAsk.REQUIRED else CommentAsk.NONE,
+            input = option.input,
+        )
+
+        /** A free-text answer: no option, so an empty id, and the text as what the receipt names. */
+        fun freeText(text: String) = DecisionChoice(
+            id = "",
+            label = text,
+            role = DecisionOptionRole.OTHER,
+            comment = CommentAsk.NONE,
         )
 
         /**
@@ -725,9 +758,14 @@ internal data class DecisionChoice(
          * a rejection.
          */
         fun of(decision: CustomEventDecision): Pair<List<DecisionChoice>, List<DecisionChoice>> {
-            val gate = decision.gateV2
-            return if (gate != null) {
-                val all = gate.options.map { v2(it) }
+            // The decision envelope — a gate, a question, a follow-up — is
+            // drawn by meaning: only an approving option leads, so a question's
+            // `choose` options are all neutral.
+            val envelope = decision.gateV2?.options
+                ?: decision.questionV2?.options
+                ?: decision.deliveryV2?.options
+            return if (envelope != null) {
+                val all = envelope.map { v2(it) }
                 all to all.filter { it.role == DecisionOptionRole.APPROVE }
             } else {
                 val all = decision.options.map { legacy(it) }
@@ -766,13 +804,20 @@ private fun DecisionButtons(
     var commenting by remember { mutableStateOf<DecisionChoice?>(null) }
     // Kept until the answer lands, so a failed send does not cost the typing.
     var comment by remember { mutableStateOf("") }
+    // The option awaiting its input (a question's typed answer, a follow-up's
+    // live link), and what has been typed.
+    var inputting by remember { mutableStateOf<DecisionChoice?>(null) }
+    var inputText by remember { mutableStateOf("") }
+    // A free-text question's answer, typed in the card.
+    var freeText by remember { mutableStateOf("") }
 
     val interactive = onDecide != null
     val enabled = interactive && !answers.sending(answerKey)
 
-    fun send(choice: DecisionChoice, text: String?) {
+    fun send(choice: DecisionChoice, text: String?, typed: String? = null) {
         val handler = onDecide ?: return
         val trimmed = text?.trim()
+        val input = typed?.trim()
         answers.send(
             key = answerKey,
             option = choice.record,
@@ -782,19 +827,53 @@ private fun DecisionButtons(
                 comment = if (trimmed.isNullOrEmpty()) null else trimmed,
                 prompt = decision.prompt,
                 gateV2 = decision.gateV2,
+                questionV2 = decision.questionV2,
+                deliveryV2 = decision.deliveryV2,
+                text = if (input.isNullOrEmpty()) null else input,
             ),
             handler = handler,
             haptics = haptics,
-            onLanded = { comment = "" },
+            onLanded = { comment = ""; inputText = ""; freeText = "" },
             role = choice.role,
         )
     }
 
     fun tapped(choice: DecisionChoice) {
-        if (choice.comment != DecisionChoice.CommentAsk.NONE) commenting = choice else send(choice, null)
+        when {
+            choice.input != null -> inputting = choice
+            choice.comment != DecisionChoice.CommentAsk.NONE -> commenting = choice
+            else -> send(choice, null)
+        }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        decision.questionV2?.freeText?.let { free ->
+            // A question with nothing to choose: the answer is typed here.
+            val max = free.maxLength.toInt()
+            val trimmed = freeText.trim()
+            val over = freeText.length > max
+            OutlinedTextField(
+                value = freeText,
+                onValueChange = { freeText = it },
+                label = { Text("Your answer") },
+                enabled = interactive,
+                minLines = 2,
+                maxLines = 6,
+                isError = over,
+                supportingText = {
+                    Text(if (over) "At most $max characters" else "${freeText.length}/$max")
+                },
+                modifier = Modifier.fillMaxWidth().testTag("question-free-text"),
+            )
+            DecisionButton(
+                text = "Send answer",
+                kind = ButtonKind.Primary,
+                interactive = interactive,
+                enabled = enabled && trimmed.isNotEmpty() && !over,
+                onClick = { send(DecisionChoice.freeText(trimmed), null, trimmed) },
+                modifier = Modifier.fillMaxWidth().testTag("question-free-text-send"),
+            )
+        }
         primaries.forEach { primary ->
             DecisionButton(
                 text = primary.label,
@@ -892,6 +971,48 @@ private fun DecisionButtons(
                 TextButton(
                     onClick = { commenting = null; comment = "" },
                     modifier = Modifier.testTag("decision-comment-cancel"),
+                ) { Text("Cancel") }
+            },
+        )
+    }
+
+    val inputOption = inputting
+    val asked = inputOption?.input
+    if (inputOption != null && asked != null) {
+        val focus = remember { FocusRequester() }
+        val problem = inputOption.inputProblem(inputText)
+        AlertDialog(
+            onDismissRequest = { inputting = null; inputText = "" },
+            title = { Text(inputOption.label) },
+            text = {
+                LaunchedEffect(Unit) { focus.requestFocus() }
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    label = { Text(asked.label) },
+                    placeholder = { if (asked.kind == OptionInputKind.URL) Text("https://") },
+                    singleLine = asked.kind == OptionInputKind.URL,
+                    isError = problem != null && inputText.isNotEmpty(),
+                    supportingText = { problem?.let { Text(it) } },
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag("decision-input"),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (inputOption.inputProblem(inputText) == null) send(inputOption, null, inputText)
+                        inputting = null
+                    },
+                    // The core refuses the same things; a Send that does
+                    // nothing reads as a failure.
+                    enabled = problem == null,
+                    modifier = Modifier.testTag("decision-input-send"),
+                ) { Text("Send") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { inputting = null; inputText = "" },
+                    modifier = Modifier.testTag("decision-input-cancel"),
                 ) { Text("Cancel") }
             },
         )
@@ -1016,6 +1137,12 @@ data class GateAnswer(
     val prompt: String,
     /** The gate.v2 the card was drawn from, when it was one; answered with `Session.answerGateV2`. */
     val gateV2: GateV2Decision? = null,
+    /** The question.v2 the card was drawn from; an empty [optionId] is a free-text answer. */
+    val questionV2: QuestionV2Decision? = null,
+    /** The delivery.v2 follow-up the card was drawn from. */
+    val deliveryV2: GateV2Decision? = null,
+    /** An option's input, or a free-text answer. */
+    val text: String? = null,
 ) {
     companion object {
         /** Superpipeline's only option id that expects a comment. */

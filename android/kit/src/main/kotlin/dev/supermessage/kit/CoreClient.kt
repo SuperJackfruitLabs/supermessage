@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import uniffi.supermessage_core.Acknowledgement
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.GateV2Decision
+import uniffi.supermessage_core.QuestionV2Decision
 import uniffi.supermessage_core.NotificationDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.PersonDto
@@ -288,6 +289,16 @@ class CoreClient(
         run { it.sendGateDecisionTo(roomId, gateId, optionId, comment, inReplyTo, prompt) }
     }
 
+    override suspend fun sendGateDecisionV2To(
+        roomId: String,
+        gate: GateV2Decision,
+        optionId: String,
+        comment: String?,
+        inReplyTo: String,
+    ) {
+        run { it.sendGateDecisionV2To(roomId, gate, optionId, comment, inReplyTo) }
+    }
+
     // MARK: - Block and report
 
     suspend fun ignoreUser(userId: String) {
@@ -356,6 +367,35 @@ class CoreClient(
         inReplyTo: String,
     ) {
         run { it.sendGateDecisionV2(roomId, gate, optionId, comment, inReplyTo) }
+    }
+
+    /**
+     * Answer a question.v2. [question] is the card's own
+     * `CustomEventDecision.questionV2`; [optionId] is one of its options (with
+     * [text] when that option asks for input), or null for a free-text answer.
+     */
+    suspend fun sendQuestionAnswerV2(
+        roomId: String,
+        question: QuestionV2Decision,
+        optionId: String?,
+        text: String?,
+        inReplyTo: String,
+    ) {
+        run { it.sendQuestionAnswerV2(roomId, question, optionId, text, inReplyTo) }
+    }
+
+    /**
+     * Answer a manual-delivery follow-up: the live link as [text] for
+     * `record_live_url`, or `switch_to_automatic`.
+     */
+    suspend fun sendDeliveryAnswerV2(
+        roomId: String,
+        delivery: GateV2Decision,
+        optionId: String,
+        text: String?,
+        inReplyTo: String,
+    ) {
+        run { it.sendDeliveryAnswerV2(roomId, delivery, optionId, text, inReplyTo) }
     }
 
     /**

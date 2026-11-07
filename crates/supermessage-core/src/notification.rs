@@ -34,6 +34,12 @@ pub enum NotificationCategory {
     Permission,
     /// A superpipeline gate answerable as Approve / Request changes / Reject.
     Gate,
+    /// A gate a notification may answer but never approve — a gate.v2 bound
+    /// to a subject, whose preview a notification cannot show, or a gate
+    /// that offers no approval: Request changes (typed) / Reject / Open. No
+    /// Approve button, because one that only opened the app would still
+    /// read as approving.
+    GateReview,
     /// A decision that must be read in the app first. Only "Open".
     Decision,
 }
@@ -47,6 +53,7 @@ impl NotificationCategory {
             Self::Message => "MESSAGE",
             Self::Permission => "PERMISSION",
             Self::Gate => "GATE",
+            Self::GateReview => "GATE_REVIEW",
             Self::Decision => "DECISION",
         }
     }
@@ -60,6 +67,25 @@ pub struct PermissionAnswers {
     pub reject_option_id: String,
 }
 
+/// Which gate.v2 option each of a GATE notification's actions sends — by
+/// meaning, since a v2 gate chooses its own ids — and the subject an answer
+/// is bound to. Present exactly when the gate arrived as gate.v2; its
+/// actions then answer with a decision.v2.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct GateAnswersV2 {
+    /// The one approving option, never set for a subject-bound gate: a
+    /// notification cannot show what would be approved.
+    pub approve_option_id: Option<String>,
+    /// The one option meaning `revise`; "Request changes" always carries
+    /// what the reader typed.
+    pub revise_option_id: Option<String>,
+    /// The one option meaning `reject` that needs no comment.
+    pub reject_option_id: Option<String>,
+    /// Copied into the decision.v2, as the card copies it.
+    pub subject: Option<crate::gate_v2::GateSubjectBinding>,
+}
+
 /// What a GATE notification's actions need to answer with no room open: the
 /// same three things the card sends.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
@@ -70,8 +96,13 @@ pub struct GateAnswers {
     /// The gate's question; the sentence left in the room is derived from it.
     pub prompt: String,
     /// Which of `approve`, `request_changes` and `reject` the gate offers, in
-    /// that order.
+    /// that order. For a gate.v2, the action slots its options fill
+    /// ([`GateAnswersV2`]).
     pub option_ids: Vec<String>,
+    /// Set for a gate.v2: which option each action sends.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub v2: Option<GateAnswersV2>,
 }
 
 /// Why a remote notification should not be shown at all.
@@ -354,10 +385,21 @@ pub fn notification_for_row(
                 category: NotificationCategory::Decision,
                 ..NotificationDto::generic(room_id, event_id, "")
             };
+            // A question or a manual-delivery follow-up asks for a choice and
+            // often for text a notification cannot check (a link, an answer
+            // with a limit): read in the app.
+            if decision.question_v2.is_some() || decision.delivery_v2.is_some() {
+                return Some(base);
+            }
             if let Some(gate_id) = &decision.subject {
                 return Some(match gate_answers(decision, gate_id) {
                     Some(gate) => NotificationDto {
-                        category: NotificationCategory::Gate,
+                        // Approve is offered only when the gate offers it.
+                        category: if gate.option_ids.iter().any(|id| id == "approve") {
+                            NotificationCategory::Gate
+                        } else {
+                            NotificationCategory::GateReview
+                        },
                         gate: Some(gate),
                         ..base
                     },
@@ -454,9 +496,14 @@ pub fn permission_answers(decision: &CustomEventDecision) -> Option<PermissionAn
 /// ("Ship it", "LGTM"), the id is superpipeline's `GateDecision`. A gate needs
 /// Approve or Reject among them to be worth actions — "Request changes" alone
 /// still needs the card read first.
+///
+/// A gate.v2 is matched by **meaning** ([`gate_v2_answers`]).
 pub fn gate_answers(decision: &CustomEventDecision, gate_id: &str) -> Option<GateAnswers> {
     if gate_id.is_empty() {
         return None;
+    }
+    if let Some(gate) = &decision.gate_v2 {
+        return gate_v2_answers(gate, &decision.prompt);
     }
     let option_ids: Vec<String> = GATE_OPTION_IDS
         .iter()
@@ -473,6 +520,59 @@ pub fn gate_answers(decision: &CustomEventDecision, gate_id: &str) -> Option<Gat
         gate_id: gate_id.to_string(),
         prompt: decision.prompt.clone(),
         option_ids,
+        v2: None,
+    })
+}
+
+/// What a GATE notification can answer of a gate.v2, or `None` when it can
+/// answer nothing and should only open.
+///
+/// Each action sends the gate's **one** option of the matching meaning, and
+/// nothing when there are several (a notification cannot say which) or the
+/// option asks for something an action cannot give. Approve is never offered
+/// for a gate bound to a subject: the charter's rule is that nobody approves
+/// what they were not shown, and a notification shows no preview. As for
+/// v1, Approve or Reject must be among them for the actions to be worth it.
+fn gate_v2_answers(gate: &crate::gate_v2::GateV2Decision, prompt: &str) -> Option<GateAnswers> {
+    use crate::gate_v2::GateOptionMeaning;
+    if gate.gate_id.is_empty() {
+        return None;
+    }
+    let single = |meaning: GateOptionMeaning, comment_ok: bool| -> Option<String> {
+        let mut matching = gate.options.iter().filter(|o| o.meaning == meaning);
+        let option = matching.next()?;
+        if matching.next().is_some() || option.input.is_some() {
+            return None;
+        }
+        (comment_ok || !option.needs_comment).then(|| option.id.clone())
+    };
+    let approve = (gate.subject.is_none() && gate.approvals_withheld.is_none())
+        .then(|| single(GateOptionMeaning::Approve, false))
+        .flatten();
+    let revise = single(GateOptionMeaning::Revise, true);
+    let reject = single(GateOptionMeaning::Reject, false);
+    if approve.is_none() && reject.is_none() {
+        return None;
+    }
+    let option_ids = [
+        (approve.is_some(), "approve"),
+        (revise.is_some(), "request_changes"),
+        (reject.is_some(), "reject"),
+    ]
+    .into_iter()
+    .filter(|&(offered, _)| offered)
+    .map(|(_, slot)| slot.to_string())
+    .collect();
+    Some(GateAnswers {
+        gate_id: gate.gate_id.clone(),
+        prompt: prompt.to_string(),
+        option_ids,
+        v2: Some(GateAnswersV2 {
+            approve_option_id: approve,
+            revise_option_id: revise,
+            reject_option_id: reject,
+            subject: gate.subject.clone(),
+        }),
     })
 }
 
@@ -664,6 +764,7 @@ fn activity_for_event(
     match note.category {
         NotificationCategory::Permission
         | NotificationCategory::Gate
+        | NotificationCategory::GateReview
         | NotificationCategory::Decision => Some(base(ActivityKind::Decision)),
         NotificationCategory::Message => Some(NotificationActivity {
             line: Some(note.body.clone()),
@@ -856,6 +957,8 @@ mod tests {
                 .collect(),
             subject: subject.map(str::to_string),
             gate_v2: None,
+            question_v2: None,
+            delivery_v2: None,
         }
     }
 
@@ -1462,6 +1565,91 @@ mod tests {
         assert_eq!(NotificationCategory::Message.identifier(), "MESSAGE");
         assert_eq!(NotificationCategory::Permission.identifier(), "PERMISSION");
         assert_eq!(NotificationCategory::Gate.identifier(), "GATE");
+        assert_eq!(NotificationCategory::GateReview.identifier(), "GATE_REVIEW");
         assert_eq!(NotificationCategory::Decision.identifier(), "DECISION");
+    }
+
+    // --- the decision envelope (gate.v2, question.v2, delivery.v2)
+
+    fn corpus_accept(suite_type: &str, index: usize) -> serde_json::Value {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+        ))
+        .unwrap();
+        corpus["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["suiteEventType"] == suite_type)
+            .unwrap()["accept"][index]["content"]
+            .clone()
+    }
+
+    #[test]
+    fn a_subject_bound_gate_v2_is_never_approved_from_a_notification() {
+        let note = notify(message(corpus_accept(
+            crate::gate_v2::GATE_V2_EVENT_TYPE,
+            0,
+        )));
+        assert_eq!(note.category, NotificationCategory::GateReview);
+        let gate = note.gate.expect("revise and reject are answerable");
+        assert_eq!(gate.gate_id, "gate_8f3a");
+        assert_eq!(gate.option_ids, vec!["request_changes", "reject"]);
+        let v2 = gate.v2.expect("answered with a decision.v2");
+        assert_eq!(v2.approve_option_id, None);
+        assert_eq!(v2.revise_option_id.as_deref(), Some("request_changes"));
+        assert_eq!(v2.reject_option_id.as_deref(), Some("reject"));
+        assert_eq!(v2.subject.map(|s| s.id).as_deref(), Some("aps_2c9e71"));
+    }
+
+    #[test]
+    fn an_ordinary_gate_v2_offers_every_action_by_meaning() {
+        let note = notify(message(corpus_accept(
+            crate::gate_v2::GATE_V2_EVENT_TYPE,
+            1,
+        )));
+        assert_eq!(note.category, NotificationCategory::Gate);
+        let gate = note.gate.unwrap();
+        assert_eq!(
+            gate.option_ids,
+            vec!["approve", "request_changes", "reject"]
+        );
+        let v2 = gate.v2.unwrap();
+        assert_eq!(v2.approve_option_id.as_deref(), Some("approve"));
+        assert_eq!(v2.subject, None);
+    }
+
+    #[test]
+    fn a_question_or_follow_up_only_opens() {
+        for (suite_type, index) in [
+            (crate::question_v2::QUESTION_V2_EVENT_TYPE, 0),
+            (crate::question_v2::QUESTION_V2_EVENT_TYPE, 1),
+            (crate::delivery_v2::DELIVERY_V2_EVENT_TYPE, 0),
+        ] {
+            let note = notify(message(corpus_accept(suite_type, index)));
+            assert_eq!(
+                note.category,
+                NotificationCategory::Decision,
+                "{suite_type}"
+            );
+            assert_eq!(note.gate, None);
+            assert_eq!(note.permission, None);
+        }
+    }
+
+    #[test]
+    fn a_v1_gate_without_approve_offers_no_approve_button() {
+        let note = notify(message(json!({
+            "msgtype": "m.text",
+            "body": "Ship v2?",
+            "dev.superpipeline.gate": {
+                "schema_version": 1,
+                "gate_id": "gate-9",
+                "card_title": "Ship v2",
+                "options": [{ "id": "request_changes" }, { "id": "reject" }]
+            }
+        })));
+        assert_eq!(note.category, NotificationCategory::GateReview);
+        assert_eq!(note.gate.unwrap().v2, None);
     }
 }

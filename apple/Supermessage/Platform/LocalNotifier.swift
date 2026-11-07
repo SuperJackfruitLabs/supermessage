@@ -12,13 +12,13 @@ import UserNotifications
 /// only what the open app sees first (`NotificationContext.remotePush`).
 /// The categories below are registered for both.
 enum LocalNotifier {
-    /// The four categories. Registered at launch, before any notification
+    /// The five categories. Registered at launch, before any notification
     /// can be delivered, so a tap on one posted by a previous launch still
     /// has its actions. Their identifiers, actions, copy and flags are the
     /// core's (`core::notification_policy::actions`).
     static func registerCategories() {
         let categories = Set(
-            ([.message, .permission, .gate, .decision] as [NotificationCategory]).map { category in
+            ([.message, .permission, .gate, .gateReview, .decision] as [NotificationCategory]).map { category in
                 UNNotificationCategory(
                     identifier: notificationCategoryIdentifier(category: category),
                     actions: notificationActions(category: category).map(action(_:)),

@@ -165,6 +165,26 @@ pub struct CustomEventDecision {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[uniffi(default = None)]
     pub gate_v2: Option<crate::gate_v2::GateV2Decision>,
+    /// An agent's question, when it arrived as question.v2
+    /// (`crate::question_v2`): its options by meaning, each option's input,
+    /// or a free-text answer when it offers none. Answered with
+    /// `send_question_answer_v2`. [`Self::options`] then holds only the
+    /// options a plain reply can answer (each id is its label, which the hub
+    /// matches as a typed reply), so a host that knows nothing of v2 still
+    /// answers honestly. `None` otherwise, and absent from the JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub question_v2: Option<crate::question_v2::QuestionV2Decision>,
+    /// A manual-delivery follow-up, when the message is delivery.v2
+    /// (`crate::delivery_v2`) — the same shape as a gate.v2: the gate it
+    /// follows, the subject's preview, and the options (record the live
+    /// link, switch to automatic) with an approving one already withheld
+    /// when the preview could not be drawn in full. Answered with
+    /// `send_delivery_answer_v2`. [`Self::options`] is empty: no plain reply
+    /// answers a follow-up.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub delivery_v2: Option<crate::gate_v2::GateV2Decision>,
 }
 
 /// A decision the board has accepted, as the room reports it.
@@ -396,7 +416,13 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
     // A gate.v2 is still a decision when the legacy list is empty — a gate
     // whose options are all v2-only — because its own options, preview and
     // the reason approvals were withheld are on `gate_v2`.
-    if options.is_empty() && decision.gate_v2.is_none() {
+    // The same for a question.v2 (a free-text question offers no option at
+    // all) and a delivery.v2 follow-up.
+    if options.is_empty()
+        && decision.gate_v2.is_none()
+        && decision.question_v2.is_none()
+        && decision.delivery_v2.is_none()
+    {
         return None;
     }
     Some(CustomEventDecision {
@@ -407,6 +433,8 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
         subject: decision.subject,
         // Bounded by `crate::gate_v2` when it was built.
         gate_v2: decision.gate_v2,
+        question_v2: decision.question_v2,
+        delivery_v2: decision.delivery_v2,
     })
 }
 
@@ -838,6 +866,8 @@ impl CustomEventRenderer for PermissionRequestRenderer {
                 options,
                 subject: None,
                 gate_v2: None,
+                question_v2: None,
+                delivery_v2: None,
             }),
         }
     }
@@ -961,6 +991,8 @@ impl CustomEventRenderer for GateRenderer {
                 options,
                 subject: Some(gate_id),
                 gate_v2: None,
+                question_v2: None,
+                delivery_v2: None,
             }),
         }
     }
@@ -978,6 +1010,8 @@ pub fn default_registry() -> &'static CustomEventRegistry {
         registry.register(Box::new(PermissionRequestRenderer));
         registry.register(Box::new(GateRenderer));
         registry.register(Box::new(crate::gate_v2::GateV2Renderer));
+        registry.register(Box::new(crate::question_v2::QuestionV2Renderer));
+        registry.register(Box::new(crate::delivery_v2::DeliveryV2Renderer));
         registry
     })
 }
@@ -1420,6 +1454,8 @@ mod tests {
             options: vec![option("allow", "Allow"), option("deny", "Deny")],
             subject: None,
             gate_v2: None,
+            question_v2: None,
+            delivery_v2: None,
         });
         assert_eq!(
             decision_from(&registry),
@@ -1428,6 +1464,8 @@ mod tests {
                 options: vec![option("allow", "Allow"), option("deny", "Deny")],
                 subject: None,
                 gate_v2: None,
+                question_v2: None,
+                delivery_v2: None,
             })
         );
     }
@@ -1439,6 +1477,8 @@ mod tests {
             options: vec![option("id", &"L".repeat(FIELD_LABEL_MAX_CHARS + 50))],
             subject: None,
             gate_v2: None,
+            question_v2: None,
+            delivery_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.prompt.chars().count(), FIELD_VALUE_MAX_CHARS + 1);
@@ -1458,6 +1498,8 @@ mod tests {
             options: vec![option(&long_id, "Allow")],
             subject: None,
             gate_v2: None,
+            question_v2: None,
+            delivery_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options[0].id, long_id);
@@ -1472,6 +1514,8 @@ mod tests {
             options,
             subject: None,
             gate_v2: None,
+            question_v2: None,
+            delivery_v2: None,
         });
         assert_eq!(
             decision_from(&registry).expect("a decision").options.len(),
@@ -1491,6 +1535,8 @@ mod tests {
             options,
             subject: None,
             gate_v2: None,
+            question_v2: None,
+            delivery_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options.len(), 2);
@@ -1509,6 +1555,8 @@ mod tests {
             ],
             subject: None,
             gate_v2: None,
+            question_v2: None,
+            delivery_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options, vec![option("allow", "Allow")]);
@@ -1521,6 +1569,8 @@ mod tests {
             options: vec![option("", ""), option("", "")],
             subject: None,
             gate_v2: None,
+            question_v2: None,
+            delivery_v2: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -1532,6 +1582,8 @@ mod tests {
             options: vec![],
             subject: None,
             gate_v2: None,
+            question_v2: None,
+            delivery_v2: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -2044,13 +2096,15 @@ mod tests {
             PERMISSION_REQUEST_EVENT_TYPE,
             GATE_EVENT_TYPE,
             crate::gate_v2::GATE_V2_EVENT_TYPE,
+            crate::question_v2::QUESTION_V2_EVENT_TYPE,
+            crate::delivery_v2::DELIVERY_V2_EVENT_TYPE,
         ] {
             assert!(
                 registry.get(event_type).is_some(),
                 "{event_type} is not registered"
             );
         }
-        assert_eq!(registry.len(), 5);
+        assert_eq!(registry.len(), 7);
     }
 }
 

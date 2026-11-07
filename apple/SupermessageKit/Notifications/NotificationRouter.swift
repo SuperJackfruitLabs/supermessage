@@ -46,6 +46,7 @@ extension NotificationAnswer {
         switch self {
         case let .permission(roomId, _): roomId
         case let .gate(roomId, _, _, _, _, _): roomId
+        case let .gateV2(roomId, _, _, _, _): roomId
         }
     }
 }

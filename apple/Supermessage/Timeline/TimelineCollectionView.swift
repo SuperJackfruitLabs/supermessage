@@ -995,6 +995,18 @@ struct TimelineList: UIViewRepresentable {
                     row.item.eventId, gate: gate, optionId: answer.optionId,
                     comment: answer.comment, in: roomId)
             }
+            if let question = answer.questionV2 {
+                // An empty option id is a free-text answer.
+                return await session.answerQuestionV2(
+                    row.item.eventId, question: question,
+                    optionId: answer.optionId.isEmpty ? nil : answer.optionId,
+                    text: answer.text, in: roomId)
+            }
+            if let delivery = answer.deliveryV2 {
+                return await session.answerDeliveryV2(
+                    row.item.eventId, delivery: delivery, optionId: answer.optionId,
+                    text: answer.text, in: roomId)
+            }
             guard let gateId = answer.subject else {
                 // A permission request: the option, as a plain reply.
                 return await session.answerPermission(optionId: answer.optionId, in: roomId)

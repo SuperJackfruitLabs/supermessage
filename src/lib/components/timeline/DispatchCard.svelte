@@ -6,7 +6,7 @@
     TimelineItem,
   } from "$lib/ipc";
   import type { AnsweredDecision } from "$lib/stores/answeredDecisions.svelte";
-  import { answeredWhen, arrangeOptions, optionRole, receiptOutcome } from "./decisionView";
+  import { answerElsewhere, answeredWhen, arrangeOptions, optionRole, receiptOutcome } from "./decisionView";
   import { cubicOut } from "svelte/easing";
   import InlineFailure from "./InlineFailure.svelte";
   import RequestChangesDialog from "./RequestChangesDialog.svelte";
@@ -371,6 +371,16 @@
         </div>
       {/if}
     </div>
+    <!--
+      A question, a follow-up or a gate.v2 can offer more than this card can
+      send (text, a link, an approval it cannot show). Said, so a missing
+      button does not read as a bug.
+    -->
+    {#if answerElsewhere(decision)}
+      <p class="mt-2 font-sans text-meta text-content-muted" data-testid="decision-answer-elsewhere">
+        {answerElsewhere(decision)}
+      </p>
+    {/if}
     {#if failed}
       <InlineFailure message="Not sent. Try again." />
     {/if}

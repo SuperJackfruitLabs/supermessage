@@ -77,13 +77,26 @@ internal enum class DecisionOptionRole {
  * renderer chose: inventing a past tense for a verb we do not know is how a
  * receipt ends up saying something the reader did not do.
  */
-internal fun receiptOutcome(option: CustomEventDecisionOption, role: DecisionOptionRole? = null): String =
-    when (role ?: DecisionOptionRole.of(option)) {
+internal fun receiptOutcome(option: CustomEventDecisionOption, role: DecisionOptionRole? = null): String {
+    // A free-text answer to a question names what was said.
+    if (option.id.isEmpty()) return "You answered “${option.label}”"
+    // The publishing gate's two approvals and a follow-up's answers, in the
+    // hub's own words (`OUTCOME_VERBS`; `core::gate_outcome`'s summaries).
+    HUB_WORDS[option.id]?.let { return "$it by you" }
+    return when (role ?: DecisionOptionRole.of(option)) {
         DecisionOptionRole.APPROVE -> "Approved by you"
         DecisionOptionRole.REQUEST_CHANGES -> "Changes requested by you"
         DecisionOptionRole.REJECT -> "Rejected by you"
         DecisionOptionRole.OTHER -> "You chose “${option.label}”"
     }
+}
+
+private val HUB_WORDS = mapOf(
+    "approve_automatic" to "Approved for automatic delivery",
+    "approve_manual" to "Approved for manual delivery",
+    "record_live_url" to "Live link recorded",
+    "switch_to_automatic" to "Switched to automatic delivery",
+)
 
 /** "just now" for the first minute, then the largest whole unit ("2 minutes ago"). */
 internal fun receiptWhen(answeredAt: Instant, now: Instant): String {

@@ -83,7 +83,9 @@ pub const APPROVALS_WITHHELD_NOTE: &str =
     "This card can't show everything you would be approving. Open the card to approve it.";
 
 /// What a gate.v2 option means. A host draws by this, never by id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, uniffi::Enum)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, uniffi::Enum,
+)]
 #[serde(rename_all = "camelCase")]
 pub enum GateOptionMeaning {
     /// The main action. A publishing gate has two (automatic and manual).
@@ -99,7 +101,7 @@ pub enum GateOptionMeaning {
 }
 
 impl GateOptionMeaning {
-    fn parse(raw: &str) -> Option<Self> {
+    pub(crate) fn parse(raw: &str) -> Option<Self> {
         Some(match raw {
             "approve" => Self::Approve,
             "reject" => Self::Reject,
@@ -111,8 +113,40 @@ impl GateOptionMeaning {
     }
 }
 
+/// What an option's input takes. charter →
+/// `decisions/2026-11-07-the-envelope-covers-questions-and-follow-ups.md`.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, uniffi::Enum,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum OptionInputKind {
+    /// Free text.
+    Text,
+    /// An `https://` URL — the live link a manual delivery owes.
+    Url,
+}
+
+/// An option that asks for input before it is sent: the host draws a field
+/// labelled `label`, refuses to send a `required` one empty, and never sends
+/// more than `max_length` characters. The core checks all three again
+/// ([`checked_input`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct OptionInput {
+    pub kind: OptionInputKind,
+    /// Display text, bounded.
+    pub label: String,
+    pub required: bool,
+    /// In characters. At least 1, at most [`INPUT_MAX_LENGTH`].
+    pub max_length: u32,
+}
+
+/// The longest input an option may ask for. A follow-up's live link asks for
+/// 2,000; a question's free text is bounded at 2,000 too.
+pub const INPUT_MAX_LENGTH: u32 = 4_000;
+
 /// One answer a gate.v2 offers.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct GateOptionV2 {
     /// Handed back verbatim; never drawn, never cut.
@@ -123,12 +157,18 @@ pub struct GateOptionV2 {
     /// The host must ask for text, and the core refuses to send this option
     /// without it.
     pub needs_comment: bool,
+    /// The input this option asks for, on a question.v2 or delivery.v2
+    /// option. Always `None` on a gate.v2 option: a decision.v2 carries a
+    /// comment, never an input's text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub input: Option<OptionInput>,
 }
 
 /// One block of a subject's preview — what the reader must see before
 /// approving. Every string is text to draw verbatim: no markdown, no links
 /// detected in it, line breaks kept.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
 #[serde(rename_all = "camelCase", tag = "type")]
 pub enum GatePreviewBlock {
     /// The exact bytes of the thing approved — an X post — character for
@@ -149,7 +189,7 @@ pub enum GatePreviewBlock {
 }
 
 /// The subject a decision.v2 is bound to, copied back from the gate shown.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct GateSubjectBinding {
     pub id: String,
@@ -158,7 +198,11 @@ pub struct GateSubjectBinding {
 
 /// A gate.v2 as a host draws and answers it. Rides on
 /// `CustomEventDecision::gate_v2`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, uniffi::Record)]
+///
+/// Also the shape of a delivery.v2 follow-up (`crate::delivery_v2`), which
+/// names the gate it follows, carries the same subject and preview, and
+/// withholds its approving option by the same rule.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
 #[serde(rename_all = "camelCase")]
 pub struct GateV2Decision {
     pub gate_id: String,
@@ -175,11 +219,11 @@ pub struct GateV2Decision {
 
 /// A subject as read off the wire.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Subject {
-    binding: GateSubjectBinding,
-    preview: Vec<GatePreviewBlock>,
+pub(crate) struct Subject {
+    pub(crate) binding: GateSubjectBinding,
+    pub(crate) preview: Vec<GatePreviewBlock>,
     /// Every block drawable, none dropped, and the board said it was whole.
-    complete: bool,
+    pub(crate) complete: bool,
 }
 
 /// A gate.v2 that validated.
@@ -197,7 +241,7 @@ pub(crate) struct ParsedGateV2 {
 
 /// A non-empty string at `value[key]`, unbounded — an identifier, compared
 /// and handed back, never drawn. The payload is bounded as a whole.
-fn id_field(value: &Value, key: &str) -> Option<String> {
+pub(crate) fn id_field(value: &Value, key: &str) -> Option<String> {
     value
         .get(key)?
         .as_str()
@@ -247,7 +291,7 @@ fn parse_block(raw: &Value) -> Option<GatePreviewBlock> {
 
 /// `content.subject`: `Ok(None)` when absent, `Err(())` when present and not
 /// a subject an answer could be bound to (no id or no digest).
-fn parse_subject(content: &Value) -> Result<Option<Subject>, ()> {
+pub(crate) fn parse_subject(content: &Value) -> Result<Option<Subject>, ()> {
     let raw = match content.get("subject") {
         None | Some(Value::Null) => return Ok(None),
         Some(raw) => raw,
@@ -289,7 +333,55 @@ fn parse_subject(content: &Value) -> Result<Option<Subject>, ()> {
 /// client knows, `needs_comment` that is not a boolean, or two sharing an id.
 fn parse_options(content: &Value) -> Option<Vec<GateOptionV2>> {
     let raw = content.get("options")?.as_array()?;
-    if raw.is_empty() || raw.len() > OPTIONS_MAX {
+    if raw.is_empty() {
+        return None;
+    }
+    // A gate.v2 option's `input`, if a board ever sends one, is not read: a
+    // decision.v2 has nowhere to carry its text.
+    parse_option_list(raw, false)
+}
+
+/// An option's `input`: `Ok(None)` when absent, `Err(())` when present and
+/// not one a client can honestly draw — not an object, a kind this build
+/// does not know, a label or `required` missing, or a `max_length` that is
+/// not a whole number from 1 to [`INPUT_MAX_LENGTH`] (`maxLength`, the
+/// board's own spelling, is not the Matrix field and counts as missing).
+fn parse_input(entry: &Value) -> Result<Option<OptionInput>, ()> {
+    let raw = match entry.get("input") {
+        None | Some(Value::Null) => return Ok(None),
+        Some(raw) => raw,
+    };
+    let kind = match raw.get("kind").and_then(Value::as_str) {
+        Some("text") => OptionInputKind::Text,
+        Some("url") => OptionInputKind::Url,
+        _ => return Err(()),
+    };
+    let label = safe_string_field(raw, "label", OPTION_LABEL_MAX_CHARS)
+        .filter(|l| !l.trim().is_empty())
+        .ok_or(())?;
+    let required = raw.get("required").and_then(Value::as_bool).ok_or(())?;
+    let max_length = raw
+        .get("max_length")
+        .and_then(Value::as_u64)
+        .filter(|n| (1..=u64::from(INPUT_MAX_LENGTH)).contains(n))
+        .ok_or(())?;
+    Ok(Some(OptionInput {
+        kind,
+        label,
+        required,
+        // In range by the filter above.
+        max_length: max_length as u32,
+    }))
+}
+
+/// A list of envelope options — gate.v2, question.v2 or delivery.v2 — or
+/// `None` when they are not options a client can honestly answer: too many,
+/// an option with no id, no meaning a client knows, `needs_comment` that is
+/// not a boolean, an input that does not validate, or two sharing an id.
+/// An empty list is returned as empty; whether that is allowed is the
+/// caller's rule. `read_input` false ignores every `input`.
+pub(crate) fn parse_option_list(raw: &[Value], read_input: bool) -> Option<Vec<GateOptionV2>> {
+    if raw.len() > OPTIONS_MAX {
         return None;
     }
     let mut options: Vec<GateOptionV2> = Vec::with_capacity(raw.len());
@@ -301,6 +393,11 @@ fn parse_options(content: &Value) -> Option<Vec<GateOptionV2>> {
             // Answering is by id: two entries sharing one are ambiguous.
             return None;
         }
+        let input = if read_input {
+            parse_input(entry).ok()?
+        } else {
+            None
+        };
         let label = safe_string_field(entry, "label", OPTION_LABEL_MAX_CHARS)
             .filter(|l| !l.trim().is_empty())
             .unwrap_or_else(|| bound_text(&id, OPTION_LABEL_MAX_CHARS));
@@ -309,9 +406,53 @@ fn parse_options(content: &Value) -> Option<Vec<GateOptionV2>> {
             label,
             meaning,
             needs_comment,
+            input,
         });
     }
     Some(options)
+}
+
+/// The text an option's input sends, checked: `Ok(None)` when the option
+/// has no input or an optional one was left empty, `Ok(Some(trimmed))`
+/// otherwise. Refuses, with a reason a host can show, a required input left
+/// empty, text over `max_length` characters, and a `url` input that is not
+/// an `https://` URL a host may open (`custom_events::safe_url`).
+///
+/// Text sent for an option without an input is dropped, not refused: the
+/// wire carries `text` only beside an option that asked for it.
+pub(crate) fn checked_input(
+    option: &GateOptionV2,
+    text: Option<&str>,
+) -> CoreResult<Option<String>> {
+    let Some(input) = &option.input else {
+        return Ok(None);
+    };
+    let text = text.map(str::trim).filter(|t| !t.is_empty());
+    let Some(text) = text else {
+        if input.required {
+            return Err(CoreError::Protocol(format!(
+                "\u{201C}{}\u{201D} needs {}",
+                option.label,
+                match input.kind {
+                    OptionInputKind::Url => "a link",
+                    OptionInputKind::Text => "an answer",
+                }
+            )));
+        }
+        return Ok(None);
+    };
+    if text.chars().count() > input.max_length as usize {
+        return Err(CoreError::Protocol(format!(
+            "\u{201C}{}\u{201D} takes at most {} characters",
+            input.label, input.max_length
+        )));
+    }
+    if input.kind == OptionInputKind::Url && safe_url(text).as_deref() != Some(text) {
+        return Err(CoreError::Protocol(
+            "the link must be an https:// address".into(),
+        ));
+    }
+    Ok(Some(text.to_string()))
 }
 
 /// Read a gate.v2 from a message's `content`, or `None` when it is not one
@@ -462,6 +603,8 @@ impl CustomEventRenderer for GateV2Renderer {
                 options: gate.legacy_options(),
                 subject: Some(gate.gate_id.clone()),
                 gate_v2: Some(gate.decision()),
+                question_v2: None,
+                delivery_v2: None,
             }),
         }
     }
@@ -985,6 +1128,7 @@ mod tests {
                 label: "Approve".into(),
                 meaning: GateOptionMeaning::Approve,
                 needs_comment: false,
+                input: None,
             },
         );
         assert!(decision_request(&forged, "approve_automatic", None, GATE_EVENT).is_err());
@@ -1011,6 +1155,7 @@ mod tests {
             label: label.into(),
             meaning,
             needs_comment: false,
+            input: None,
         };
         use GateOptionMeaning::*;
         assert_eq!(

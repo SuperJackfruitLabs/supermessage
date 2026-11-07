@@ -822,6 +822,30 @@ export interface CustomEventDecision {
   options: CustomEventDecisionOption[];
   /** The gate this resolves; null for ordinary AgentPod permissions. */
   subject: string | null;
+  /**
+   * The decision envelope's own shapes (`core::gate_v2`, `core::question_v2`,
+   * `core::delivery_v2`), absent unless the decision arrived as one. The
+   * desktop draws only `options` — what a decision.v1 or a plain reply can
+   * answer — and reads these just to say when more is answerable elsewhere.
+   */
+  gateV2?: EnvelopeDecision;
+  questionV2?: { options: EnvelopeOption[]; freeText: { maxLength: number } | null };
+  deliveryV2?: EnvelopeDecision;
+}
+
+/** A decision-envelope option, as far as the desktop reads it. */
+export interface EnvelopeOption {
+  id: string;
+  label: string;
+  /** Present when the option asks for text or a link before it is sent. */
+  input?: { kind: "text" | "url"; label: string; required: boolean; maxLength: number };
+}
+
+/** `core::gate_v2::GateV2Decision`, as far as the desktop reads it. */
+export interface EnvelopeDecision {
+  gateId: string;
+  options: EnvelopeOption[];
+  approvalsWithheld: string | null;
 }
 
 /**
@@ -2714,7 +2738,7 @@ export async function sendGateDecisionTo(
 }
 
 /** `core::notification::NotificationCategory`. */
-export type NotificationCategory = "message" | "permission" | "gate" | "decision";
+export type NotificationCategory = "message" | "permission" | "gate" | "gateReview" | "decision";
 
 /** `core::notification::PermissionAnswers`: the two option ids a PERMISSION note answers with. */
 export interface PermissionAnswers {

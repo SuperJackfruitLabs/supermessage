@@ -66,6 +66,7 @@ import uniffi.supermessage_core.FfiConverterTypePersonDto
 import uniffi.supermessage_core.FfiConverterTypePlannedNotification
 import uniffi.supermessage_core.FfiConverterTypePlayableAudio
 import uniffi.supermessage_core.FfiConverterTypePushRegistration
+import uniffi.supermessage_core.FfiConverterTypeQuestionV2Decision
 import uniffi.supermessage_core.FfiConverterTypeRichBlock
 import uniffi.supermessage_core.FfiConverterTypeRoomCast
 import uniffi.supermessage_core.FfiConverterTypeRoomInfoDto
@@ -116,6 +117,7 @@ import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlannedNotification
 import uniffi.supermessage_core.PlayableAudio
 import uniffi.supermessage_core.PushRegistration
+import uniffi.supermessage_core.QuestionV2Decision
 import uniffi.supermessage_core.RichBlock
 import uniffi.supermessage_core.RoomCast
 import uniffi.supermessage_core.RoomInfoDto
@@ -173,6 +175,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferPersonDto
 import uniffi.supermessage_core.RustBuffer as RustBufferPlannedNotification
 import uniffi.supermessage_core.RustBuffer as RustBufferPlayableAudio
 import uniffi.supermessage_core.RustBuffer as RustBufferPushRegistration
+import uniffi.supermessage_core.RustBuffer as RustBufferQuestionV2Decision
 import uniffi.supermessage_core.RustBuffer as RustBufferRichBlock
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomCast
 import uniffi.supermessage_core.RustBuffer as RustBufferRoomInfoDto
@@ -1225,6 +1228,12 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1352,15 +1361,21 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_search_messages(`ptr`: Pointer,`term`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_send_delivery_answer_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`delivery`: RustBufferGateV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gate`: RustBufferGateV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2_to(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gate`: RustBufferGateV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_message(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`mentions`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_permission_answer(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_send_question_answer_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`question`: RustBufferQuestionV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_reply(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1882,15 +1897,21 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_search_messages(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_delivery_answer_v2(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2_to(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_message(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_permission_answer(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_question_answer_v2(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_reply(
     ): Short
@@ -2307,6 +2328,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_search_messages() != 28627.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_delivery_answer_v2() != 25249.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision() != 31962.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2316,10 +2340,16 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2() != 3925.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2_to() != 24924.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_permission_answer() != 53383.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_question_answer_v2() != 6828.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_reply() != 4056.toShort()) {
@@ -3174,6 +3204,16 @@ public interface CoreInterface {
     fun `searchMessages`(`term`: kotlin.String, `roomId`: kotlin.String?): List<SearchResultDto>
     
     /**
+     * Answer a manual-delivery follow-up from its card
+     * (`supermessage_core::delivery_v2`): `record_live_url` with the live
+     * link as `text`, or `switch_to_automatic`. `delivery` is the card's
+     * `CustomEventDecision::delivery_v2`, handed back unchanged; the core
+     * refuses a withheld switch, an empty or non-`https://` link, and sends
+     * the `dev.superpipeline.delivery.answer.v2` referencing `in_reply_to`.
+     */
+    fun `sendDeliveryAnswerV2`(`roomId`: kotlin.String, `delivery`: GateV2Decision, `optionId`: kotlin.String, `text`: kotlin.String?, `inReplyTo`: kotlin.String)
+    
+    /**
      * Answer a superpipeline approval gate.
      *
      * `option_id` must be one of `approve`, `request_changes` or
@@ -3217,6 +3257,14 @@ public interface CoreInterface {
     fun `sendGateDecisionV2`(`roomId`: kotlin.String, `gate`: GateV2Decision, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String)
     
     /**
+     * [`Core::send_gate_decision_v2`] for a room that need not be open — a
+     * notification's `NotificationAnswer::GateV2`, whose `gate` the core
+     * rebuilt from what the notification carried. Checked and built exactly
+     * as the card's answer is.
+     */
+    fun `sendGateDecisionV2To`(`roomId`: kotlin.String, `gate`: GateV2Decision, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String)
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -3233,6 +3281,19 @@ public interface CoreInterface {
      * need not be open.
      */
     fun `sendPermissionAnswer`(`roomId`: kotlin.String, `optionId`: kotlin.String)
+    
+    /**
+     * Answer a question.v2 from its card (`supermessage_core::question_v2`).
+     *
+     * `question` is the `CustomEventDecision::question_v2` the card was
+     * drawn from, handed back unchanged. `option_id` picks one of its
+     * options, with `text` when that option asks for input; `None` answers a
+     * free-text question with `text` alone. The core refuses an option the
+     * question did not offer, a required input left empty, text over its
+     * limit and a `url` input that is not `https://`, then sends the
+     * `dev.superpipeline.question.answer.v2` referencing `in_reply_to`.
+     */
+    fun `sendQuestionAnswerV2`(`roomId`: kotlin.String, `question`: QuestionV2Decision, `optionId`: kotlin.String?, `text`: kotlin.String?, `inReplyTo`: kotlin.String)
     
     /**
      * Reply to `in_reply_to`, an event id in the focused room.
@@ -4301,6 +4362,26 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * Answer a manual-delivery follow-up from its card
+     * (`supermessage_core::delivery_v2`): `record_live_url` with the live
+     * link as `text`, or `switch_to_automatic`. `delivery` is the card's
+     * `CustomEventDecision::delivery_v2`, handed back unchanged; the core
+     * refuses a withheld switch, an empty or non-`https://` link, and sends
+     * the `dev.superpipeline.delivery.answer.v2` referencing `in_reply_to`.
+     */
+    @Throws(FfiException::class)override fun `sendDeliveryAnswerV2`(`roomId`: kotlin.String, `delivery`: GateV2Decision, `optionId`: kotlin.String, `text`: kotlin.String?, `inReplyTo`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_delivery_answer_v2(
+        it, FfiConverterString.lower(`roomId`),FfiConverterTypeGateV2Decision.lower(`delivery`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`text`),FfiConverterString.lower(`inReplyTo`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Answer a superpipeline approval gate.
      *
      * `option_id` must be one of `approve`, `request_changes` or
@@ -4374,6 +4455,24 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
 
     
     /**
+     * [`Core::send_gate_decision_v2`] for a room that need not be open — a
+     * notification's `NotificationAnswer::GateV2`, whose `gate` the core
+     * rebuilt from what the notification carried. Checked and built exactly
+     * as the card's answer is.
+     */
+    @Throws(FfiException::class)override fun `sendGateDecisionV2To`(`roomId`: kotlin.String, `gate`: GateV2Decision, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2_to(
+        it, FfiConverterString.lower(`roomId`),FfiConverterTypeGateV2Decision.lower(`gate`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),_status)
+}
+    }
+    
+    
+
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -4405,6 +4504,29 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_permission_answer(
         it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`optionId`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Answer a question.v2 from its card (`supermessage_core::question_v2`).
+     *
+     * `question` is the `CustomEventDecision::question_v2` the card was
+     * drawn from, handed back unchanged. `option_id` picks one of its
+     * options, with `text` when that option asks for input; `None` answers a
+     * free-text question with `text` alone. The core refuses an option the
+     * question did not offer, a required input left empty, text over its
+     * limit and a `url` input that is not `https://`, then sends the
+     * `dev.superpipeline.question.answer.v2` referencing `in_reply_to`.
+     */
+    @Throws(FfiException::class)override fun `sendQuestionAnswerV2`(`roomId`: kotlin.String, `question`: QuestionV2Decision, `optionId`: kotlin.String?, `text`: kotlin.String?, `inReplyTo`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_question_answer_v2(
+        it, FfiConverterString.lower(`roomId`),FfiConverterTypeQuestionV2Decision.lower(`question`),FfiConverterOptionalString.lower(`optionId`),FfiConverterOptionalString.lower(`text`),FfiConverterString.lower(`inReplyTo`),_status)
 }
     }
     
@@ -7841,6 +7963,10 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
         }
     }
 }
+
+
+
+
 
 
 

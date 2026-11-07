@@ -307,12 +307,31 @@ internal fun RoomPane(
                         onDecide = { row, answer ->
                             val gateId = answer.subject
                             val gateV2 = answer.gateV2
+                            val questionV2 = answer.questionV2
+                            val deliveryV2 = answer.deliveryV2
                             if (gateV2 != null) {
                                 session.answerGateV2(
                                     eventId = row.item.eventId,
                                     gate = gateV2,
                                     optionId = answer.optionId,
                                     comment = answer.comment,
+                                    roomId = currentRoomId,
+                                )
+                            } else if (questionV2 != null) {
+                                // An empty option id is a free-text answer.
+                                session.answerQuestionV2(
+                                    eventId = row.item.eventId,
+                                    question = questionV2,
+                                    optionId = answer.optionId.ifEmpty { null },
+                                    text = answer.text,
+                                    roomId = currentRoomId,
+                                )
+                            } else if (deliveryV2 != null) {
+                                session.answerDeliveryV2(
+                                    eventId = row.item.eventId,
+                                    delivery = deliveryV2,
+                                    optionId = answer.optionId,
+                                    text = answer.text,
                                     roomId = currentRoomId,
                                 )
                             } else if (gateId == null) {
