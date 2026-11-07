@@ -1,4 +1,4 @@
-import type { CustomEventDecisionOption } from "$lib/ipc";
+import type { CustomEventDecision, CustomEventDecisionOption } from "$lib/ipc";
 
 /**
  * How a decision's answers are laid out and acknowledged — iOS's
@@ -54,4 +54,26 @@ export function answeredWhen(atMs: number, nowMs: number): string {
   const minutes = Math.floor(elapsed / 60_000);
   if (minutes < 60) return rtf.format(-minutes, "minute");
   return rtf.format(-Math.floor(minutes / 60), "hour");
+}
+
+/**
+ * The line a card shows when the decision can be answered in full only on a
+ * phone or the board: a follow-up (it takes a link), a question that asks for
+ * text, a gate.v2 whose options include ones a decision.v1 cannot send, or
+ * one whose approvals the core withheld. `null` when the buttons here are the
+ * whole of it.
+ */
+export const ANSWER_ELSEWHERE = "Open the card, or answer on your phone, for the rest of this one.";
+
+export function answerElsewhere(decision: CustomEventDecision): string | null {
+  if (decision.deliveryV2) return ANSWER_ELSEWHERE;
+  const question = decision.questionV2;
+  if (question && (question.freeText !== null || question.options.some((o) => o.input))) {
+    return ANSWER_ELSEWHERE;
+  }
+  const gate = decision.gateV2;
+  if (gate && (gate.approvalsWithheld !== null || gate.options.length > decision.options.length)) {
+    return gate.approvalsWithheld ?? ANSWER_ELSEWHERE;
+  }
+  return null;
 }

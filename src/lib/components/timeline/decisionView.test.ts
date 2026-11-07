@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { answeredWhen, arrangeOptions, optionRole, receiptOutcome } from "./decisionView";
+import type { CustomEventDecision } from "$lib/ipc";
+import {
+  ANSWER_ELSEWHERE,
+  answerElsewhere,
+  answeredWhen,
+  arrangeOptions,
+  optionRole,
+  receiptOutcome,
+} from "./decisionView";
 
 const opt = (id: string, label = id) => ({ id, label });
 
@@ -44,5 +52,34 @@ describe("answeredWhen", () => {
     expect(answeredWhen(0, 59_000)).toBe("just now");
     expect(answeredWhen(0, 120_000)).toBe(rtf.format(-2, "minute"));
     expect(answeredWhen(0, 3 * 3_600_000)).toBe(rtf.format(-3, "hour"));
+  });
+});
+
+describe("answerElsewhere", () => {
+  const base: CustomEventDecision = { prompt: "Ship it?", options: [opt("approve")], subject: "gate_1" };
+
+  it("is null for a v1 gate and a permission request", () => {
+    expect(answerElsewhere(base)).toBeNull();
+    expect(answerElsewhere({ ...base, subject: null })).toBeNull();
+  });
+
+  it("points elsewhere for a follow-up and a question that takes text", () => {
+    const delivery = { gateId: "gate_1", options: [], approvalsWithheld: null };
+    expect(answerElsewhere({ ...base, options: [], subject: null, deliveryV2: delivery })).toBe(ANSWER_ELSEWHERE);
+    expect(
+      answerElsewhere({ ...base, subject: null, questionV2: { options: [], freeText: { maxLength: 2000 } } }),
+    ).toBe(ANSWER_ELSEWHERE);
+    const typed = { id: "other", label: "Other", input: { kind: "text" as const, label: "What?", required: true, maxLength: 500 } };
+    expect(answerElsewhere({ ...base, subject: null, questionV2: { options: [typed], freeText: null } })).toBe(
+      ANSWER_ELSEWHERE,
+    );
+    expect(
+      answerElsewhere({ ...base, subject: null, questionV2: { options: [opt("run")], freeText: null } }),
+    ).toBeNull();
+  });
+
+  it("says why when a gate.v2's approvals were withheld", () => {
+    const gate = { gateId: "gate_1", options: [opt("reject")], approvalsWithheld: "Open the card to approve it." };
+    expect(answerElsewhere({ ...base, options: [opt("reject")], gateV2: gate })).toBe("Open the card to approve it.");
   });
 });
