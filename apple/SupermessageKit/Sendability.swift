@@ -36,6 +36,11 @@ extension CustomEventDecision: @retroactive @unchecked Sendable {}
 extension CustomEventDecisionOption: @retroactive @unchecked Sendable {}
 extension CustomEventField: @retroactive @unchecked Sendable {}
 extension CustomEventView: @retroactive @unchecked Sendable {}
+extension GateOptionMeaning: @retroactive @unchecked Sendable {}
+extension GateOptionV2: @retroactive @unchecked Sendable {}
+extension GatePreviewBlock: @retroactive @unchecked Sendable {}
+extension GateSubjectBinding: @retroactive @unchecked Sendable {}
+extension GateV2Decision: @retroactive @unchecked Sendable {}
 extension FfiError: @retroactive @unchecked Sendable {}
 extension FfiEvent: @retroactive @unchecked Sendable {}
 extension ItemView: @retroactive @unchecked Sendable {}

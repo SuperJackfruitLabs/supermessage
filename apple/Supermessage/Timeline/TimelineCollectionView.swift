@@ -990,6 +990,11 @@ struct TimelineList: UIViewRepresentable {
         @discardableResult
         fileprivate func decide(_ row: TimelineRow, _ answer: GateAnswer) async -> Bool {
             guard let roomId = timeline.roomId else { return false }
+            if let gate = answer.gateV2 {
+                return await session.answerGateV2(
+                    row.item.eventId, gate: gate, optionId: answer.optionId,
+                    comment: answer.comment, in: roomId)
+            }
             guard let gateId = answer.subject else {
                 // A permission request: the option, as a plain reply.
                 return await session.answerPermission(optionId: answer.optionId, in: roomId)

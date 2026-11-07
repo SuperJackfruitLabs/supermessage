@@ -247,13 +247,26 @@ struct CustomEventCard: View {
 
             summary(digest)
             details(digest.rest)
+            if let gate = decision.gateV2 {
+                // What is being approved, exactly — before the buttons that
+                // approve it. The core withheld every approving option when
+                // this could not be drawn in full, and says so.
+                GatePreviewBlocks(blocks: gate.preview)
+                if let withheld = gate.approvalsWithheld {
+                    Text(withheld)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.contentMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("decision-approvals-withheld")
+                }
+            }
             reasoningDisclosure(reasoning)
             linkButton(link)
 
-            DecisionButtons(decision: decision, onDecide: onDecide) { option in
+            DecisionButtons(decision: decision, onDecide: onDecide) { choice in
                 // Only reached once the send has landed. See `answer`.
                 withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0.15)) {
-                    answer = DecisionAnswerRecord(option: option, at: .now)
+                    answer = DecisionAnswerRecord(option: choice.record, at: .now, role: choice.role)
                 }
             }
             .padding(.top, 2)
@@ -482,13 +495,15 @@ private struct DecisionButtons: View {
     let decision: CustomEventDecision
     var onDecide: ((GateAnswer) async -> Bool)?
     /// Told once, and only once the answer has landed.
-    let onLanded: (CustomEventDecisionOption) -> Void
+    let onLanded: (DecisionChoice) -> Void
 
-    /// The option awaiting a comment, if one is. Only `request_changes` ever
-    /// sets this: approve and reject are decisions, and request-changes is
-    /// feedback that becomes the rework's context — superpipeline merges it into
-    /// the card's handoff, so an empty one costs the next agent the reason.
-    @State private var commenting: CustomEventDecisionOption?
+    /// The option awaiting a comment, if one is. A v1 gate's
+    /// `request_changes` asks for one and sends without it if left empty; a
+    /// gate.v2 option with `needsComment` cannot be sent empty — the core
+    /// refuses it too. Request-changes is feedback that becomes the rework's
+    /// context — superpipeline merges it into the card's handoff, so an empty
+    /// one costs the next agent the reason.
+    @State private var commenting: DecisionChoice?
     @State private var comment = ""
     @State private var sending = false
     /// Bumped when a send does not land, which is what the error haptic
@@ -507,19 +522,31 @@ private struct DecisionButtons: View {
     /// buttons that could never be pressed.
     private var answerable: Bool { onDecide != nil }
 
-    private var primary: CustomEventDecisionOption? {
-        decision.options.first { DecisionOptionRole($0) != .reject }
+    /// Every answer, as the card draws it. A gate.v2 is drawn from its own
+    /// options, by meaning; anything else from the legacy list, by id.
+    private var choices: [DecisionChoice] {
+        if let gate = decision.gateV2 { return gate.options.map(DecisionChoice.init) }
+        return decision.options.map(DecisionChoice.init(legacy:))
     }
-    private var secondaries: [CustomEventDecisionOption] {
-        decision.options.filter { DecisionOptionRole($0) != .reject && $0 != primary }
+    /// The main action. A gate.v2 can have more than one — a publishing gate
+    /// approves automatically or manually — and each is a main action. A
+    /// legacy decision keeps its one: the first answer that is not a
+    /// rejection.
+    private var primaries: [DecisionChoice] {
+        if decision.gateV2 != nil { return choices.filter { $0.role == .approve } }
+        return choices.first { $0.role != .reject }.map { [$0] } ?? []
     }
-    private var rejections: [CustomEventDecisionOption] {
-        decision.options.filter { DecisionOptionRole($0) == .reject }
+    private var secondaries: [DecisionChoice] {
+        let primaries = primaries
+        return choices.filter { $0.role != .reject && !primaries.contains($0) }
+    }
+    private var rejections: [DecisionChoice] {
+        choices.filter { $0.role == .reject }
     }
 
     var body: some View {
         VStack(spacing: 8) {
-            if let primary {
+            ForEach(Array(primaries.enumerated()), id: \.offset) { _, primary in
                 // The label colour is set rather than inherited. `signal-soft`
                 // on `signal` is the pair the token contract holds at 6:1 in
                 // every appearance, including dark, where `signal` is light
@@ -560,7 +587,7 @@ private struct DecisionButtons: View {
         }
         .sensoryFeedback(.error, trigger: failures)
         .alert(
-            "Request changes",
+            commenting?.label ?? "Request changes",
             isPresented: Binding(
                 get: { commenting != nil },
                 set: { if !$0 { commenting = nil; comment = "" } })
@@ -568,12 +595,21 @@ private struct DecisionButtons: View {
             TextField("What needs changing?", text: $comment)
             Button("Cancel", role: .cancel) { commenting = nil; comment = "" }
             Button("Send") {
-                if let option = commenting { send(option, comment: comment) }
+                if let choice = commenting, !choice.lacksComment(comment) {
+                    send(choice, comment: comment)
+                }
                 commenting = nil
                 comment = ""
             }
+            // A required comment is required: the core refuses it empty, and a
+            // Send that does nothing reads as a failure.
+            .disabled(commenting?.lacksComment(comment) ?? false)
         } message: {
-            Text("This goes back to the agent as the reason, so it can pick the work up again.")
+            if commenting?.comment == .required {
+                Text("This answer needs a comment. It goes back to the agent as the reason.")
+            } else {
+                Text("This goes back to the agent as the reason, so it can pick the work up again.")
+            }
         }
     }
 
@@ -605,29 +641,137 @@ private struct DecisionButtons: View {
         }
     }
 
-    private func tapped(_ option: CustomEventDecisionOption) {
+    private func tapped(_ choice: DecisionChoice) {
         guard answerable else { return }
-        if option.id == GateAnswer.requestChanges {
-            commenting = option
+        if choice.comment != .none {
+            commenting = choice
         } else {
-            send(option, comment: nil)
+            send(choice, comment: nil)
         }
     }
 
-    private func send(_ option: CustomEventDecisionOption, comment: String?) {
+    private func send(_ choice: DecisionChoice, comment: String?) {
         guard let onDecide else { return }
         let trimmed = comment?.trimmingCharacters(in: .whitespacesAndNewlines)
         let answer = GateAnswer(
             subject: decision.subject,
-            optionId: option.id,
+            optionId: choice.id,
             comment: (trimmed?.isEmpty ?? true) ? nil : trimmed,
-            prompt: decision.prompt)
+            prompt: decision.prompt,
+            gateV2: decision.gateV2)
         sending = true
         Task {
             let landed = await onDecide(answer)
             sending = false
             // Only on success. See `CustomEventCard.answer`.
-            if landed { onLanded(option) } else { failures += 1 }
+            if landed { onLanded(choice) } else { failures += 1 }
+        }
+    }
+}
+
+/// One answer as the card draws it.
+///
+/// From a gate.v2 option it is drawn by **meaning** (`GateOptionMeaning`),
+/// never by id; from a legacy option by id, exactly as before. Presentation
+/// only — which options exist, and which a reader may approve, is the core's.
+struct DecisionChoice: Equatable {
+    enum CommentAsk: Equatable {
+        /// Sent as tapped.
+        case none
+        /// A v1 `request_changes`: asked for, sent without if left empty.
+        case optional
+        /// A gate.v2 `needsComment`: never sent empty.
+        case required
+    }
+
+    let id: String
+    let label: String
+    let role: DecisionOptionRole
+    let comment: CommentAsk
+
+    init(legacy option: CustomEventDecisionOption) {
+        id = option.id
+        label = option.label
+        role = DecisionOptionRole(option)
+        comment = option.id == GateAnswer.requestChanges ? .optional : .none
+    }
+
+    init(_ option: GateOptionV2) {
+        id = option.id
+        label = option.label
+        role = DecisionOptionRole(option.meaning)
+        comment = option.needsComment ? .required : .none
+    }
+
+    /// What the receipt names.
+    var record: CustomEventDecisionOption { CustomEventDecisionOption(label: label, id: id) }
+
+    /// Whether `text` leaves a required comment unwritten.
+    func lacksComment(_ text: String) -> Bool {
+        comment == .required && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+/// A gate.v2 subject's preview — what the reader approves, exactly.
+///
+/// Every string is drawn with `Text(verbatim:)`, so nothing in a post is
+/// read as markdown or a localisation key, and its line breaks stand: the
+/// charter's rule is that a person approves bytes they can see, character
+/// for character. A link block's URL already passed the core's `safe_url`
+/// (`https://`, printable ASCII), so it may be opened; its label is text.
+private struct GatePreviewBlocks: View {
+    let blocks: [GatePreviewBlock]
+
+    var body: some View {
+        if !blocks.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                    switch block {
+                    case let .text(label, text):
+                        VStack(alignment: .leading, spacing: 4) {
+                            if let label {
+                                Text(verbatim: label)
+                                    .metaFace()
+                                    .foregroundStyle(Theme.contentMuted)
+                            }
+                            Text(verbatim: text)
+                                .font(Theme.body)
+                                .foregroundStyle(Theme.content)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                                .background(
+                                    Theme.surfaceSunken,
+                                    in: RoundedRectangle(cornerRadius: Metrics.radiusControl))
+                                .accessibilityIdentifier("gate-preview-text")
+                        }
+                    case let .field(label, value):
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: label)
+                                .metaFace()
+                                .foregroundStyle(Theme.contentMuted)
+                            Text(verbatim: value)
+                                .font(.callout)
+                                .foregroundStyle(Theme.content)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    case let .link(label, url):
+                        if let destination = URL(string: url) {
+                            Link(destination: destination) {
+                                Label {
+                                    Text(verbatim: label)
+                                } icon: {
+                                    Image(systemName: "arrow.up.forward.square")
+                                }
+                                .font(.footnote)
+                            }
+                        } else {
+                            Text(verbatim: "\(label): \(url)").font(.footnote)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -669,6 +813,9 @@ struct GateAnswer {
     let optionId: String
     let comment: String?
     let prompt: String
+    /// The gate.v2 the card was drawn from, when it was one. Answered with
+    /// `Session.answerGateV2`, which hands it back to the core.
+    var gateV2: GateV2Decision? = nil
 }
 
 #if DEBUG

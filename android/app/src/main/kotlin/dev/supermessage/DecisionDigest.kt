@@ -4,6 +4,7 @@ import java.time.Duration
 import java.time.Instant
 import uniffi.supermessage_core.CustomEventDecisionOption
 import uniffi.supermessage_core.CustomEventField
+import uniffi.supermessage_core.GateOptionMeaning
 
 /**
  * The leading fields of a decision card, folded into one line, and the rest
@@ -55,6 +56,18 @@ internal enum class DecisionOptionRole {
                 "reject" -> REJECT
                 else -> OTHER
             }
+
+        /**
+         * A gate.v2 option, by what it means — never by its id, which a v2
+         * gate chooses freely (`approve_automatic`, `approve_manual`).
+         */
+        fun of(meaning: GateOptionMeaning): DecisionOptionRole =
+            when (meaning) {
+                GateOptionMeaning.APPROVE -> APPROVE
+                GateOptionMeaning.REVISE -> REQUEST_CHANGES
+                GateOptionMeaning.REJECT -> REJECT
+                GateOptionMeaning.CHOOSE, GateOptionMeaning.DEFER -> OTHER
+            }
     }
 }
 
@@ -64,8 +77,8 @@ internal enum class DecisionOptionRole {
  * renderer chose: inventing a past tense for a verb we do not know is how a
  * receipt ends up saying something the reader did not do.
  */
-internal fun receiptOutcome(option: CustomEventDecisionOption): String =
-    when (DecisionOptionRole.of(option)) {
+internal fun receiptOutcome(option: CustomEventDecisionOption, role: DecisionOptionRole? = null): String =
+    when (role ?: DecisionOptionRole.of(option)) {
         DecisionOptionRole.APPROVE -> "Approved by you"
         DecisionOptionRole.REQUEST_CHANGES -> "Changes requested by you"
         DecisionOptionRole.REJECT -> "Rejected by you"

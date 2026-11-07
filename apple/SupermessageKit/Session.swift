@@ -467,6 +467,30 @@ public final class Session {
         }
     }
 
+    /// Answer a gate.v2 from its card.
+    ///
+    /// `gate` is the card's `CustomEventDecision.gateV2`, handed back as the
+    /// core drew it: the core checks the answer against what the reader was
+    /// shown and binds it to the subject they saw. Same contract as
+    /// `answerGate` otherwise — the event id, and a result that says whether
+    /// it landed.
+    @discardableResult
+    public func answerGateV2(
+        _ eventId: String?, gate: GateV2Decision, optionId: String, comment: String?,
+        in roomId: String
+    ) async -> Bool {
+        guard let eventId else { return false }
+        do {
+            try await client.sendGateDecisionV2(
+                roomId: roomId, gate: gate, optionId: optionId, comment: comment,
+                inReplyTo: eventId)
+            decisionAnswered?(roomId, eventId, optionId)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Rewrite a message this account sent.
     ///
     /// Takes the **event** id for the same reason `toggleReaction` does: an
