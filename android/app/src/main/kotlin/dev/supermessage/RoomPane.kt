@@ -310,6 +310,7 @@ internal fun RoomPane(
                             val questionV2 = answer.questionV2
                             val deliveryV2 = answer.deliveryV2
                             val permissionV2 = answer.permissionV2
+                            val attentionV2 = answer.attentionV2
                             if (gateV2 != null) {
                                 session.answerGateV2(
                                     eventId = row.item.eventId,
@@ -343,6 +344,16 @@ internal fun RoomPane(
                                     eventId = row.item.eventId,
                                     permission = permissionV2,
                                     optionId = answer.optionId,
+                                    roomId = currentRoomId,
+                                )
+                            } else if (attentionV2 != null) {
+                                // A card waiting on a person: the wait the card
+                                // showed, and a resume's instruction.
+                                session.answerAttentionV2(
+                                    eventId = row.item.eventId,
+                                    attention = attentionV2,
+                                    optionId = answer.optionId,
+                                    text = answer.text,
                                     roomId = currentRoomId,
                                 )
                             } else if (gateId == null) {

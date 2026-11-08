@@ -824,7 +824,7 @@ export interface CustomEventDecision {
   subject: string | null;
   /**
    * The decision envelope's own shapes (`core::gate_v2`, `core::question_v2`,
-   * `core::delivery_v2`, `core::permission_v2`), absent unless the decision
+   * `core::delivery_v2`, `core::permission_v2`, `core::attention_v2`), absent unless the decision
    * arrived as one. The desktop draws only `options` — what a decision.v1 or
    * a plain reply can answer, never an approval of a subject — and reads
    * these just to say when more is answerable elsewhere.
@@ -836,10 +836,17 @@ export interface CustomEventDecision {
     /** Present when the question approves an exact operation (a strict decision). */
     subject?: unknown;
     approvalsWithheld?: string | null;
+    /** Present on a SuperToolkit approval request: a write held for approval, on no board card. */
+    approvalRequestId?: string | null;
   };
   deliveryV2?: EnvelopeDecision;
   /** A harness permission.v2: what the agent would do, and its options by meaning. */
   permissionV2?: { requestId: string; options: EnvelopeOption[]; approvalsWithheld: string | null };
+  /**
+   * A card waiting on a person (attention.v2). Every resume needs a typed
+   * instruction, so the desktop answers none of it.
+   */
+  attentionV2?: { boardId: string; cardId: string; waitId: string; options: EnvelopeOption[] };
 }
 
 /** A decision-envelope option, as far as the desktop reads it. */

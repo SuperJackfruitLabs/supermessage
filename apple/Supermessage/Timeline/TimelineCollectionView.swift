@@ -1013,6 +1013,13 @@ struct TimelineList: UIViewRepresentable {
                     row.item.eventId, permission: permission, optionId: answer.optionId,
                     in: roomId)
             }
+            if let attention = answer.attentionV2 {
+                // A card waiting on a person: the wait the card showed, and a
+                // resume's instruction.
+                return await session.answerAttentionV2(
+                    row.item.eventId, attention: attention, optionId: answer.optionId,
+                    text: answer.text, in: roomId)
+            }
             guard let gateId = answer.subject else {
                 // A permission request: the option, as a plain reply.
                 return await session.answerPermission(optionId: answer.optionId, in: roomId)

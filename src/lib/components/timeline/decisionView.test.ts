@@ -4,6 +4,8 @@ import type { CustomEventDecision } from "$lib/ipc";
 import {
   ALLOW_ELSEWHERE,
   ANSWER_ELSEWHERE,
+  APPROVAL_REQUEST_ELSEWHERE,
+  RESUME_ELSEWHERE,
   answerElsewhere,
   answeredWhen,
   arrangeOptions,
@@ -104,6 +106,35 @@ describe("answerElsewhere", () => {
     const withheld = { ...strict, options: [deny], approvalsWithheld: "Open the card to approve it." };
     expect(answerElsewhere({ ...base, options: [opt("Deny")], subject: null, questionV2: withheld })).toBe(
       "Open the card to approve it.",
+    );
+  });
+
+  it("sends a waiting card to a phone or the board", () => {
+    const instruction = { kind: "text" as const, label: "What should the next attempt do?", required: true, maxLength: 2730 };
+    const attention = {
+      boardId: "brd_7c1f",
+      cardId: "crd_6b40",
+      waitId: "wait_0123456789abcdef",
+      options: [{ id: "resume_here", label: "Resume here", input: instruction }, opt("archive")],
+    };
+    expect(answerElsewhere({ ...base, options: [], subject: null, attentionV2: attention })).toBe(RESUME_ELSEWHERE);
+  });
+
+  it("names who may allow a SuperToolkit approval request, with no card to open", () => {
+    const allow = { id: "allow_once", label: "Allow once" };
+    const deny = { id: "deny", label: "Deny" };
+    const request = {
+      options: [allow, deny],
+      freeText: null,
+      subject: { schema: "stk-capability/v1" },
+      approvalRequestId: "apr_5d2e9c41",
+    };
+    expect(answerElsewhere({ ...base, options: [opt("Deny")], subject: null, questionV2: request })).toBe(
+      APPROVAL_REQUEST_ELSEWHERE,
+    );
+    const withheld = { ...request, options: [deny], approvalsWithheld: "It can't be allowed from here." };
+    expect(answerElsewhere({ ...base, options: [opt("Deny")], subject: null, questionV2: withheld })).toBe(
+      "It can't be allowed from here.",
     );
   });
 

@@ -776,6 +776,27 @@ public final class Session {
         }
     }
 
+    /// Answer a card waiting on a person (attention.v2) from its card: the
+    /// `dev.superpipeline.attention.answer.v2` naming the wait, with a
+    /// resume's instruction as `text`, referencing the card's prose message.
+    /// Same contract as `answerPermissionV2`.
+    @discardableResult
+    public func answerAttentionV2(
+        _ eventId: String?, attention: AttentionV2Decision, optionId: String, text: String?,
+        in roomId: String
+    ) async -> Bool {
+        guard phase == .signedIn, let eventId else { return false }
+        do {
+            try await client.sendAttentionAnswerV2(
+                roomId: roomId, attention: attention, optionId: optionId, text: text,
+                inReplyTo: eventId)
+            decisionAnswered?(roomId, eventId, optionId)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Register this device's APNs pusher. Returns whether it landed; `false`
     /// also when the client behind this session cannot register one.
     @discardableResult

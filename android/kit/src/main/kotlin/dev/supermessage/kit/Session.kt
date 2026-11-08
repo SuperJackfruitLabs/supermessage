@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import uniffi.supermessage_core.AttentionV2Decision
 import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.QuestionV2Decision
@@ -640,6 +641,35 @@ class Session(
                 roomId = roomId,
                 permission = permission,
                 optionId = optionId,
+                inReplyTo = eventId,
+            )
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Answer a card waiting on a person (attention.v2) from its card with one
+     * of its options, naming the wait the card showed; a resume's instruction
+     * is [text]. Otherwise as [answerGateV2].
+     */
+    suspend fun answerAttentionV2(
+        eventId: String?,
+        attention: AttentionV2Decision,
+        optionId: String,
+        text: String?,
+        roomId: String,
+    ): Boolean {
+        if (eventId == null) return false
+        return try {
+            client.sendAttentionAnswerV2(
+                roomId = roomId,
+                attention = attention,
+                optionId = optionId,
+                text = text,
                 inReplyTo = eventId,
             )
             true

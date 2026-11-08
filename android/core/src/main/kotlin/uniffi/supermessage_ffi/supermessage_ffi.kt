@@ -36,6 +36,7 @@ import uniffi.supermessage_core.Acknowledgement
 import uniffi.supermessage_core.AgentAvatar
 import uniffi.supermessage_core.AgentAvatarStyle
 import uniffi.supermessage_core.AgentState
+import uniffi.supermessage_core.AttentionV2Decision
 import uniffi.supermessage_core.Counterpart
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeAccountDto
@@ -43,6 +44,7 @@ import uniffi.supermessage_core.FfiConverterTypeAcknowledgement
 import uniffi.supermessage_core.FfiConverterTypeAgentAvatar
 import uniffi.supermessage_core.FfiConverterTypeAgentAvatarStyle
 import uniffi.supermessage_core.FfiConverterTypeAgentState
+import uniffi.supermessage_core.FfiConverterTypeAttentionV2Decision
 import uniffi.supermessage_core.FfiConverterTypeCounterpart
 import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeFirstRunScript
@@ -154,6 +156,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferAcknowledgement
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatar
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatarStyle
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
+import uniffi.supermessage_core.RustBuffer as RustBufferAttentionV2Decision
 import uniffi.supermessage_core.RustBuffer as RustBufferCounterpart
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
 import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunScript
@@ -1239,6 +1242,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1366,6 +1371,8 @@ internal interface UniffiLib : Library {
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_search_messages(`ptr`: Pointer,`term`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_send_attention_answer_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`attention`: RustBufferAttentionV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_delivery_answer_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`delivery`: RustBufferGateV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1904,6 +1911,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_search_messages(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_attention_answer_v2(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_delivery_answer_v2(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision(
@@ -2335,6 +2344,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_search_messages() != 28627.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_attention_answer_v2() != 36441.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_delivery_answer_v2() != 25249.toShort()) {
@@ -3214,6 +3226,18 @@ public interface CoreInterface {
      * room this account can see otherwise.
      */
     fun `searchMessages`(`term`: kotlin.String, `roomId`: kotlin.String?): List<SearchResultDto>
+    
+    /**
+     * Answer a card waiting on a person from its card
+     * (`supermessage_core::attention_v2`). `attention` is the card's
+     * `CustomEventDecision::attention_v2`, handed back unchanged; `text` is
+     * a resume's instruction (required, at most its input's `max_length`).
+     * The core refuses an option the card did not offer and a resume with no
+     * instruction or one over its limit, then sends the
+     * `dev.superpipeline.attention.answer.v2` — board, card and wait copied
+     * from the card — referencing `in_reply_to`. The room need not be open.
+     */
+    fun `sendAttentionAnswerV2`(`roomId`: kotlin.String, `attention`: AttentionV2Decision, `optionId`: kotlin.String, `text`: kotlin.String?, `inReplyTo`: kotlin.String)
     
     /**
      * Answer a manual-delivery follow-up from its card
@@ -4381,6 +4405,28 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     }
     )
     }
+    
+
+    
+    /**
+     * Answer a card waiting on a person from its card
+     * (`supermessage_core::attention_v2`). `attention` is the card's
+     * `CustomEventDecision::attention_v2`, handed back unchanged; `text` is
+     * a resume's instruction (required, at most its input's `max_length`).
+     * The core refuses an option the card did not offer and a resume with no
+     * instruction or one over its limit, then sends the
+     * `dev.superpipeline.attention.answer.v2` — board, card and wait copied
+     * from the card — referencing `in_reply_to`. The room need not be open.
+     */
+    @Throws(FfiException::class)override fun `sendAttentionAnswerV2`(`roomId`: kotlin.String, `attention`: AttentionV2Decision, `optionId`: kotlin.String, `text`: kotlin.String?, `inReplyTo`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_attention_answer_v2(
+        it, FfiConverterString.lower(`roomId`),FfiConverterTypeAttentionV2Decision.lower(`attention`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`text`),FfiConverterString.lower(`inReplyTo`),_status)
+}
+    }
+    
     
 
     
@@ -8007,6 +8053,10 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
         }
     }
 }
+
+
+
+
 
 
 

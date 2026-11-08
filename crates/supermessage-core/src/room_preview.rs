@@ -8,20 +8,69 @@
 //! **amber switch**, and amber means the operator owes someone an answer and
 //! nothing else. Which event types trip it is a contract shared with Superpipeline,
 //! not a per-platform styling choice.
+//!
+//! ## When a decision is pending
+//!
+//! charter → `decisions/2026-11-08-waiting-cards-and-broker-approvals-reach-chat.md`
+//! ("decisions light the Needs you inbox"). A room owes an answer while its
+//! **newest message is a decision card this client draws** — a gate, a
+//! question, a follow-up, a permission or a waiting card, in whichever form
+//! the hub carries it ([`pending_decision_type`]). Every way a decision ends
+//! puts a newer message after it: the reader's own answer (sent from this
+//! device or another), and the hub's readable receipt line, which it posts
+//! beside every structured outcome. So an answered or settled decision stops
+//! counting by itself, with no per-device state to keep in sync, and a card
+//! the room has moved past never keeps a row amber.
+//!
+//! The rule errs one way only: a decision followed by unrelated chatter stops
+//! counting, though its card still waits in the room. Amber never lies about
+//! a decision being owed; it can miss one that scrolled up.
 
 use std::collections::HashSet;
 
+use serde_json::Value;
+
 use crate::dto::RoomSummary;
 
-/// Event types whose arrival means a decision is pending.
+/// The event types a pending decision card is drawn as — the type
+/// [`pending_decision_type`] reports for a message carrying one, and the
+/// type a separate legacy card event has.
 ///
-/// **Empty, and it must stay empty** until a schema actually carries a
-/// decision. An entry here puts amber on a roster row, and there is no gate
-/// schema to send yet — see `custom_events` for the versioning contract that
-/// will define one.
+/// An entry here puts amber on a roster row, so each one is a decision a
+/// person owes an answer to, from a versioned, documented suite schema
+/// (`docs/agentpod-events.md`). A receipt, an answer or a context card (a
+/// turn, a run, a station's status) is never one.
 pub fn decision_bearing_event_types() -> &'static HashSet<String> {
     static TYPES: std::sync::OnceLock<HashSet<String>> = std::sync::OnceLock::new();
-    TYPES.get_or_init(HashSet::new)
+    TYPES.get_or_init(|| {
+        [
+            crate::custom_events::GATE_EVENT_TYPE,
+            crate::custom_events::PERMISSION_REQUEST_EVENT_TYPE,
+            crate::gate_v2::GATE_V2_EVENT_TYPE,
+            crate::question_v2::QUESTION_V2_EVENT_TYPE,
+            crate::delivery_v2::DELIVERY_V2_EVENT_TYPE,
+            crate::permission_v2::PERMISSION_V2_EVENT_TYPE,
+            crate::attention_v2::ATTENTION_V2_EVENT_TYPE,
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+    })
+}
+
+/// The decision a message's `content` carries, as the event type its card
+/// is drawn as, or `None` when it carries none this client would draw.
+///
+/// Read exactly as the timeline reads it (`crate::embedded::embedded_suite_event`),
+/// so the roster and the room agree: a question, follow-up or waiting card
+/// whose v2 fields do not validate, which the room shows as prose, is not
+/// pending either. An answer (`*.answer.v2`, `decision.v2`) and a receipt
+/// (`*.outcome.v1`) carry no decision.
+pub fn pending_decision_type(content: &Value) -> Option<&'static str> {
+    let (event_type, _) = crate::embedded::embedded_suite_event(content)?;
+    decision_bearing_event_types()
+        .contains(event_type)
+        .then_some(event_type)
 }
 
 /// The one string the pending path renders.
@@ -236,13 +285,151 @@ mod tests {
         assert_eq!(preview.text, "hello");
     }
 
+    // ---- Needs you: real decisions light it ---------------------------------
+
+    use serde_json::json;
+
+    const CORPUS: &str =
+        include_str!("../../../fixtures/ecosystem-identity/matrix_gate_events.json");
+
+    /// The first `accept` content the corpus pins for `suite_type`.
+    fn corpus_accept(suite_type: &str) -> Value {
+        let corpus: Value = serde_json::from_str(CORPUS).expect("the corpus is JSON");
+        corpus["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["suiteEventType"] == suite_type)
+            .unwrap_or_else(|| panic!("the corpus pins {suite_type}"))["accept"][0]["content"]
+            .clone()
+    }
+
+    /// The roster row for a room whose newest message has `content`, as
+    /// `rooms::room_preview` composes it: the decision type only for a
+    /// message someone else sent.
+    fn row_for(content: &Value, is_own: bool) -> Option<RoomPreview> {
+        let decision = if is_own {
+            None
+        } else {
+            pending_decision_type(content)
+        };
+        let f = RoomPreviewFacts {
+            last_message: content.get("body").and_then(Value::as_str),
+            last_message_is_own: is_own,
+            last_message_names_sender: false,
+            last_event_type: decision,
+        };
+        compose_room_preview(&f, decision_bearing_event_types())
+    }
+
+    fn lit(content: &Value, is_own: bool) -> bool {
+        row_for(content, is_own).is_some_and(|p| p.pending)
+    }
+
     #[test]
-    fn the_production_decision_set_is_empty_and_must_stay_empty() {
-        // An entry here puts amber on a roster row, and amber means one thing.
-        // There is no gate schema to send yet.
-        assert!(
-            decision_bearing_event_types().is_empty(),
-            "a decision-bearing type was added without a schema to carry it"
-        );
+    fn every_pending_decision_card_lights_needs_you() {
+        for suite_type in [
+            crate::gate_v2::GATE_V2_EVENT_TYPE,
+            crate::question_v2::QUESTION_V2_EVENT_TYPE,
+            crate::delivery_v2::DELIVERY_V2_EVENT_TYPE,
+            crate::permission_v2::PERMISSION_V2_EVENT_TYPE,
+            crate::attention_v2::ATTENTION_V2_EVENT_TYPE,
+        ] {
+            let content = corpus_accept(suite_type);
+            assert_eq!(pending_decision_type(&content), Some(suite_type));
+            let preview = row_for(&content, false).expect("a preview");
+            assert!(preview.pending, "{suite_type}");
+            // The card's own prose never reaches the roster.
+            assert_eq!(preview.text, "Approval needed", "{suite_type}");
+        }
+    }
+
+    #[test]
+    fn a_v1_card_carried_on_its_message_lights_needs_you_too() {
+        let permission = json!({
+            "msgtype": "m.text",
+            "body": "Permission needed: Run the tests",
+            "dev.agentpod.permission": {
+                "schema_version": 1,
+                "session_id": "s1",
+                "request_seq": 3,
+                "title": "Run the tests",
+                "options": [{ "option_id": "allow_once", "name": "Allow once" }]
+            }
+        });
+        let permission_type = crate::custom_events::PERMISSION_REQUEST_EVENT_TYPE;
+        assert_eq!(pending_decision_type(&permission), Some(permission_type));
+        assert!(lit(&permission, false));
+        let gate = json!({
+            "msgtype": "m.text",
+            "body": "Approve \"Ship\"?",
+            "dev.superpipeline.gate": { "schema_version": 1, "gate_id": "g", "card_title": "Ship" }
+        });
+        assert!(lit(&gate, false));
+    }
+
+    #[test]
+    fn a_decision_closed_by_its_outcome_no_longer_lights_needs_you() {
+        // The hub's readable receipt line, posted beside the structured
+        // outcome, is the room's newest message once a decision closes.
+        let receipt = json!({
+            "msgtype": "m.text",
+            "body": "Resumed by fixture-person — the board has it."
+        });
+        assert!(!lit(&receipt, false));
+        // And a structured outcome carried on a message closes nothing open.
+        for suite_type in [
+            crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE,
+            crate::permission_v2::PERMISSION_OUTCOME_EVENT_TYPE,
+            crate::attention_v2::ATTENTION_OUTCOME_EVENT_TYPE,
+        ] {
+            let outcome = corpus_accept(suite_type);
+            assert_eq!(pending_decision_type(&outcome), None, "{suite_type}");
+            assert!(!lit(&outcome, false), "{suite_type}");
+        }
+    }
+
+    #[test]
+    fn a_decision_answered_on_this_device_no_longer_lights_needs_you() {
+        // The answer this device sent is the room's newest message.
+        for suite_type in [
+            crate::gate_v2::GATE_DECISION_V2_SUITE_TYPE,
+            crate::question_v2::QUESTION_ANSWER_V2_SUITE_TYPE,
+            crate::delivery_v2::DELIVERY_ANSWER_V2_SUITE_TYPE,
+            crate::permission_v2::PERMISSION_ANSWER_V2_SUITE_TYPE,
+            crate::attention_v2::ATTENTION_ANSWER_V2_SUITE_TYPE,
+        ] {
+            let answer = corpus_accept(suite_type);
+            assert_eq!(pending_decision_type(&answer), None, "{suite_type}");
+            assert!(!lit(&answer, true), "{suite_type}");
+            // Nor does an answer sent from another of the reader's devices,
+            // or by someone else in the room, light it.
+            assert!(!lit(&answer, false), "{suite_type}");
+        }
+    }
+
+    #[test]
+    fn a_card_whose_fields_do_not_validate_is_prose_and_not_pending() {
+        let mut card = corpus_accept(crate::attention_v2::ATTENTION_V2_EVENT_TYPE);
+        card.as_object_mut().unwrap().remove("wait_id");
+        assert_eq!(pending_decision_type(&card), None);
+        assert!(!lit(&card, false));
+        let chat = json!({ "msgtype": "m.text", "body": "hello" });
+        assert!(!lit(&chat, false));
+    }
+
+    #[test]
+    fn the_production_decision_set_holds_decisions_only() {
+        let types = decision_bearing_event_types();
+        assert_eq!(types.len(), 7);
+        for not_a_decision in [
+            crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE,
+            crate::permission_v2::PERMISSION_OUTCOME_EVENT_TYPE,
+            crate::attention_v2::ATTENTION_OUTCOME_EVENT_TYPE,
+            crate::custom_events::TURN_ACTIVITY_EVENT_TYPE,
+            "m.room.message",
+        ] {
+            assert!(!types.contains(not_a_decision), "{not_a_decision}");
+        }
     }
 }

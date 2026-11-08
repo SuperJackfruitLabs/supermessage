@@ -210,6 +210,7 @@ impl CustomEventRenderer for DeliveryV2Renderer {
                 question_v2: None,
                 delivery_v2: Some(delivery.decision()),
                 permission_v2: None,
+                attention_v2: None,
             }),
         }
     }

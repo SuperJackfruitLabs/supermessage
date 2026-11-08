@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import uniffi.supermessage_core.Acknowledgement
 import uniffi.supermessage_core.AccountDto
+import uniffi.supermessage_core.AttentionV2Decision
 import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.QuestionV2Decision
@@ -398,6 +399,23 @@ class CoreClient(
         inReplyTo: String,
     ) {
         run { it.sendPermissionAnswerV2(roomId, permission, optionId, inReplyTo) }
+    }
+
+    /**
+     * Answer a card waiting on a person (attention.v2). [attention] is the
+     * card's own `CustomEventDecision.attentionV2`; [text] is a resume's
+     * instruction. The core refuses an option the card did not offer and a
+     * resume with no instruction or one over its limit. The room need not be
+     * open.
+     */
+    suspend fun sendAttentionAnswerV2(
+        roomId: String,
+        attention: AttentionV2Decision,
+        optionId: String,
+        text: String?,
+        inReplyTo: String,
+    ) {
+        run { it.sendAttentionAnswerV2(roomId, attention, optionId, text, inReplyTo) }
     }
 
     /**

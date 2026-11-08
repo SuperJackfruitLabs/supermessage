@@ -385,6 +385,21 @@ public actor CoreClient {
         }
     }
 
+    /// Answer a card waiting on a person (attention.v2). `attention` is the
+    /// card's own `CustomEventDecision.attentionV2`; the core refuses an
+    /// option it did not offer and a resume with no instruction or one over
+    /// its limit, and copies the board, card and wait.
+    public func sendAttentionAnswerV2(
+        roomId: String, attention: AttentionV2Decision, optionId: String, text: String?,
+        inReplyTo: String
+    ) async throws {
+        try await run {
+            try $0.sendAttentionAnswerV2(
+                roomId: roomId, attention: attention, optionId: optionId, text: text,
+                inReplyTo: inReplyTo)
+        }
+    }
+
     public func sendGateDecisionTo(
         roomId: String, gateId: String, optionId: String, comment: String?,
         inReplyTo: String, prompt: String

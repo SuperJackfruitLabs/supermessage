@@ -981,6 +981,32 @@ impl Core {
         Ok(())
     }
 
+    /// Answer a card waiting on a person from its card
+    /// (`supermessage_core::attention_v2`). `attention` is the card's
+    /// `CustomEventDecision::attention_v2`, handed back unchanged; `text` is
+    /// a resume's instruction (required, at most its input's `max_length`).
+    /// The core refuses an option the card did not offer and a resume with no
+    /// instruction or one over its limit, then sends the
+    /// `dev.superpipeline.attention.answer.v2` — board, card and wait copied
+    /// from the card — referencing `in_reply_to`. The room need not be open.
+    pub fn send_attention_answer_v2(
+        &self,
+        room_id: String,
+        attention: supermessage_core::attention_v2::AttentionV2Decision,
+        option_id: String,
+        text: Option<String>,
+        in_reply_to: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.send_attention_answer_v2(
+            &room_id,
+            &attention,
+            &option_id,
+            text.as_deref(),
+            &in_reply_to,
+        ))?;
+        Ok(())
+    }
+
     /// What the notification for `event_id` in `room_id` should say, fetched
     /// and decrypted here — the Notification Service Extension's one call
     /// after [`Core::restore_session_quietly`]. An error means the event could

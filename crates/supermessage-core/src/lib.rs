@@ -32,6 +32,7 @@ uniffi::setup_scaffolding!();
 pub mod acknowledgement;
 pub mod agent_avatar;
 pub mod attachments;
+pub mod attention_v2;
 pub mod audio;
 pub mod auth;
 pub mod custom_events;

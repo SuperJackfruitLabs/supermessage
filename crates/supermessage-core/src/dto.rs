@@ -109,14 +109,16 @@ pub struct RoomSummary {
     /// `core::timeline::MessagePreview::names_sender` for the alternatives
     /// this was chosen over).
     pub last_message_names_sender: bool,
-    /// The Matrix event type, populated **only** for a custom
-    /// (`MsgLikeKind::Other`) event; `None` for an ordinary message. This is
-    /// the hook §6.1.1's pending-decision path keys off.
+    /// The Matrix event type for a custom (`MsgLikeKind::Other`) event, or,
+    /// for someone else's message carrying a decision card this client draws,
+    /// the type that card is drawn as (`core::room_preview::pending_decision_type`);
+    /// `None` for an ordinary message. This is the hook §6.1.1's
+    /// pending-decision path keys off.
     ///
-    /// Unreachable in production today, for two independent reasons: no gate
-    /// schema exists to send, *and* the SDK's own latest-event filter rejects
-    /// unrecognized message-like content outright (see
-    /// `core::rooms::room_preview`).
+    /// A separate custom event never reaches it in production: the SDK's own
+    /// latest-event filter rejects unrecognized message-like content outright
+    /// (see `core::rooms::room_preview`). A decision carried on its prose
+    /// message does.
     pub last_event_type: Option<String>,
     pub last_activity_ms: Option<u64>,
     /// Which harness this room's agent runs, and on which machine — both in

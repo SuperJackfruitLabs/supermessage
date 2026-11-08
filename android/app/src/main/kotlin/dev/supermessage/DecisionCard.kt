@@ -69,6 +69,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import uniffi.supermessage_core.AttentionV2Decision
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.CustomEventDecisionOption
 import uniffi.supermessage_core.CustomEventField
@@ -765,6 +766,16 @@ internal data class DecisionChoice(
         )
 
         /**
+         * A waiting card's option: by meaning (resume here leads, resume at an
+         * earlier stage is neutral, archive is the quiet rejection), every
+         * resume asking for its required instruction, with a receipt in the
+         * board's words.
+         */
+        fun attention(option: GateOptionV2) = v2(option).copy(
+            receipt = attentionReceipt(option.id, option.label),
+        )
+
+        /**
          * The caption under an option: its reach, then who may take it. Shown,
          * never judged — the producer decides who may take an option.
          */
@@ -803,6 +814,10 @@ internal data class DecisionChoice(
             // `choose` options are all neutral.
             decision.permissionV2?.let { asked ->
                 val all = asked.options.map { permission(it) }
+                return all to all.filter { it.role == DecisionOptionRole.APPROVE }
+            }
+            decision.attentionV2?.let { waiting ->
+                val all = waiting.options.map { attention(it) }
                 return all to all.filter { it.role == DecisionOptionRole.APPROVE }
             }
             val envelope = decision.gateV2?.options
@@ -875,6 +890,7 @@ private fun DecisionButtons(
                 deliveryV2 = decision.deliveryV2,
                 text = if (input.isNullOrEmpty()) null else input,
                 permissionV2 = decision.permissionV2,
+                attentionV2 = decision.attentionV2,
             ),
             handler = handler,
             haptics = haptics,
@@ -1209,6 +1225,8 @@ data class GateAnswer(
     val text: String? = null,
     /** The harness permission.v2 the card was drawn from; answered with `Session.answerPermissionV2`. */
     val permissionV2: PermissionV2Decision? = null,
+    /** The card waiting on a person (attention.v2); answered with `Session.answerAttentionV2`. */
+    val attentionV2: AttentionV2Decision? = null,
 ) {
     companion object {
         /** Superpipeline's only option id that expects a comment. */

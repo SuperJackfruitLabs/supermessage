@@ -1278,6 +1278,112 @@ public object FfiConverterTypeAgentAvatarStyle: FfiConverterRustBuffer<AgentAvat
 
 
 /**
+ * A waiting card as a host draws and answers it. Rides on
+ * `CustomEventDecision::attention_v2`.
+ */
+data class AttentionV2Decision (
+    /**
+     * Handed back verbatim in the answer.
+     */
+    var `boardId`: kotlin.String, 
+    /**
+     * Handed back verbatim in the answer.
+     */
+    var `cardId`: kotlin.String, 
+    /**
+     * This particular wait, handed back verbatim: the board refuses an
+     * answer naming a wait that has ended.
+     */
+    var `waitId`: kotlin.String, 
+    /**
+     * Display text, bounded.
+     */
+    var `cardTitle`: kotlin.String, 
+    /**
+     * Display text, bounded.
+     */
+    var `stageName`: kotlin.String, 
+    var `reason`: AttentionReason, 
+    /**
+     * [`reason_words`] for this card.
+     */
+    var `reasonText`: kotlin.String, 
+    /**
+     * The park's one-line summary, verbatim (bounded), when it gave one.
+     */
+    var `summary`: kotlin.String?, 
+    /**
+     * The agent's detail, verbatim (bounded), when it gave one. Drawn as
+     * preformatted text: the hub fences it.
+     */
+    var `detail`: kotlin.String?, 
+    /**
+     * How many attempts failed, when the board counted.
+     */
+    var `failureCount`: kotlin.UInt?, 
+    /**
+     * In the card's order, by meaning: `resume_here` (approve) and each
+     * `resume_at:<stageKey>` (choose) ask for a required text input;
+     * `archive` (reject) asks for none.
+     */
+    var `options`: List<GateOptionV2>
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAttentionV2Decision: FfiConverterRustBuffer<AttentionV2Decision> {
+    override fun read(buf: ByteBuffer): AttentionV2Decision {
+        return AttentionV2Decision(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeAttentionReason.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalUInt.read(buf),
+            FfiConverterSequenceTypeGateOptionV2.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: AttentionV2Decision) = (
+            FfiConverterString.allocationSize(value.`boardId`) +
+            FfiConverterString.allocationSize(value.`cardId`) +
+            FfiConverterString.allocationSize(value.`waitId`) +
+            FfiConverterString.allocationSize(value.`cardTitle`) +
+            FfiConverterString.allocationSize(value.`stageName`) +
+            FfiConverterTypeAttentionReason.allocationSize(value.`reason`) +
+            FfiConverterString.allocationSize(value.`reasonText`) +
+            FfiConverterOptionalString.allocationSize(value.`summary`) +
+            FfiConverterOptionalString.allocationSize(value.`detail`) +
+            FfiConverterOptionalUInt.allocationSize(value.`failureCount`) +
+            FfiConverterSequenceTypeGateOptionV2.allocationSize(value.`options`)
+    )
+
+    override fun write(value: AttentionV2Decision, buf: ByteBuffer) {
+            FfiConverterString.write(value.`boardId`, buf)
+            FfiConverterString.write(value.`cardId`, buf)
+            FfiConverterString.write(value.`waitId`, buf)
+            FfiConverterString.write(value.`cardTitle`, buf)
+            FfiConverterString.write(value.`stageName`, buf)
+            FfiConverterTypeAttentionReason.write(value.`reason`, buf)
+            FfiConverterString.write(value.`reasonText`, buf)
+            FfiConverterOptionalString.write(value.`summary`, buf)
+            FfiConverterOptionalString.write(value.`detail`, buf)
+            FfiConverterOptionalUInt.write(value.`failureCount`, buf)
+            FfiConverterSequenceTypeGateOptionV2.write(value.`options`, buf)
+    }
+}
+
+
+
+/**
  * What an `m.audio` event says about itself beyond being a file: the
  * MSC3245 voice flag, the length, and the MSC3246 waveform — already
  * normalised to `0..=1` and bounded (`core::audio::audio_meta`), because
@@ -1522,7 +1628,18 @@ data class CustomEventDecision (
      * allows — each id its name, as for a v1 request. `None` otherwise, and
      * absent from the JSON.
      */
-    var `permissionV2`: PermissionV2Decision? = null
+    var `permissionV2`: PermissionV2Decision? = null, 
+    /**
+     * A card waiting on a person, when the prose message carries
+     * `dev.superpipeline.attention.v2` (`crate::attention_v2`): the card,
+     * the stage, the reason in words, the agent's detail, and the options
+     * by meaning — resume here, resume at an earlier stage (each with a
+     * required instruction), archive. Answered with
+     * `send_attention_answer_v2`. [`Self::options`] is empty: no plain
+     * reply answers a waiting card. `None` otherwise, and absent from the
+     * JSON.
+     */
+    var `attentionV2`: AttentionV2Decision? = null
 ) {
     
     companion object
@@ -1541,6 +1658,7 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeQuestionV2Decision.read(buf),
             FfiConverterOptionalTypeGateV2Decision.read(buf),
             FfiConverterOptionalTypePermissionV2Decision.read(buf),
+            FfiConverterOptionalTypeAttentionV2Decision.read(buf),
         )
     }
 
@@ -1551,7 +1669,8 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`gateV2`) +
             FfiConverterOptionalTypeQuestionV2Decision.allocationSize(value.`questionV2`) +
             FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`deliveryV2`) +
-            FfiConverterOptionalTypePermissionV2Decision.allocationSize(value.`permissionV2`)
+            FfiConverterOptionalTypePermissionV2Decision.allocationSize(value.`permissionV2`) +
+            FfiConverterOptionalTypeAttentionV2Decision.allocationSize(value.`attentionV2`)
     )
 
     override fun write(value: CustomEventDecision, buf: ByteBuffer) {
@@ -1562,6 +1681,7 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeQuestionV2Decision.write(value.`questionV2`, buf)
             FfiConverterOptionalTypeGateV2Decision.write(value.`deliveryV2`, buf)
             FfiConverterOptionalTypePermissionV2Decision.write(value.`permissionV2`, buf)
+            FfiConverterOptionalTypeAttentionV2Decision.write(value.`attentionV2`, buf)
     }
 }
 
@@ -3278,7 +3398,14 @@ data class QuestionV2Decision (
      * `crate::gate_v2::APPROVALS_WITHHELD_NOTE` when approve-meaning
      * options were withheld.
      */
-    var `approvalsWithheld`: kotlin.String? = null
+    var `approvalsWithheld`: kotlin.String? = null, 
+    /**
+     * Set on a SuperToolkit approval request — a write held for approval,
+     * hosted on a board but on no card — to its request id. A host then
+     * says it is a SuperToolkit approval and offers no card to open. `None`
+     * for every question asked on a card.
+     */
+    var `approvalRequestId`: kotlin.String? = null
 ) {
     
     companion object
@@ -3296,6 +3423,7 @@ public object FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer<Questio
             FfiConverterOptionalTypeQuestionFreeText.read(buf),
             FfiConverterOptionalTypeSubjectV2.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
         )
     }
 
@@ -3305,7 +3433,8 @@ public object FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer<Questio
             FfiConverterSequenceTypeGateOptionV2.allocationSize(value.`options`) +
             FfiConverterOptionalTypeQuestionFreeText.allocationSize(value.`freeText`) +
             FfiConverterOptionalTypeSubjectV2.allocationSize(value.`subject`) +
-            FfiConverterOptionalString.allocationSize(value.`approvalsWithheld`)
+            FfiConverterOptionalString.allocationSize(value.`approvalsWithheld`) +
+            FfiConverterOptionalString.allocationSize(value.`approvalRequestId`)
     )
 
     override fun write(value: QuestionV2Decision, buf: ByteBuffer) {
@@ -3315,6 +3444,7 @@ public object FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer<Questio
             FfiConverterOptionalTypeQuestionFreeText.write(value.`freeText`, buf)
             FfiConverterOptionalTypeSubjectV2.write(value.`subject`, buf)
             FfiConverterOptionalString.write(value.`approvalsWithheld`, buf)
+            FfiConverterOptionalString.write(value.`approvalRequestId`, buf)
     }
 }
 
@@ -4052,14 +4182,16 @@ data class RoomSummary (
      */
     var `lastMessageNamesSender`: kotlin.Boolean, 
     /**
-     * The Matrix event type, populated **only** for a custom
-     * (`MsgLikeKind::Other`) event; `None` for an ordinary message. This is
-     * the hook §6.1.1's pending-decision path keys off.
+     * The Matrix event type for a custom (`MsgLikeKind::Other`) event, or,
+     * for someone else's message carrying a decision card this client draws,
+     * the type that card is drawn as (`core::room_preview::pending_decision_type`);
+     * `None` for an ordinary message. This is the hook §6.1.1's
+     * pending-decision path keys off.
      *
-     * Unreachable in production today, for two independent reasons: no gate
-     * schema exists to send, *and* the SDK's own latest-event filter rejects
-     * unrecognized message-like content outright (see
-     * `core::rooms::room_preview`).
+     * A separate custom event never reaches it in production: the SDK's own
+     * latest-event filter rejects unrecognized message-like content outright
+     * (see `core::rooms::room_preview`). A decision carried on its prose
+     * message does.
      */
     var `lastEventType`: kotlin.String?, 
     var `lastActivityMs`: kotlin.ULong?, 
@@ -4543,7 +4675,8 @@ data class SubjectV2 (
      */
     var `binding`: GateSubjectBinding, 
     /**
-     * [`SALAAM_OPERATION_SCHEMA`] or [`HARNESS_PERMISSION_SCHEMA`].
+     * [`SALAAM_OPERATION_SCHEMA`], [`HARNESS_PERMISSION_SCHEMA`] or
+     * [`STK_CAPABILITY_SCHEMA`].
      */
     var `schema`: kotlin.String, 
     /**
@@ -6888,6 +7021,49 @@ public object FfiConverterTypeAgentState: FfiConverterRustBuffer<AgentState> {
     override fun allocationSize(value: AgentState) = 4UL
 
     override fun write(value: AgentState, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Why a card waits on a person.
+ */
+
+enum class AttentionReason {
+    
+    /**
+     * Its attempts at this stage kept failing.
+     */
+    REPEATED_FAILURE,
+    /**
+     * Its agent said it cannot go on.
+     */
+    BLOCKED,
+    /**
+     * Its agent was not allowed to do what the stage needs.
+     */
+    NOT_AUTHORISED;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeAttentionReason: FfiConverterRustBuffer<AttentionReason> {
+    override fun read(buf: ByteBuffer) = try {
+        AttentionReason.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: AttentionReason) = 4UL
+
+    override fun write(value: AttentionReason, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -10206,6 +10382,38 @@ public object FfiConverterOptionalTypeAgentAvatarStyle: FfiConverterRustBuffer<A
         } else {
             buf.put(1)
             FfiConverterTypeAgentAvatarStyle.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeAttentionV2Decision: FfiConverterRustBuffer<AttentionV2Decision?> {
+    override fun read(buf: ByteBuffer): AttentionV2Decision? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeAttentionV2Decision.read(buf)
+    }
+
+    override fun allocationSize(value: AttentionV2Decision?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeAttentionV2Decision.allocationSize(value)
+        }
+    }
+
+    override fun write(value: AttentionV2Decision?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeAttentionV2Decision.write(value, buf)
         }
     }
 }

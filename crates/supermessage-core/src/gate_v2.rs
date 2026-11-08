@@ -80,6 +80,12 @@ pub const SALAAM_OPERATION_SCHEMA: &str = "salaam-operation/v1";
 /// A harness permission's subject: the ACP request AgentPod recorded (§5).
 pub const HARNESS_PERMISSION_SCHEMA: &str = "harness-permission/v1";
 
+/// A SuperToolkit write held for approval: the digest of the exact request,
+/// its expiry and a preview of the service, capability, target and every
+/// argument. charter →
+/// `decisions/2026-11-08-waiting-cards-and-broker-approvals-reach-chat.md` §3.
+pub const STK_CAPABILITY_SCHEMA: &str = "stk-capability/v1";
+
 const FIELD_VALUE_MAX_CHARS: usize = 300;
 const FIELD_LABEL_MAX_CHARS: usize = 60;
 const REASONING_MAX_CHARS: usize = 4_000;
@@ -294,7 +300,8 @@ pub struct GateV2Decision {
 pub struct SubjectV2 {
     /// Copied into the answer; never drawn.
     pub binding: GateSubjectBinding,
-    /// [`SALAAM_OPERATION_SCHEMA`] or [`HARNESS_PERMISSION_SCHEMA`].
+    /// [`SALAAM_OPERATION_SCHEMA`], [`HARNESS_PERMISSION_SCHEMA`] or
+    /// [`STK_CAPABILITY_SCHEMA`].
     pub schema: String,
     /// Drawn verbatim, as a gate's.
     pub preview: Vec<GatePreviewBlock>,
@@ -775,6 +782,7 @@ impl CustomEventRenderer for GateV2Renderer {
                 question_v2: None,
                 delivery_v2: None,
                 permission_v2: None,
+                attention_v2: None,
             }),
         }
     }

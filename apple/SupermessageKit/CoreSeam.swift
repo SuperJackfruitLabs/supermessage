@@ -235,6 +235,12 @@ public protocol NotificationAnswering: Sendable {
     func sendPermissionAnswerV2(
         roomId: String, permission: PermissionV2Decision, optionId: String, inReplyTo: String
     ) async throws
+    /// A card waiting on a person (attention.v2), answered from its card —
+    /// which needs no focused timeline either.
+    func sendAttentionAnswerV2(
+        roomId: String, attention: AttentionV2Decision, optionId: String, text: String?,
+        inReplyTo: String
+    ) async throws
 }
 
 /// A conformer that predates gate.v2 notifications — a test double — answers
@@ -249,6 +255,13 @@ extension NotificationAnswering {
 
     public func sendPermissionAnswerV2(
         roomId: String, permission: PermissionV2Decision, optionId: String, inReplyTo: String
+    ) async throws {
+        throw CancellationError()
+    }
+
+    public func sendAttentionAnswerV2(
+        roomId: String, attention: AttentionV2Decision, optionId: String, text: String?,
+        inReplyTo: String
     ) async throws {
         throw CancellationError()
     }

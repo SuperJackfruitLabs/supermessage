@@ -396,9 +396,14 @@ pub fn notification_for_row(
             // new answer for every host's action handler — where the typed
             // "Reject" a v1 action sends is unbound. Open is the honest
             // offer until a bound reject is wired end to end.
+            //
+            // A card waiting on a person only opens too: every resume needs
+            // an instruction a notification cannot check, and archiving a
+            // card from the lock screen is not a choice to make unread.
             if decision.question_v2.is_some()
                 || decision.delivery_v2.is_some()
                 || decision.permission_v2.is_some()
+                || decision.attention_v2.is_some()
             {
                 return Some(base);
             }
@@ -895,6 +900,7 @@ fn decide_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> NotificationDt
                 // beside it, is the news. Never a second buzz, never actions.
                 if event_type == crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE
                     || event_type == crate::permission_v2::PERMISSION_OUTCOME_EVENT_TYPE
+                    || event_type == crate::attention_v2::ATTENTION_OUTCOME_EVENT_TYPE
                 {
                     return quiet(
                         NotificationSuppression::NotNews,
@@ -973,6 +979,7 @@ mod tests {
             question_v2: None,
             delivery_v2: None,
             permission_v2: None,
+            attention_v2: None,
         }
     }
 
@@ -1706,6 +1713,45 @@ mod tests {
         }));
         assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
         assert_eq!(note.category, NotificationCategory::Message);
+    }
+
+    #[test]
+    fn a_waiting_card_notifies_as_a_decision_that_only_opens() {
+        for index in [0, 1] {
+            let note = notify(message(corpus_accept(
+                crate::attention_v2::ATTENTION_V2_EVENT_TYPE,
+                index,
+            )));
+            assert_eq!(note.category, NotificationCategory::Decision, "{index}");
+            assert_eq!(note.gate, None, "{index}");
+            assert_eq!(note.permission, None, "{index}");
+            assert_eq!(note.suppress, None, "{index}");
+        }
+    }
+
+    #[test]
+    fn a_waiting_cards_outcome_is_not_news() {
+        let outcome = corpus_accept(crate::attention_v2::ATTENTION_OUTCOME_EVENT_TYPE, 0);
+        let note = notify(json!({
+            "type": crate::attention_v2::ATTENTION_OUTCOME_EVENT_TYPE,
+            "event_id": "$e",
+            "sender": "@board_speaker:hs",
+            "origin_server_ts": 1,
+            "content": outcome,
+        }));
+        assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
+        assert_eq!(note.category, NotificationCategory::Message);
+    }
+
+    #[test]
+    fn a_supertoolkit_approval_request_only_opens() {
+        let note = notify(message(corpus_variant(
+            crate::question_v2::QUESTION_V2_EVENT_TYPE,
+            "approval-request",
+        )));
+        assert_eq!(note.category, NotificationCategory::Decision);
+        assert_eq!(note.gate, None);
+        assert_eq!(note.permission, None);
     }
 
     #[test]

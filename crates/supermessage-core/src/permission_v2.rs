@@ -254,6 +254,7 @@ impl CustomEventRenderer for PermissionV2Renderer {
                 question_v2: None,
                 delivery_v2: None,
                 permission_v2: Some(permission.decision()),
+                attention_v2: None,
             }),
         }
     }

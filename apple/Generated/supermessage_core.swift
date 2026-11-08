@@ -904,6 +904,216 @@ public func FfiConverterTypeAgentAvatarStyle_lower(_ value: AgentAvatarStyle) ->
 
 
 /**
+ * A waiting card as a host draws and answers it. Rides on
+ * `CustomEventDecision::attention_v2`.
+ */
+public struct AttentionV2Decision {
+    /**
+     * Handed back verbatim in the answer.
+     */
+    public var boardId: String
+    /**
+     * Handed back verbatim in the answer.
+     */
+    public var cardId: String
+    /**
+     * This particular wait, handed back verbatim: the board refuses an
+     * answer naming a wait that has ended.
+     */
+    public var waitId: String
+    /**
+     * Display text, bounded.
+     */
+    public var cardTitle: String
+    /**
+     * Display text, bounded.
+     */
+    public var stageName: String
+    public var reason: AttentionReason
+    /**
+     * [`reason_words`] for this card.
+     */
+    public var reasonText: String
+    /**
+     * The park's one-line summary, verbatim (bounded), when it gave one.
+     */
+    public var summary: String?
+    /**
+     * The agent's detail, verbatim (bounded), when it gave one. Drawn as
+     * preformatted text: the hub fences it.
+     */
+    public var detail: String?
+    /**
+     * How many attempts failed, when the board counted.
+     */
+    public var failureCount: UInt32?
+    /**
+     * In the card's order, by meaning: `resume_here` (approve) and each
+     * `resume_at:<stageKey>` (choose) ask for a required text input;
+     * `archive` (reject) asks for none.
+     */
+    public var options: [GateOptionV2]
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Handed back verbatim in the answer.
+         */boardId: String, 
+        /**
+         * Handed back verbatim in the answer.
+         */cardId: String, 
+        /**
+         * This particular wait, handed back verbatim: the board refuses an
+         * answer naming a wait that has ended.
+         */waitId: String, 
+        /**
+         * Display text, bounded.
+         */cardTitle: String, 
+        /**
+         * Display text, bounded.
+         */stageName: String, reason: AttentionReason, 
+        /**
+         * [`reason_words`] for this card.
+         */reasonText: String, 
+        /**
+         * The park's one-line summary, verbatim (bounded), when it gave one.
+         */summary: String?, 
+        /**
+         * The agent's detail, verbatim (bounded), when it gave one. Drawn as
+         * preformatted text: the hub fences it.
+         */detail: String?, 
+        /**
+         * How many attempts failed, when the board counted.
+         */failureCount: UInt32?, 
+        /**
+         * In the card's order, by meaning: `resume_here` (approve) and each
+         * `resume_at:<stageKey>` (choose) ask for a required text input;
+         * `archive` (reject) asks for none.
+         */options: [GateOptionV2]) {
+        self.boardId = boardId
+        self.cardId = cardId
+        self.waitId = waitId
+        self.cardTitle = cardTitle
+        self.stageName = stageName
+        self.reason = reason
+        self.reasonText = reasonText
+        self.summary = summary
+        self.detail = detail
+        self.failureCount = failureCount
+        self.options = options
+    }
+}
+
+
+
+extension AttentionV2Decision: Equatable, Hashable {
+    public static func ==(lhs: AttentionV2Decision, rhs: AttentionV2Decision) -> Bool {
+        if lhs.boardId != rhs.boardId {
+            return false
+        }
+        if lhs.cardId != rhs.cardId {
+            return false
+        }
+        if lhs.waitId != rhs.waitId {
+            return false
+        }
+        if lhs.cardTitle != rhs.cardTitle {
+            return false
+        }
+        if lhs.stageName != rhs.stageName {
+            return false
+        }
+        if lhs.reason != rhs.reason {
+            return false
+        }
+        if lhs.reasonText != rhs.reasonText {
+            return false
+        }
+        if lhs.summary != rhs.summary {
+            return false
+        }
+        if lhs.detail != rhs.detail {
+            return false
+        }
+        if lhs.failureCount != rhs.failureCount {
+            return false
+        }
+        if lhs.options != rhs.options {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(boardId)
+        hasher.combine(cardId)
+        hasher.combine(waitId)
+        hasher.combine(cardTitle)
+        hasher.combine(stageName)
+        hasher.combine(reason)
+        hasher.combine(reasonText)
+        hasher.combine(summary)
+        hasher.combine(detail)
+        hasher.combine(failureCount)
+        hasher.combine(options)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAttentionV2Decision: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AttentionV2Decision {
+        return
+            try AttentionV2Decision(
+                boardId: FfiConverterString.read(from: &buf), 
+                cardId: FfiConverterString.read(from: &buf), 
+                waitId: FfiConverterString.read(from: &buf), 
+                cardTitle: FfiConverterString.read(from: &buf), 
+                stageName: FfiConverterString.read(from: &buf), 
+                reason: FfiConverterTypeAttentionReason.read(from: &buf), 
+                reasonText: FfiConverterString.read(from: &buf), 
+                summary: FfiConverterOptionString.read(from: &buf), 
+                detail: FfiConverterOptionString.read(from: &buf), 
+                failureCount: FfiConverterOptionUInt32.read(from: &buf), 
+                options: FfiConverterSequenceTypeGateOptionV2.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AttentionV2Decision, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.boardId, into: &buf)
+        FfiConverterString.write(value.cardId, into: &buf)
+        FfiConverterString.write(value.waitId, into: &buf)
+        FfiConverterString.write(value.cardTitle, into: &buf)
+        FfiConverterString.write(value.stageName, into: &buf)
+        FfiConverterTypeAttentionReason.write(value.reason, into: &buf)
+        FfiConverterString.write(value.reasonText, into: &buf)
+        FfiConverterOptionString.write(value.summary, into: &buf)
+        FfiConverterOptionString.write(value.detail, into: &buf)
+        FfiConverterOptionUInt32.write(value.failureCount, into: &buf)
+        FfiConverterSequenceTypeGateOptionV2.write(value.options, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAttentionV2Decision_lift(_ buf: RustBuffer) throws -> AttentionV2Decision {
+    return try FfiConverterTypeAttentionV2Decision.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAttentionV2Decision_lower(_ value: AttentionV2Decision) -> RustBuffer {
+    return FfiConverterTypeAttentionV2Decision.lower(value)
+}
+
+
+/**
  * What an `m.audio` event says about itself beyond being a file: the
  * MSC3245 voice flag, the length, and the MSC3246 waveform — already
  * normalised to `0..=1` and bounded (`core::audio::audio_meta`), because
@@ -1318,6 +1528,17 @@ public struct CustomEventDecision {
      * absent from the JSON.
      */
     public var permissionV2: PermissionV2Decision?
+    /**
+     * A card waiting on a person, when the prose message carries
+     * `dev.superpipeline.attention.v2` (`crate::attention_v2`): the card,
+     * the stage, the reason in words, the agent's detail, and the options
+     * by meaning — resume here, resume at an earlier stage (each with a
+     * required instruction), archive. Answered with
+     * `send_attention_answer_v2`. [`Self::options`] is empty: no plain
+     * reply answers a waiting card. `None` otherwise, and absent from the
+     * JSON.
+     */
+    public var attentionV2: AttentionV2Decision?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1373,7 +1594,17 @@ public struct CustomEventDecision {
          * then holds only the options a plain reply may send — never one that
          * allows — each id its name, as for a v1 request. `None` otherwise, and
          * absent from the JSON.
-         */permissionV2: PermissionV2Decision? = nil) {
+         */permissionV2: PermissionV2Decision? = nil, 
+        /**
+         * A card waiting on a person, when the prose message carries
+         * `dev.superpipeline.attention.v2` (`crate::attention_v2`): the card,
+         * the stage, the reason in words, the agent's detail, and the options
+         * by meaning — resume here, resume at an earlier stage (each with a
+         * required instruction), archive. Answered with
+         * `send_attention_answer_v2`. [`Self::options`] is empty: no plain
+         * reply answers a waiting card. `None` otherwise, and absent from the
+         * JSON.
+         */attentionV2: AttentionV2Decision? = nil) {
         self.prompt = prompt
         self.options = options
         self.subject = subject
@@ -1381,6 +1612,7 @@ public struct CustomEventDecision {
         self.questionV2 = questionV2
         self.deliveryV2 = deliveryV2
         self.permissionV2 = permissionV2
+        self.attentionV2 = attentionV2
     }
 }
 
@@ -1409,6 +1641,9 @@ extension CustomEventDecision: Equatable, Hashable {
         if lhs.permissionV2 != rhs.permissionV2 {
             return false
         }
+        if lhs.attentionV2 != rhs.attentionV2 {
+            return false
+        }
         return true
     }
 
@@ -1420,6 +1655,7 @@ extension CustomEventDecision: Equatable, Hashable {
         hasher.combine(questionV2)
         hasher.combine(deliveryV2)
         hasher.combine(permissionV2)
+        hasher.combine(attentionV2)
     }
 }
 
@@ -1437,7 +1673,8 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
                 gateV2: FfiConverterOptionTypeGateV2Decision.read(from: &buf), 
                 questionV2: FfiConverterOptionTypeQuestionV2Decision.read(from: &buf), 
                 deliveryV2: FfiConverterOptionTypeGateV2Decision.read(from: &buf), 
-                permissionV2: FfiConverterOptionTypePermissionV2Decision.read(from: &buf)
+                permissionV2: FfiConverterOptionTypePermissionV2Decision.read(from: &buf), 
+                attentionV2: FfiConverterOptionTypeAttentionV2Decision.read(from: &buf)
         )
     }
 
@@ -1449,6 +1686,7 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
         FfiConverterOptionTypeQuestionV2Decision.write(value.questionV2, into: &buf)
         FfiConverterOptionTypeGateV2Decision.write(value.deliveryV2, into: &buf)
         FfiConverterOptionTypePermissionV2Decision.write(value.permissionV2, into: &buf)
+        FfiConverterOptionTypeAttentionV2Decision.write(value.attentionV2, into: &buf)
     }
 }
 
@@ -4796,6 +5034,13 @@ public struct QuestionV2Decision {
      * options were withheld.
      */
     public var approvalsWithheld: String?
+    /**
+     * Set on a SuperToolkit approval request — a write held for approval,
+     * hosted on a board but on no card — to its request id. A host then
+     * says it is a SuperToolkit approval and offers no card to open. `None`
+     * for every question asked on a card.
+     */
+    public var approvalRequestId: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -4820,13 +5065,20 @@ public struct QuestionV2Decision {
         /**
          * `crate::gate_v2::APPROVALS_WITHHELD_NOTE` when approve-meaning
          * options were withheld.
-         */approvalsWithheld: String? = nil) {
+         */approvalsWithheld: String? = nil, 
+        /**
+         * Set on a SuperToolkit approval request — a write held for approval,
+         * hosted on a board but on no card — to its request id. A host then
+         * says it is a SuperToolkit approval and offers no card to open. `None`
+         * for every question asked on a card.
+         */approvalRequestId: String? = nil) {
         self.elicitationId = elicitationId
         self.question = question
         self.options = options
         self.freeText = freeText
         self.subject = subject
         self.approvalsWithheld = approvalsWithheld
+        self.approvalRequestId = approvalRequestId
     }
 }
 
@@ -4852,6 +5104,9 @@ extension QuestionV2Decision: Equatable, Hashable {
         if lhs.approvalsWithheld != rhs.approvalsWithheld {
             return false
         }
+        if lhs.approvalRequestId != rhs.approvalRequestId {
+            return false
+        }
         return true
     }
 
@@ -4862,6 +5117,7 @@ extension QuestionV2Decision: Equatable, Hashable {
         hasher.combine(freeText)
         hasher.combine(subject)
         hasher.combine(approvalsWithheld)
+        hasher.combine(approvalRequestId)
     }
 }
 
@@ -4878,7 +5134,8 @@ public struct FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer {
                 options: FfiConverterSequenceTypeGateOptionV2.read(from: &buf), 
                 freeText: FfiConverterOptionTypeQuestionFreeText.read(from: &buf), 
                 subject: FfiConverterOptionTypeSubjectV2.read(from: &buf), 
-                approvalsWithheld: FfiConverterOptionString.read(from: &buf)
+                approvalsWithheld: FfiConverterOptionString.read(from: &buf), 
+                approvalRequestId: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -4889,6 +5146,7 @@ public struct FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer {
         FfiConverterOptionTypeQuestionFreeText.write(value.freeText, into: &buf)
         FfiConverterOptionTypeSubjectV2.write(value.subject, into: &buf)
         FfiConverterOptionString.write(value.approvalsWithheld, into: &buf)
+        FfiConverterOptionString.write(value.approvalRequestId, into: &buf)
     }
 }
 
@@ -6302,14 +6560,16 @@ public struct RoomSummary {
      */
     public var lastMessageNamesSender: Bool
     /**
-     * The Matrix event type, populated **only** for a custom
-     * (`MsgLikeKind::Other`) event; `None` for an ordinary message. This is
-     * the hook §6.1.1's pending-decision path keys off.
+     * The Matrix event type for a custom (`MsgLikeKind::Other`) event, or,
+     * for someone else's message carrying a decision card this client draws,
+     * the type that card is drawn as (`core::room_preview::pending_decision_type`);
+     * `None` for an ordinary message. This is the hook §6.1.1's
+     * pending-decision path keys off.
      *
-     * Unreachable in production today, for two independent reasons: no gate
-     * schema exists to send, *and* the SDK's own latest-event filter rejects
-     * unrecognized message-like content outright (see
-     * `core::rooms::room_preview`).
+     * A separate custom event never reaches it in production: the SDK's own
+     * latest-event filter rejects unrecognized message-like content outright
+     * (see `core::rooms::room_preview`). A decision carried on its prose
+     * message does.
      */
     public var lastEventType: String?
     public var lastActivityMs: UInt64?
@@ -6372,14 +6632,16 @@ public struct RoomSummary {
          * this was chosen over).
          */lastMessageNamesSender: Bool, 
         /**
-         * The Matrix event type, populated **only** for a custom
-         * (`MsgLikeKind::Other`) event; `None` for an ordinary message. This is
-         * the hook §6.1.1's pending-decision path keys off.
+         * The Matrix event type for a custom (`MsgLikeKind::Other`) event, or,
+         * for someone else's message carrying a decision card this client draws,
+         * the type that card is drawn as (`core::room_preview::pending_decision_type`);
+         * `None` for an ordinary message. This is the hook §6.1.1's
+         * pending-decision path keys off.
          *
-         * Unreachable in production today, for two independent reasons: no gate
-         * schema exists to send, *and* the SDK's own latest-event filter rejects
-         * unrecognized message-like content outright (see
-         * `core::rooms::room_preview`).
+         * A separate custom event never reaches it in production: the SDK's own
+         * latest-event filter rejects unrecognized message-like content outright
+         * (see `core::rooms::room_preview`). A decision carried on its prose
+         * message does.
          */lastEventType: String?, lastActivityMs: UInt64?, 
         /**
          * Which harness this room's agent runs, and on which machine — both in
@@ -7306,7 +7568,8 @@ public struct SubjectV2 {
      */
     public var binding: GateSubjectBinding
     /**
-     * [`SALAAM_OPERATION_SCHEMA`] or [`HARNESS_PERMISSION_SCHEMA`].
+     * [`SALAAM_OPERATION_SCHEMA`], [`HARNESS_PERMISSION_SCHEMA`] or
+     * [`STK_CAPABILITY_SCHEMA`].
      */
     public var schema: String
     /**
@@ -7326,7 +7589,8 @@ public struct SubjectV2 {
          * Copied into the answer; never drawn.
          */binding: GateSubjectBinding, 
         /**
-         * [`SALAAM_OPERATION_SCHEMA`] or [`HARNESS_PERMISSION_SCHEMA`].
+         * [`SALAAM_OPERATION_SCHEMA`], [`HARNESS_PERMISSION_SCHEMA`] or
+         * [`STK_CAPABILITY_SCHEMA`].
          */schema: String, 
         /**
          * Drawn verbatim, as a gate's.
@@ -11949,6 +12213,89 @@ extension AgentState: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * Why a card waits on a person.
+ */
+
+public enum AttentionReason {
+    
+    /**
+     * Its attempts at this stage kept failing.
+     */
+    case repeatedFailure
+    /**
+     * Its agent said it cannot go on.
+     */
+    case blocked
+    /**
+     * Its agent was not allowed to do what the stage needs.
+     */
+    case notAuthorised
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAttentionReason: FfiConverterRustBuffer {
+    typealias SwiftType = AttentionReason
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AttentionReason {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .repeatedFailure
+        
+        case 2: return .blocked
+        
+        case 3: return .notAuthorised
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: AttentionReason, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .repeatedFailure:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .blocked:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .notAuthorised:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAttentionReason_lift(_ buf: RustBuffer) throws -> AttentionReason {
+    return try FfiConverterTypeAttentionReason.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAttentionReason_lower(_ value: AttentionReason) -> RustBuffer {
+    return FfiConverterTypeAttentionReason.lower(value)
+}
+
+
+
+extension AttentionReason: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * A palette role a tile is drawn in.
  */
 
@@ -15851,6 +16198,30 @@ fileprivate struct FfiConverterOptionTypeAgentAvatarStyle: FfiConverterRustBuffe
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeAgentAvatarStyle.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeAttentionV2Decision: FfiConverterRustBuffer {
+    typealias SwiftType = AttentionV2Decision?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeAttentionV2Decision.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeAttentionV2Decision.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
