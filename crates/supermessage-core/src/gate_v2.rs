@@ -23,6 +23,12 @@
 //!   subject of never reaches a host, so no host can draw it by mistake.
 //! - **The answer carries the binding.** `decision.v2` copies the subject's id
 //!   and digest from the gate the reader saw ([`decision_request`]).
+//! - **A choice of versions.** A gate may carry up to three versions in
+//!   `subject.variants` instead of one subject (charter →
+//!   `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md`). Each
+//!   is withheld on its own by the preview rule, and an approval carries the
+//!   chosen version's binding. A malformed set makes the whole gate.v2
+//!   unreadable, so the v1 card — which never approves — is drawn.
 //!
 //! A message whose v2 fields do not validate is read exactly as before: the
 //! embedded v1 card. [`parse`] is the one place that decides which.
@@ -287,7 +293,49 @@ pub struct GateV2Decision {
     pub approvals_withheld: Option<String>,
     /// Present on a subject-bound gate; copied into the answer.
     pub subject: Option<GateSubjectBinding>,
+    /// A choice of versions (charter →
+    /// `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md`), in
+    /// the gate's order; empty for any other gate. On a variant gate
+    /// `subject` and `preview` are empty — each version carries its own —
+    /// and an approving option is answered with the chosen version
+    /// ([`decision_request`]), which must be [`GateVariantV2::approvable`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[uniffi(default = [])]
+    pub variants: Vec<GateVariantV2>,
 }
+
+/// One version a variant gate offers: its label, its own subject and
+/// preview, and whether this client may approve it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct GateVariantV2 {
+    /// Handed back verbatim as the chosen version; never drawn.
+    pub id: String,
+    /// One line, bounded. Display only.
+    pub label: String,
+    /// Its preview drawn verbatim, and the binding an approval copies.
+    pub subject: SubjectV2,
+    /// Its whole preview was drawable and the board said it was complete.
+    /// Only such a version may be chosen here; the rest are chosen on the
+    /// board. Request changes and reject never depend on it.
+    pub approvable: bool,
+    /// [`VARIANT_WITHHELD_NOTE`] exactly when not `approvable`.
+    pub withheld: Option<String>,
+}
+
+/// What a version that cannot be chosen here says, under its preview.
+/// Worded here so no host words it differently.
+pub const VARIANT_WITHHELD_NOTE: &str = "Too long to show here \u{2014} choose it on the board.";
+
+/// What a variant gate says when no version at all can be chosen here.
+pub const VARIANTS_WITHHELD_NOTE: &str =
+    "None of these versions can be shown in full here. Open the card to choose one.";
+
+/// The most versions a gate may offer (operator ruling, 2026-11-09).
+pub const VARIANTS_MAX: usize = 3;
+
+/// A version's label sits in a sentence and a picker row. The hub's bound.
+const VARIANT_LABEL_MAX_CHARS: usize = 80;
 
 /// The subject a question.v2 or a permission.v2 is bound to, as a host draws
 /// it: the preview verbatim, and the binding the answer copies back.
@@ -347,6 +395,30 @@ pub(crate) struct ParsedGateV2 {
     deep_link: Option<String>,
     options: Vec<GateOptionV2>,
     subject: Option<Subject>,
+    /// A variant gate's versions; empty otherwise, and then `subject` may be
+    /// set. Never both.
+    variants: Vec<Variant>,
+}
+
+/// One version of a variant gate as read off the wire.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Variant {
+    id: String,
+    label: String,
+    subject: Subject,
+}
+
+impl Variant {
+    fn view(&self) -> GateVariantV2 {
+        let approvable = self.subject.complete;
+        GateVariantV2 {
+            id: self.id.clone(),
+            label: self.label.clone(),
+            subject: self.subject.view(),
+            approvable,
+            withheld: (!approvable).then(|| VARIANT_WITHHELD_NOTE.to_string()),
+        }
+    }
 }
 
 /// A non-empty string at `value[key]`, unbounded — an identifier, compared
@@ -441,6 +513,63 @@ pub(crate) fn parse_subject(content: &Value) -> Result<Option<Subject>, ()> {
             .map(str::to_string),
         expires_at: safe_string_field(raw, "expires_at", EXPIRES_AT_MAX_CHARS),
     }))
+}
+
+/// Whether `content.subject` declares a choice of versions — well formed or
+/// not. Such a subject is never read as a single subject, even with an `id`
+/// and `digest` beside its `variants` (the corpus refuses that).
+fn declares_variants(content: &Value) -> bool {
+    content
+        .get("subject")
+        .and_then(Value::as_object)
+        .is_some_and(|s| s.contains_key("variants"))
+}
+
+/// `content.subject.variants`, or `Err(())` when they are not a choice a
+/// client can honestly offer: an `id` or `digest` beside them, not a list,
+/// none, more than [`VARIANTS_MAX`], a version without an id or a label, a
+/// version whose own subject has no id or digest ([`parse_subject`]), or two
+/// versions sharing an id or a subject id. Any of these makes the whole
+/// gate.v2 unreadable, so the v1 card — which never approves — is drawn.
+///
+/// Each version's preview is judged on its own: one that is incomplete is
+/// read, and only it is withheld.
+fn parse_variants(content: &Value) -> Result<Vec<Variant>, ()> {
+    let raw = content
+        .get("subject")
+        .and_then(Value::as_object)
+        .ok_or(())?;
+    if raw.contains_key("id") || raw.contains_key("digest") {
+        return Err(());
+    }
+    let list = raw.get("variants").and_then(Value::as_array).ok_or(())?;
+    if list.is_empty() || list.len() > VARIANTS_MAX {
+        return Err(());
+    }
+    let mut variants: Vec<Variant> = Vec::with_capacity(list.len());
+    for entry in list {
+        let id = id_field(entry, "id").ok_or(())?;
+        let label = entry
+            .get("label")
+            .and_then(Value::as_str)
+            .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|l| !l.is_empty())
+            .map(|l| bound_text(&l, VARIANT_LABEL_MAX_CHARS))
+            .ok_or(())?;
+        // A version's `subject` is the ordinary envelope, read by the one
+        // reader every subject goes through.
+        let subject = parse_subject(entry)?.ok_or(())?;
+        if variants
+            .iter()
+            .any(|v| v.id == id || v.subject.binding.id == subject.binding.id)
+        {
+            // Choosing is by version: two sharing an id, or one subject
+            // offered twice, make the answer ambiguous.
+            return Err(());
+        }
+        variants.push(Variant { id, label, subject });
+    }
+    Ok(variants)
 }
 
 /// `content.subject` as a question.v2 or a permission.v2 carries it — the
@@ -654,7 +783,11 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedGateV2>
     let gate_id = id_field(content, "gate_id")?;
     let card_title = safe_string_field(content, "card_title", FIELD_VALUE_MAX_CHARS)?;
     let options = parse_options(content)?;
-    let subject = parse_subject(content).ok()?;
+    let (subject, variants) = if declares_variants(content) {
+        (None, parse_variants(content).ok()?)
+    } else {
+        (parse_subject(content).ok()?, Vec::new())
+    };
     Some(ParsedGateV2 {
         gate_id,
         card_title,
@@ -664,6 +797,7 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedGateV2>
         deep_link: safe_link(content, "deep_link"),
         options,
         subject,
+        variants,
     })
 }
 
@@ -680,7 +814,7 @@ pub fn embedded_payload(content: &Value) -> Option<Value> {
     let mut payload = content.as_object()?.clone();
     payload.remove("body");
     payload.remove(crate::embedded::EMBEDDED_GATE_KEY);
-    if parsed.subject.is_some() {
+    if parsed.bound() {
         payload.remove("handoff_summary");
     }
     let payload = Value::Object(payload);
@@ -691,16 +825,32 @@ pub fn embedded_payload(content: &Value) -> Option<Value> {
 }
 
 impl ParsedGateV2 {
+    /// Bound to a subject or to a choice of them: an approval needs a
+    /// preview the reader saw, and the handoff summary is that preview's
+    /// text again (or, for a choice, a pointer to the card).
+    fn bound(&self) -> bool {
+        self.subject.is_some() || !self.variants.is_empty()
+    }
+
     /// Whether this client may offer an approving option: a gate bound to no
-    /// subject, or one whose whole preview it can draw.
+    /// subject, one whose whole preview it can draw, or a choice with at
+    /// least one version it can draw whole — which version an approval may
+    /// name is checked again when it is sent ([`decision_request`]).
     fn approvable(&self) -> bool {
+        if !self.variants.is_empty() {
+            return self.variants.iter().any(|v| v.subject.complete);
+        }
         self.subject.as_ref().is_none_or(|s| s.complete)
     }
 
     /// The card a host draws.
     fn decision(&self) -> GateV2Decision {
-        let (options, approvals_withheld) =
-            offerable(&self.options, self.approvable(), APPROVALS_WITHHELD_NOTE);
+        let note = if self.variants.is_empty() {
+            APPROVALS_WITHHELD_NOTE
+        } else {
+            VARIANTS_WITHHELD_NOTE
+        };
+        let (options, approvals_withheld) = offerable(&self.options, self.approvable(), note);
         GateV2Decision {
             gate_id: self.gate_id.clone(),
             options,
@@ -711,6 +861,7 @@ impl ParsedGateV2 {
                 .unwrap_or_default(),
             approvals_withheld,
             subject: self.subject.as_ref().map(|s| s.binding.clone()),
+            variants: self.variants.iter().map(Variant::view).collect(),
         }
     }
 
@@ -722,7 +873,7 @@ impl ParsedGateV2 {
         self.options
             .iter()
             .filter(|o| GATE_OPTION_IDS.contains(&o.id.as_str()))
-            .filter(|o| self.subject.is_none() || o.meaning != GateOptionMeaning::Approve)
+            .filter(|o| !self.bound() || o.meaning != GateOptionMeaning::Approve)
             .map(|o| CustomEventDecisionOption {
                 id: o.id.clone(),
                 label: o.label.clone(),
@@ -765,9 +916,7 @@ impl CustomEventRenderer for GateV2Renderer {
             fields,
             // A subject-bound gate's summary is its preview's text, drawn
             // above as the preview itself.
-            reasoning: gate
-                .subject
-                .is_none()
+            reasoning: (!gate.bound())
                 .then(|| gate.handoff_summary.clone())
                 .flatten(),
             link: gate.deep_link.clone(),
@@ -825,12 +974,21 @@ pub(crate) fn decision_body(option: &GateOptionV2) -> String {
 /// shown in full, an option that needs a comment sent without one, and a
 /// reference that is not an event id.
 ///
+/// `chosen_variant` is the id of the version picked on a variant gate
+/// ([`GateV2Decision::variants`]). An approving answer to such a gate must
+/// name one this client may approve, and carries that version's binding;
+/// request changes and reject act on the whole set and carry none, so a
+/// chosen version beside them is not sent. A chosen version on a gate that
+/// offers none is refused: the reader picked something this gate is not.
+///
 /// `comment` is always present — `null` when there is none — matching the
 /// corpus's decision.v2 examples; `subject` is present exactly when the gate
-/// was bound to one.
+/// was bound to one. An answer to a variant gate is the corpus's too, which
+/// leaves out a `comment` it does not have.
 pub(crate) fn decision_request(
     gate: &GateV2Decision,
     option_id: &str,
+    chosen_variant: Option<&str>,
     comment: Option<&str>,
     in_reply_to: &str,
 ) -> CoreResult<Value> {
@@ -856,6 +1014,7 @@ pub(crate) fn decision_request(
             option.label
         )));
     }
+    let binding = binding_for(gate, option, chosen_variant)?;
     let event_id = matrix_sdk::ruma::EventId::parse(in_reply_to)
         .map_err(|e| CoreError::Protocol(e.to_string()))?;
     let mut content = serde_json::json!({
@@ -871,10 +1030,51 @@ pub(crate) fn decision_request(
             "event_id": event_id.as_str(),
         },
     });
-    if let Some(subject) = &gate.subject {
+    if !gate.variants.is_empty() && comment.is_none() {
+        content
+            .as_object_mut()
+            .expect("built as an object")
+            .remove("comment");
+    }
+    if let Some(subject) = binding {
         content["subject"] = serde_json::json!({ "id": subject.id, "digest": subject.digest });
     }
     Ok(content)
+}
+
+/// The binding an answer carries: the gate's own subject; on a variant gate
+/// the chosen version's for an approval and none otherwise. Refuses what
+/// [`decision_request`] says it refuses about versions.
+fn binding_for<'a>(
+    gate: &'a GateV2Decision,
+    option: &GateOptionV2,
+    chosen_variant: Option<&str>,
+) -> CoreResult<Option<&'a GateSubjectBinding>> {
+    if gate.variants.is_empty() {
+        if chosen_variant.is_some() {
+            return Err(CoreError::Protocol(
+                "this gate offers no versions to choose from".into(),
+            ));
+        }
+        return Ok(gate.subject.as_ref());
+    }
+    if option.meaning != GateOptionMeaning::Approve {
+        return Ok(None);
+    }
+    let chosen =
+        chosen_variant.ok_or_else(|| CoreError::Protocol("choose a version to approve".into()))?;
+    let variant = gate
+        .variants
+        .iter()
+        .find(|v| v.id == chosen)
+        .ok_or_else(|| CoreError::Protocol(format!("not a version this gate offers: {chosen}")))?;
+    if !variant.approvable {
+        return Err(CoreError::Protocol(format!(
+            "\u{201C}{}\u{201D} could not be shown in full here; choose it on the board",
+            variant.label
+        )));
+    }
+    Ok(Some(&variant.subject.binding))
 }
 
 /// The corpus, checked end to end: every gate.v2 `accept` draws from v2,
@@ -1236,7 +1436,7 @@ mod tests {
         let accepts = cases(GATE_DECISION_V2_SUITE_TYPE, "accept");
         assert_eq!(accepts.len(), 2, "the corpus grew; read the new case");
         assert_eq!(
-            decision_request(&gate, "approve_automatic", None, GATE_EVENT).unwrap(),
+            decision_request(&gate, "approve_automatic", None, None, GATE_EVENT).unwrap(),
             accepts[0].1,
             "{}",
             accepts[0].0
@@ -1245,6 +1445,7 @@ mod tests {
             decision_request(
                 &gate,
                 "request_changes",
+                None,
                 Some("Say which release."),
                 GATE_EVENT
             )
@@ -1261,7 +1462,7 @@ mod tests {
         // binding".
         let gate = v2(&publishing());
         for option in ["approve_manual", "approve_automatic", "reject"] {
-            let content = decision_request(&gate, option, None, GATE_EVENT).unwrap();
+            let content = decision_request(&gate, option, None, None, GATE_EVENT).unwrap();
             assert_eq!(
                 content["subject"],
                 json!({ "id": "aps_2c9e71", "digest": "sha256:9b2f4e0c1a7d" })
@@ -1269,7 +1470,7 @@ mod tests {
         }
         // And an ordinary gate's answer carries none.
         let ordinary = v2(&ordinary());
-        let content = decision_request(&ordinary, "approve", None, GATE_EVENT).unwrap();
+        let content = decision_request(&ordinary, "approve", None, None, GATE_EVENT).unwrap();
         assert!(content.get("subject").is_none());
         assert_eq!(content["body"], "Approved");
     }
@@ -1279,7 +1480,7 @@ mod tests {
         // Corpus reject: "an option that needs a comment, without one".
         let gate = v2(&publishing());
         for comment in [None, Some(""), Some("  \n ")] {
-            let err = decision_request(&gate, "request_changes", comment, GATE_EVENT)
+            let err = decision_request(&gate, "request_changes", None, comment, GATE_EVENT)
                 .expect_err("an empty revise must not reach the room");
             assert!(matches!(&err, CoreError::Protocol(m) if m.contains("needs a comment")));
         }
@@ -1289,7 +1490,8 @@ mod tests {
     fn an_option_the_gate_did_not_offer_is_refused() {
         // Corpus reject: "an option the gate did not offer".
         let gate = v2(&publishing());
-        let err = decision_request(&gate, "approve", None, GATE_EVENT).expect_err("not offered");
+        let err =
+            decision_request(&gate, "approve", None, None, GATE_EVENT).expect_err("not offered");
         assert!(matches!(&err, CoreError::Protocol(m) if m.contains("approve")));
     }
 
@@ -1298,7 +1500,7 @@ mod tests {
         let mut content = publishing();
         content["subject"]["preview_complete"] = json!(false);
         let gate = v2(&content);
-        assert!(decision_request(&gate, "approve_automatic", None, GATE_EVENT).is_err());
+        assert!(decision_request(&gate, "approve_automatic", None, None, GATE_EVENT).is_err());
         // Even if a host put it back.
         let mut forged = gate.clone();
         forged.options.insert(
@@ -1313,17 +1515,17 @@ mod tests {
                 requires: None,
             },
         );
-        assert!(decision_request(&forged, "approve_automatic", None, GATE_EVENT).is_err());
+        assert!(decision_request(&forged, "approve_automatic", None, None, GATE_EVENT).is_err());
         // Revise and reject still go.
-        assert!(decision_request(&gate, "reject", None, GATE_EVENT).is_ok());
+        assert!(decision_request(&gate, "reject", None, None, GATE_EVENT).is_ok());
     }
 
     #[test]
     fn an_answer_must_reference_the_gate_event() {
         // Corpus reject: "no m.relates_to".
         let gate = v2(&publishing());
-        assert!(decision_request(&gate, "reject", None, "not-an-event").is_err());
-        let content = decision_request(&gate, "reject", None, GATE_EVENT).unwrap();
+        assert!(decision_request(&gate, "reject", None, None, "not-an-event").is_err());
+        let content = decision_request(&gate, "reject", None, None, GATE_EVENT).unwrap();
         assert_eq!(
             content["m.relates_to"],
             json!({ "rel_type": "m.reference", "event_id": GATE_EVENT })
@@ -1354,5 +1556,293 @@ mod tests {
         assert_eq!(decision_body(&option("Nope", Reject)), "Rejected");
         assert_eq!(decision_body(&option("Later", Defer)), "Deferred");
         assert_eq!(decision_body(&option("Blue", Choose)), "Chose — Blue");
+    }
+
+    // ---- a choice of versions (corpus `variant: "choice"`) ------------------
+
+    /// The corpus's cases for `suite_type` in its `choice` entry.
+    fn choice_cases(suite_type: &str, which: &str) -> Vec<(String, Value)> {
+        let entry = corpus()["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["suiteEventType"] == suite_type && e["variant"] == "choice")
+            .unwrap_or_else(|| panic!("the corpus pins a choice for {suite_type}"))
+            .clone();
+        entry[which]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (c["why"].as_str().unwrap().to_string(), c["content"].clone()))
+            .collect()
+    }
+
+    /// Three versions; the third was cut to its share and is incomplete.
+    fn choice() -> Value {
+        choice_cases(GATE_V2_EVENT_TYPE, "accept")[0].1.clone()
+    }
+
+    fn variant_ids(gate: &GateV2Decision) -> Vec<(&str, bool)> {
+        gate.variants
+            .iter()
+            .map(|v| (v.id.as_str(), v.approvable))
+            .collect()
+    }
+
+    #[test]
+    fn every_accepted_variant_gate_is_drawn_with_each_version_judged_alone() {
+        let accepts = choice_cases(GATE_V2_EVENT_TYPE, "accept");
+        assert_eq!(accepts.len(), 1, "the corpus grew; read the new case");
+        for (why, content) in &accepts {
+            assert!(parse(content, body(content)).is_some(), "{why}");
+            assert!(embedded_payload(content).is_some(), "{why}");
+        }
+        let gate = v2(&choice());
+        assert_eq!(
+            variant_ids(&gate),
+            [("short", true), ("thread", true), ("long", false)]
+        );
+        let labels: Vec<&str> = gate.variants.iter().map(|v| v.label.as_str()).collect();
+        assert_eq!(labels, ["Short", "With the thread", "Long form"]);
+        let withheld: Vec<Option<&str>> = gate
+            .variants
+            .iter()
+            .map(|v| v.withheld.as_deref())
+            .collect();
+        assert_eq!(withheld, [None, None, Some(VARIANT_WITHHELD_NOTE)]);
+        assert_eq!(
+            gate.variants[1].subject.binding,
+            GateSubjectBinding {
+                id: "aps_v2".into(),
+                digest: "sha256:v2d1".into()
+            }
+        );
+        assert_eq!(gate.variants[1].subject.schema, "social-publish/v1");
+        assert_eq!(
+            gate.variants[1].subject.preview,
+            [GatePreviewBlock::Text {
+                label: Some("Post".into()),
+                text: "Our next release ships today.\n\nThanks to everyone who tested it.".into(),
+            }]
+        );
+        // The incomplete one is still shown, as far as it goes.
+        assert_eq!(gate.variants[2].subject.preview.len(), 1);
+        // The gate itself has no subject of its own, and keeps every option:
+        // which version an approval may name is the version's to say.
+        assert_eq!(gate.subject, None);
+        assert!(gate.preview.is_empty());
+        assert_eq!(gate.approvals_withheld, None);
+        let ids: Vec<&str> = gate.options.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "approve_manual",
+                "approve_automatic",
+                "request_changes",
+                "reject"
+            ]
+        );
+    }
+
+    #[test]
+    fn every_rejected_variant_gate_falls_back_to_the_v1_card() {
+        let rejects = choice_cases(GATE_V2_EVENT_TYPE, "reject");
+        assert_eq!(rejects.len(), 4, "the corpus grew; read the new case");
+        for (why, content) in rejects {
+            assert!(parse(&content, body(&content)).is_none(), "{why}");
+            assert!(embedded_payload(&content).is_none(), "{why}");
+        }
+    }
+
+    /// `content` with `variants[index]` passed through `edit`.
+    fn with_variant(index: usize, edit: impl Fn(&mut serde_json::Map<String, Value>)) -> Value {
+        let mut content = choice();
+        let variant = content["subject"]["variants"][index]
+            .as_object_mut()
+            .unwrap();
+        edit(variant);
+        content
+    }
+
+    #[test]
+    fn a_malformed_choice_falls_back_too() {
+        let mut empty = choice();
+        empty["subject"]["variants"] = json!([]);
+        let mut not_a_list = choice();
+        not_a_list["subject"]["variants"] = json!({});
+        let mut digest_beside = choice();
+        digest_beside["subject"]["digest"] = json!("sha256:v1d1");
+        let cases = [
+            ("no versions", empty),
+            ("versions not a list", not_a_list),
+            ("only a digest beside the versions", digest_beside),
+            (
+                "a version without a label",
+                with_variant(0, |v| {
+                    v.remove("label");
+                }),
+            ),
+            (
+                "a blank label",
+                with_variant(0, |v| {
+                    v.insert("label".into(), json!("  \n "));
+                }),
+            ),
+            (
+                "a version without an id",
+                with_variant(1, |v| {
+                    v.insert("id".into(), json!(""));
+                }),
+            ),
+            (
+                "a version without a subject",
+                with_variant(1, |v| {
+                    v.remove("subject");
+                }),
+            ),
+            (
+                "a version whose subject has no id",
+                with_variant(2, |v| {
+                    v["subject"].as_object_mut().unwrap().remove("id");
+                }),
+            ),
+            (
+                "two versions offering one subject",
+                with_variant(1, |v| {
+                    v["subject"]["id"] = json!("aps_v1");
+                }),
+            ),
+        ];
+        for (why, content) in cases {
+            assert!(parse(&content, body(&content)).is_none(), "{why}");
+            assert!(embedded_payload(&content).is_none(), "{why}");
+        }
+    }
+
+    #[test]
+    fn a_label_is_one_line_and_bounded() {
+        let mut content = choice();
+        content["subject"]["variants"][0]["label"] = json!("  Short\n  and   sweet ");
+        content["subject"]["variants"][1]["label"] = json!("L".repeat(500));
+        let gate = v2(&content);
+        assert_eq!(gate.variants[0].label, "Short and sweet");
+        assert_eq!(
+            gate.variants[1].label.chars().count(),
+            VARIANT_LABEL_MAX_CHARS + 1
+        );
+    }
+
+    #[test]
+    fn one_version_that_cannot_be_drawn_is_withheld_alone() {
+        let image = json!({ "type": "image", "label": "Card", "url": "https://x.example/a.png" });
+        let content = with_variant(0, |v| {
+            v["subject"]["preview"]
+                .as_array_mut()
+                .unwrap()
+                .push(image.clone());
+        });
+        let gate = v2(&content);
+        assert_eq!(
+            variant_ids(&gate),
+            [("short", false), ("thread", true), ("long", false)]
+        );
+        assert_eq!(gate.approvals_withheld, None);
+    }
+
+    #[test]
+    fn a_choice_with_no_version_shown_whole_offers_no_approval() {
+        let mut content = choice();
+        for i in 0..3 {
+            content["subject"]["variants"][i]["subject"]["preview_complete"] = json!(false);
+        }
+        let gate = v2(&content);
+        assert!(approve_ids(&gate).is_empty());
+        assert_eq!(
+            gate.approvals_withheld.as_deref(),
+            Some(VARIANTS_WITHHELD_NOTE)
+        );
+        let rest: Vec<&str> = gate.options.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(rest, ["request_changes", "reject"]);
+        let approve = decision_request(&gate, "approve_automatic", Some("short"), None, GATE_EVENT);
+        assert!(approve.is_err());
+        assert!(decision_request(&gate, "reject", None, None, GATE_EVENT).is_ok());
+    }
+
+    #[test]
+    fn a_host_without_v2_never_approves_a_choice() {
+        // Desktop and the notification actions read `options`.
+        let decision = decision_for(&choice());
+        let ids: Vec<&str> = decision.options.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(ids, ["request_changes", "reject"]);
+        assert_eq!(
+            decision.prompt,
+            "Choose a version of \"Announce the release\""
+        );
+        // The summary says to open the card; the card draws the versions.
+        let payload = embedded_payload(&choice()).unwrap();
+        assert!(payload.get("handoff_summary").is_none());
+    }
+
+    #[test]
+    fn the_answers_to_a_choice_are_exactly_the_corpus_decisions() {
+        let gate = v2(&choice());
+        let accepts = choice_cases(GATE_DECISION_V2_SUITE_TYPE, "accept");
+        assert_eq!(accepts.len(), 2, "the corpus grew; read the new case");
+        let approve =
+            decision_request(&gate, "approve_automatic", Some("thread"), None, GATE_EVENT);
+        assert_eq!(approve.unwrap(), accepts[0].1, "{}", accepts[0].0);
+        let reject = decision_request(&gate, "reject", None, None, GATE_EVENT);
+        assert_eq!(reject.unwrap(), accepts[1].1, "{}", accepts[1].0);
+        // The set is rejected whichever version was picked: no binding goes.
+        let picked = decision_request(&gate, "reject", Some("short"), None, GATE_EVENT);
+        assert_eq!(picked.unwrap(), accepts[1].1);
+        // A comment, when there is one, is carried.
+        let revise = decision_request(
+            &gate,
+            "request_changes",
+            Some("long"),
+            Some("Shorter."),
+            GATE_EVENT,
+        )
+        .unwrap();
+        assert_eq!(revise["comment"], "Shorter.");
+        assert!(revise.get("subject").is_none());
+    }
+
+    #[test]
+    fn an_approval_of_a_choice_must_name_a_version_shown_whole() {
+        let gate = v2(&choice());
+        let refused = |chosen: Option<&str>, why: &str| {
+            let sent = decision_request(&gate, "approve_manual", chosen, None, GATE_EVENT);
+            assert!(matches!(sent, Err(CoreError::Protocol(_))), "{why}");
+        };
+        // Corpus reject: "an approval with no binding: it chooses nothing".
+        refused(None, "no version chosen");
+        // Corpus reject: "choosing the variant whose preview was incomplete".
+        refused(Some("long"), "the incomplete version");
+        // Corpus reject: "a binding that names no variant of the gate".
+        refused(Some("fourth"), "an unknown version");
+        refused(Some("aps_v1"), "a subject id is not a version id");
+        // Each version a reader saw whole carries its own binding.
+        for (chosen, id, digest) in [
+            ("short", "aps_v1", "sha256:v1d1"),
+            ("thread", "aps_v2", "sha256:v2d1"),
+        ] {
+            let sent = decision_request(&gate, "approve_manual", Some(chosen), None, GATE_EVENT);
+            let content = sent.unwrap();
+            assert_eq!(content["subject"], json!({ "id": id, "digest": digest }));
+            assert_eq!(content["body"], "Approved — I'll post it myself");
+        }
+    }
+
+    #[test]
+    fn a_chosen_version_on_a_gate_without_versions_is_refused() {
+        for gate in [v2(&publishing()), v2(&ordinary())] {
+            for option in ["reject", "request_changes"] {
+                let sent = decision_request(&gate, option, Some("short"), Some("x"), GATE_EVENT);
+                let err = sent.expect_err("no versions to choose from");
+                assert!(matches!(&err, CoreError::Protocol(m) if m.contains("no versions")));
+            }
+        }
     }
 }

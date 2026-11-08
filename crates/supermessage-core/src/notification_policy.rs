@@ -635,6 +635,10 @@ fn gate_v2_response(
                 preview: Vec::new(),
                 approvals_withheld: None,
                 subject,
+                // A notification never chooses a version (charter
+                // 2026-11-09 §7): an approval of a variant gate is never
+                // carried, and request changes and reject need none.
+                variants: Vec::new(),
             },
             option_id: option_id.clone(),
             comment,
@@ -1533,8 +1537,9 @@ mod tests {
         };
         assert_eq!((room_id.as_str(), gate_event_id.as_str()), ("!a", "$g"));
         // What the core would send for it — validated as a card's answer is.
-        let content = crate::gate_v2::decision_request(&gate, &option_id, comment.as_deref(), "$g")
-            .expect("the rebuilt gate answers");
+        let content =
+            crate::gate_v2::decision_request(&gate, &option_id, None, comment.as_deref(), "$g")
+                .expect("the rebuilt gate answers");
         (option_id, comment, content)
     }
 

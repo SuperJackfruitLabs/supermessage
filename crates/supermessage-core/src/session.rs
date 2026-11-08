@@ -558,7 +558,10 @@ impl Session {
         comment: Option<&str>,
         in_reply_to: &str,
     ) -> CoreResult<()> {
-        let content = crate::gate_v2::decision_request(gate, option_id, comment, in_reply_to)?;
+        // A notification never chooses a version (charter 2026-11-09 §7), so
+        // an approval of a variant gate is refused here.
+        let content =
+            crate::gate_v2::decision_request(gate, option_id, None, comment, in_reply_to)?;
         let room = self.room_to_answer_in(room_id).await?;
         room.send_raw("m.room.message", content)
             .await

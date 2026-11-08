@@ -567,8 +567,11 @@ pub fn gate_answers(decision: &CustomEventDecision, gate_id: &str) -> Option<Gat
 /// nothing when there are several (a notification cannot say which) or the
 /// option asks for something an action cannot give. Approve is never offered
 /// for a gate bound to a subject: the charter's rule is that nobody approves
-/// what they were not shown, and a notification shows no preview. As for
-/// v1, Approve or Reject must be among them for the actions to be worth it.
+/// what they were not shown, and a notification shows no preview — nor for
+/// a choice of versions, which a notification cannot show either (charter →
+/// `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md` §7). As
+/// for v1, Approve or Reject must be among them for the actions to be worth
+/// it.
 fn gate_v2_answers(gate: &crate::gate_v2::GateV2Decision, prompt: &str) -> Option<GateAnswers> {
     use crate::gate_v2::GateOptionMeaning;
     if gate.gate_id.is_empty() {
@@ -582,7 +585,9 @@ fn gate_v2_answers(gate: &crate::gate_v2::GateV2Decision, prompt: &str) -> Optio
         }
         (comment_ok || !option.needs_comment).then(|| option.id.clone())
     };
-    let approve = (gate.subject.is_none() && gate.approvals_withheld.is_none())
+    let shows_everything =
+        gate.subject.is_none() && gate.variants.is_empty() && gate.approvals_withheld.is_none();
+    let approve = shows_everything
         .then(|| single(GateOptionMeaning::Approve, false))
         .flatten();
     let revise = single(GateOptionMeaning::Revise, true);
@@ -1663,6 +1668,38 @@ mod tests {
         let v2 = gate.v2.unwrap();
         assert_eq!(v2.approve_option_id.as_deref(), Some("approve"));
         assert_eq!(v2.subject, None);
+    }
+
+    #[test]
+    fn a_choice_of_versions_is_never_approved_from_a_notification() {
+        let note = notify(message(corpus_variant(
+            crate::gate_v2::GATE_V2_EVENT_TYPE,
+            "choice",
+        )));
+        assert_eq!(note.category, NotificationCategory::GateReview);
+        let gate = note.gate.expect("revise and reject are answerable");
+        assert_eq!(gate.gate_id, "gate_5d72");
+        assert_eq!(gate.option_ids, vec!["request_changes", "reject"]);
+        let v2 = gate.v2.expect("answered with a decision.v2");
+        assert_eq!(v2.approve_option_id, None);
+        assert_eq!(v2.revise_option_id.as_deref(), Some("request_changes"));
+        assert_eq!(v2.reject_option_id.as_deref(), Some("reject"));
+        // The set is answered whole: no version's binding rides along.
+        assert_eq!(v2.subject, None);
+    }
+
+    #[test]
+    fn a_choice_with_one_approving_option_still_offers_no_approve() {
+        // The corpus's gate has two approvals, which a notification would
+        // not offer anyway (it cannot say which); with one, only the
+        // versions keep it off the lock screen.
+        let mut content = corpus_variant(crate::gate_v2::GATE_V2_EVENT_TYPE, "choice");
+        let options = content["options"].as_array_mut().unwrap();
+        options.retain(|o| o["id"] != "approve_manual");
+        let note = notify(message(content));
+        assert_eq!(note.category, NotificationCategory::GateReview);
+        let v2 = note.gate.unwrap().v2.unwrap();
+        assert_eq!(v2.approve_option_id, None);
     }
 
     #[test]

@@ -163,6 +163,7 @@ impl ParsedDeliveryV2 {
                 .unwrap_or_default(),
             approvals_withheld: withheld.then(|| SWITCH_WITHHELD_NOTE.to_string()),
             subject: self.subject.as_ref().map(|s| s.binding.clone()),
+            variants: Vec::new(),
         }
     }
 }

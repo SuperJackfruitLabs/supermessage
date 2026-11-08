@@ -971,8 +971,14 @@ public protocol CoreProtocol : AnyObject {
      * binding into the `dev.superpipeline.gate.decision.v2` it sends. The
      * sentence left in the room is the core's, as for
      * [`Core::send_gate_decision`].
+     *
+     * `chosen_variant` is the id of the version picked on a variant gate
+     * (`GateV2Decision::variants`): an approval must name one whose
+     * `approvable` is true, and carries that version's binding; request
+     * changes and reject send none. `None` on any other gate — a chosen
+     * version there is refused.
      */
-    func sendGateDecisionV2(roomId: String, gate: GateV2Decision, optionId: String, comment: String?, inReplyTo: String) throws 
+    func sendGateDecisionV2(roomId: String, gate: GateV2Decision, optionId: String, chosenVariant: String?, comment: String?, inReplyTo: String) throws 
     
     /**
      * [`Core::send_gate_decision_v2`] for a room that need not be open — a
@@ -1969,12 +1975,19 @@ open func sendGateDecisionTo(roomId: String, gateId: String, optionId: String, c
      * binding into the `dev.superpipeline.gate.decision.v2` it sends. The
      * sentence left in the room is the core's, as for
      * [`Core::send_gate_decision`].
+     *
+     * `chosen_variant` is the id of the version picked on a variant gate
+     * (`GateV2Decision::variants`): an approval must name one whose
+     * `approvable` is true, and carries that version's binding; request
+     * changes and reject send none. `None` on any other gate — a chosen
+     * version there is refused.
      */
-open func sendGateDecisionV2(roomId: String, gate: GateV2Decision, optionId: String, comment: String?, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+open func sendGateDecisionV2(roomId: String, gate: GateV2Decision, optionId: String, chosenVariant: String?, comment: String?, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2(self.uniffiClonePointer(),
         FfiConverterString.lower(roomId),
         FfiConverterTypeGateV2Decision_lower(gate),
         FfiConverterString.lower(optionId),
+        FfiConverterOptionString.lower(chosenVariant),
         FfiConverterOptionString.lower(comment),
         FfiConverterString.lower(inReplyTo),$0
     )
@@ -6474,7 +6487,7 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to() != 20932) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2() != 3925) {
+    if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2() != 39486) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2_to() != 24924) {
