@@ -216,6 +216,11 @@ internal fun enqueuePush(context: Context, bytes: ByteArray) {
     } catch (e: Exception) {
         null
     }
+    // No account had a pusher when it came, so it is no one's and would only be
+    // dropped. It is not queued: under its event's one-job name (KEEP), a
+    // doomed job would hold the slot, and the same event pushed again once an
+    // account is stamped would be thrown away behind it.
+    if (owner == null) return
     try {
         val request = OneTimeWorkRequestBuilder<PushWorker>()
             .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)

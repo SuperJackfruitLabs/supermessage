@@ -77,8 +77,12 @@ class FakeDistributorTest {
     @After
     fun tearDown() {
         UnifiedPush.removeDistributor(context)
-        androidx.work.WorkManager.getInstance(context).cancelAllWorkByTag(dev.supermessage.notify.PushWorker.TAG)
+        // The owner first: this test's message may still be on its way, and once
+        // the owner is gone it is no one's and is not queued, so nothing queued
+        // after the cancel below can hold the next test's push.
         AppCore.pushOwner(context).account = null
+        androidx.work.WorkManager.getInstance(context)
+            .cancelAllWorkByTag(dev.supermessage.notify.PushWorker.TAG).result.get()
         AppCore.installRegistrarForTest(null)
         AppCore.installForTest(null)
         manager.cancelAll()
