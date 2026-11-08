@@ -209,6 +209,7 @@ impl CustomEventRenderer for DeliveryV2Renderer {
                 gate_v2: None,
                 question_v2: None,
                 delivery_v2: Some(delivery.decision()),
+                permission_v2: None,
             }),
         }
     }
@@ -524,6 +525,8 @@ mod tests {
             meaning: GateOptionMeaning::Approve,
             needs_comment: false,
             input: None,
+            scope: None,
+            requires: None,
         });
         assert!(answer_request(&forged, SWITCH_TO_AUTOMATIC, None, DELIVERY_EVENT).is_err());
         assert!(answer_request(

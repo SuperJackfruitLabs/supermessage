@@ -1307,6 +1307,17 @@ public struct CustomEventDecision {
      * answers a follow-up.
      */
     public var deliveryV2: GateV2Decision?
+    /**
+     * A harness permission, when the prose message carries
+     * `dev.agentpod.permission.v2` (`crate::permission_v2`): what the agent
+     * would do as a preview, the options by meaning and scope, with every
+     * allowing option already withheld when the preview could not be drawn
+     * in full. Answered with `send_permission_answer_v2`. [`Self::options`]
+     * then holds only the options a plain reply may send — never one that
+     * allows — each id its name, as for a v1 request. `None` otherwise, and
+     * absent from the JSON.
+     */
+    public var permissionV2: PermissionV2Decision?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1352,13 +1363,24 @@ public struct CustomEventDecision {
          * when the preview could not be drawn in full. Answered with
          * `send_delivery_answer_v2`. [`Self::options`] is empty: no plain reply
          * answers a follow-up.
-         */deliveryV2: GateV2Decision? = nil) {
+         */deliveryV2: GateV2Decision? = nil, 
+        /**
+         * A harness permission, when the prose message carries
+         * `dev.agentpod.permission.v2` (`crate::permission_v2`): what the agent
+         * would do as a preview, the options by meaning and scope, with every
+         * allowing option already withheld when the preview could not be drawn
+         * in full. Answered with `send_permission_answer_v2`. [`Self::options`]
+         * then holds only the options a plain reply may send — never one that
+         * allows — each id its name, as for a v1 request. `None` otherwise, and
+         * absent from the JSON.
+         */permissionV2: PermissionV2Decision? = nil) {
         self.prompt = prompt
         self.options = options
         self.subject = subject
         self.gateV2 = gateV2
         self.questionV2 = questionV2
         self.deliveryV2 = deliveryV2
+        self.permissionV2 = permissionV2
     }
 }
 
@@ -1384,6 +1406,9 @@ extension CustomEventDecision: Equatable, Hashable {
         if lhs.deliveryV2 != rhs.deliveryV2 {
             return false
         }
+        if lhs.permissionV2 != rhs.permissionV2 {
+            return false
+        }
         return true
     }
 
@@ -1394,6 +1419,7 @@ extension CustomEventDecision: Equatable, Hashable {
         hasher.combine(gateV2)
         hasher.combine(questionV2)
         hasher.combine(deliveryV2)
+        hasher.combine(permissionV2)
     }
 }
 
@@ -1410,7 +1436,8 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
                 subject: FfiConverterOptionString.read(from: &buf), 
                 gateV2: FfiConverterOptionTypeGateV2Decision.read(from: &buf), 
                 questionV2: FfiConverterOptionTypeQuestionV2Decision.read(from: &buf), 
-                deliveryV2: FfiConverterOptionTypeGateV2Decision.read(from: &buf)
+                deliveryV2: FfiConverterOptionTypeGateV2Decision.read(from: &buf), 
+                permissionV2: FfiConverterOptionTypePermissionV2Decision.read(from: &buf)
         )
     }
 
@@ -1421,6 +1448,7 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
         FfiConverterOptionTypeGateV2Decision.write(value.gateV2, into: &buf)
         FfiConverterOptionTypeQuestionV2Decision.write(value.questionV2, into: &buf)
         FfiConverterOptionTypeGateV2Decision.write(value.deliveryV2, into: &buf)
+        FfiConverterOptionTypePermissionV2Decision.write(value.permissionV2, into: &buf)
     }
 }
 
@@ -2189,6 +2217,15 @@ public struct GateOptionV2 {
      * comment, never an input's text.
      */
     public var input: OptionInput?
+    /**
+     * How far the option reaches, when it says — a strict decision's or a
+     * harness permission's option. Display only: the producer judges it.
+     */
+    public var scope: OptionScope?
+    /**
+     * Who may take it, when it says. Display only, as `scope`.
+     */
+    public var requires: OptionRequires?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -2207,12 +2244,21 @@ public struct GateOptionV2 {
          * The input this option asks for, on a question.v2 or delivery.v2
          * option. Always `None` on a gate.v2 option: a decision.v2 carries a
          * comment, never an input's text.
-         */input: OptionInput? = nil) {
+         */input: OptionInput? = nil, 
+        /**
+         * How far the option reaches, when it says — a strict decision's or a
+         * harness permission's option. Display only: the producer judges it.
+         */scope: OptionScope? = nil, 
+        /**
+         * Who may take it, when it says. Display only, as `scope`.
+         */requires: OptionRequires? = nil) {
         self.id = id
         self.label = label
         self.meaning = meaning
         self.needsComment = needsComment
         self.input = input
+        self.scope = scope
+        self.requires = requires
     }
 }
 
@@ -2235,6 +2281,12 @@ extension GateOptionV2: Equatable, Hashable {
         if lhs.input != rhs.input {
             return false
         }
+        if lhs.scope != rhs.scope {
+            return false
+        }
+        if lhs.requires != rhs.requires {
+            return false
+        }
         return true
     }
 
@@ -2244,6 +2296,8 @@ extension GateOptionV2: Equatable, Hashable {
         hasher.combine(meaning)
         hasher.combine(needsComment)
         hasher.combine(input)
+        hasher.combine(scope)
+        hasher.combine(requires)
     }
 }
 
@@ -2259,7 +2313,9 @@ public struct FfiConverterTypeGateOptionV2: FfiConverterRustBuffer {
                 label: FfiConverterString.read(from: &buf), 
                 meaning: FfiConverterTypeGateOptionMeaning.read(from: &buf), 
                 needsComment: FfiConverterBool.read(from: &buf), 
-                input: FfiConverterOptionTypeOptionInput.read(from: &buf)
+                input: FfiConverterOptionTypeOptionInput.read(from: &buf), 
+                scope: FfiConverterOptionTypeOptionScope.read(from: &buf), 
+                requires: FfiConverterOptionTypeOptionRequires.read(from: &buf)
         )
     }
 
@@ -2269,6 +2325,8 @@ public struct FfiConverterTypeGateOptionV2: FfiConverterRustBuffer {
         FfiConverterTypeGateOptionMeaning.write(value.meaning, into: &buf)
         FfiConverterBool.write(value.needsComment, into: &buf)
         FfiConverterOptionTypeOptionInput.write(value.input, into: &buf)
+        FfiConverterOptionTypeOptionScope.write(value.scope, into: &buf)
+        FfiConverterOptionTypeOptionRequires.write(value.requires, into: &buf)
     }
 }
 
@@ -3962,6 +4020,150 @@ public func FfiConverterTypePermissionAnswers_lower(_ value: PermissionAnswers) 
 
 
 /**
+ * A permission.v2 as a host draws and answers it. Rides on
+ * `CustomEventDecision::permission_v2`.
+ */
+public struct PermissionV2Decision {
+    /**
+     * `<session_id>:<request_seq>`, handed back verbatim in the answer.
+     */
+    public var requestId: String
+    /**
+     * What the agent wants to do, bounded.
+     */
+    public var title: String
+    /**
+     * ACP's tool kind (`execute`, `edit`, …), when the harness said.
+     */
+    public var toolKind: String?
+    /**
+     * In the harness's order, by meaning and scope. Allowing options are
+     * already gone when the preview could not be drawn in full.
+     */
+    public var options: [GateOptionV2]
+    /**
+     * What the agent would do, drawn verbatim before the options, and the
+     * binding the answer copies back.
+     */
+    public var subject: SubjectV2
+    /**
+     * [`PERMISSION_APPROVALS_WITHHELD_NOTE`] when allowing options were
+     * withheld.
+     */
+    public var approvalsWithheld: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * `<session_id>:<request_seq>`, handed back verbatim in the answer.
+         */requestId: String, 
+        /**
+         * What the agent wants to do, bounded.
+         */title: String, 
+        /**
+         * ACP's tool kind (`execute`, `edit`, …), when the harness said.
+         */toolKind: String?, 
+        /**
+         * In the harness's order, by meaning and scope. Allowing options are
+         * already gone when the preview could not be drawn in full.
+         */options: [GateOptionV2], 
+        /**
+         * What the agent would do, drawn verbatim before the options, and the
+         * binding the answer copies back.
+         */subject: SubjectV2, 
+        /**
+         * [`PERMISSION_APPROVALS_WITHHELD_NOTE`] when allowing options were
+         * withheld.
+         */approvalsWithheld: String?) {
+        self.requestId = requestId
+        self.title = title
+        self.toolKind = toolKind
+        self.options = options
+        self.subject = subject
+        self.approvalsWithheld = approvalsWithheld
+    }
+}
+
+
+
+extension PermissionV2Decision: Equatable, Hashable {
+    public static func ==(lhs: PermissionV2Decision, rhs: PermissionV2Decision) -> Bool {
+        if lhs.requestId != rhs.requestId {
+            return false
+        }
+        if lhs.title != rhs.title {
+            return false
+        }
+        if lhs.toolKind != rhs.toolKind {
+            return false
+        }
+        if lhs.options != rhs.options {
+            return false
+        }
+        if lhs.subject != rhs.subject {
+            return false
+        }
+        if lhs.approvalsWithheld != rhs.approvalsWithheld {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(requestId)
+        hasher.combine(title)
+        hasher.combine(toolKind)
+        hasher.combine(options)
+        hasher.combine(subject)
+        hasher.combine(approvalsWithheld)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypePermissionV2Decision: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PermissionV2Decision {
+        return
+            try PermissionV2Decision(
+                requestId: FfiConverterString.read(from: &buf), 
+                title: FfiConverterString.read(from: &buf), 
+                toolKind: FfiConverterOptionString.read(from: &buf), 
+                options: FfiConverterSequenceTypeGateOptionV2.read(from: &buf), 
+                subject: FfiConverterTypeSubjectV2.read(from: &buf), 
+                approvalsWithheld: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: PermissionV2Decision, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.requestId, into: &buf)
+        FfiConverterString.write(value.title, into: &buf)
+        FfiConverterOptionString.write(value.toolKind, into: &buf)
+        FfiConverterSequenceTypeGateOptionV2.write(value.options, into: &buf)
+        FfiConverterTypeSubjectV2.write(value.subject, into: &buf)
+        FfiConverterOptionString.write(value.approvalsWithheld, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePermissionV2Decision_lift(_ buf: RustBuffer) throws -> PermissionV2Decision {
+    return try FfiConverterTypePermissionV2Decision.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypePermissionV2Decision_lower(_ value: PermissionV2Decision) -> RustBuffer {
+    return FfiConverterTypePermissionV2Decision.lower(value)
+}
+
+
+/**
  * Someone this account shares a room with.
  */
 public struct PersonDto {
@@ -4578,9 +4780,22 @@ public struct QuestionV2Decision {
     public var question: String
     /**
      * In the question's order. Empty exactly when `free_text` is set.
+     * Approve-meaning options are already gone when the question is bound
+     * to a subject whose preview could not be drawn in full.
      */
     public var options: [GateOptionV2]
     public var freeText: QuestionFreeText?
+    /**
+     * What the question approves — a strict decision's operation, a
+     * board-dispatched permission's request — drawn verbatim before the
+     * options. `None` for an ordinary question.
+     */
+    public var subject: SubjectV2?
+    /**
+     * `crate::gate_v2::APPROVALS_WITHHELD_NOTE` when approve-meaning
+     * options were withheld.
+     */
+    public var approvalsWithheld: String?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -4594,11 +4809,24 @@ public struct QuestionV2Decision {
          */question: String, 
         /**
          * In the question's order. Empty exactly when `free_text` is set.
-         */options: [GateOptionV2], freeText: QuestionFreeText?) {
+         * Approve-meaning options are already gone when the question is bound
+         * to a subject whose preview could not be drawn in full.
+         */options: [GateOptionV2], freeText: QuestionFreeText?, 
+        /**
+         * What the question approves — a strict decision's operation, a
+         * board-dispatched permission's request — drawn verbatim before the
+         * options. `None` for an ordinary question.
+         */subject: SubjectV2? = nil, 
+        /**
+         * `crate::gate_v2::APPROVALS_WITHHELD_NOTE` when approve-meaning
+         * options were withheld.
+         */approvalsWithheld: String? = nil) {
         self.elicitationId = elicitationId
         self.question = question
         self.options = options
         self.freeText = freeText
+        self.subject = subject
+        self.approvalsWithheld = approvalsWithheld
     }
 }
 
@@ -4618,6 +4846,12 @@ extension QuestionV2Decision: Equatable, Hashable {
         if lhs.freeText != rhs.freeText {
             return false
         }
+        if lhs.subject != rhs.subject {
+            return false
+        }
+        if lhs.approvalsWithheld != rhs.approvalsWithheld {
+            return false
+        }
         return true
     }
 
@@ -4626,6 +4860,8 @@ extension QuestionV2Decision: Equatable, Hashable {
         hasher.combine(question)
         hasher.combine(options)
         hasher.combine(freeText)
+        hasher.combine(subject)
+        hasher.combine(approvalsWithheld)
     }
 }
 
@@ -4640,7 +4876,9 @@ public struct FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer {
                 elicitationId: FfiConverterString.read(from: &buf), 
                 question: FfiConverterString.read(from: &buf), 
                 options: FfiConverterSequenceTypeGateOptionV2.read(from: &buf), 
-                freeText: FfiConverterOptionTypeQuestionFreeText.read(from: &buf)
+                freeText: FfiConverterOptionTypeQuestionFreeText.read(from: &buf), 
+                subject: FfiConverterOptionTypeSubjectV2.read(from: &buf), 
+                approvalsWithheld: FfiConverterOptionString.read(from: &buf)
         )
     }
 
@@ -4649,6 +4887,8 @@ public struct FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer {
         FfiConverterString.write(value.question, into: &buf)
         FfiConverterSequenceTypeGateOptionV2.write(value.options, into: &buf)
         FfiConverterOptionTypeQuestionFreeText.write(value.freeText, into: &buf)
+        FfiConverterOptionTypeSubjectV2.write(value.subject, into: &buf)
+        FfiConverterOptionString.write(value.approvalsWithheld, into: &buf)
     }
 }
 
@@ -7049,6 +7289,122 @@ public func FfiConverterTypeSpaceSummary_lift(_ buf: RustBuffer) throws -> Space
 #endif
 public func FfiConverterTypeSpaceSummary_lower(_ value: SpaceSummary) -> RustBuffer {
     return FfiConverterTypeSpaceSummary.lower(value)
+}
+
+
+/**
+ * The subject a question.v2 or a permission.v2 is bound to, as a host draws
+ * it: the preview verbatim, and the binding the answer copies back.
+ *
+ * A gate.v2 carries the same subject flattened onto [`GateV2Decision`]; this
+ * is its shape for the decisions that came after it. charter →
+ * `decisions/2026-11-07-strict-decisions-and-permissions-bind-their-subject.md`.
+ */
+public struct SubjectV2 {
+    /**
+     * Copied into the answer; never drawn.
+     */
+    public var binding: GateSubjectBinding
+    /**
+     * [`SALAAM_OPERATION_SCHEMA`] or [`HARNESS_PERMISSION_SCHEMA`].
+     */
+    public var schema: String
+    /**
+     * Drawn verbatim, as a gate's.
+     */
+    public var preview: [GatePreviewBlock]
+    /**
+     * When the producer stops accepting an answer, as it said it (an ISO
+     * timestamp), or `None` when it set none. Display only.
+     */
+    public var expiresAt: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Copied into the answer; never drawn.
+         */binding: GateSubjectBinding, 
+        /**
+         * [`SALAAM_OPERATION_SCHEMA`] or [`HARNESS_PERMISSION_SCHEMA`].
+         */schema: String, 
+        /**
+         * Drawn verbatim, as a gate's.
+         */preview: [GatePreviewBlock], 
+        /**
+         * When the producer stops accepting an answer, as it said it (an ISO
+         * timestamp), or `None` when it set none. Display only.
+         */expiresAt: String?) {
+        self.binding = binding
+        self.schema = schema
+        self.preview = preview
+        self.expiresAt = expiresAt
+    }
+}
+
+
+
+extension SubjectV2: Equatable, Hashable {
+    public static func ==(lhs: SubjectV2, rhs: SubjectV2) -> Bool {
+        if lhs.binding != rhs.binding {
+            return false
+        }
+        if lhs.schema != rhs.schema {
+            return false
+        }
+        if lhs.preview != rhs.preview {
+            return false
+        }
+        if lhs.expiresAt != rhs.expiresAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(binding)
+        hasher.combine(schema)
+        hasher.combine(preview)
+        hasher.combine(expiresAt)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeSubjectV2: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SubjectV2 {
+        return
+            try SubjectV2(
+                binding: FfiConverterTypeGateSubjectBinding.read(from: &buf), 
+                schema: FfiConverterString.read(from: &buf), 
+                preview: FfiConverterSequenceTypeGatePreviewBlock.read(from: &buf), 
+                expiresAt: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: SubjectV2, into buf: inout [UInt8]) {
+        FfiConverterTypeGateSubjectBinding.write(value.binding, into: &buf)
+        FfiConverterString.write(value.schema, into: &buf)
+        FfiConverterSequenceTypeGatePreviewBlock.write(value.preview, into: &buf)
+        FfiConverterOptionString.write(value.expiresAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSubjectV2_lift(_ buf: RustBuffer) throws -> SubjectV2 {
+    return try FfiConverterTypeSubjectV2.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeSubjectV2_lower(_ value: SubjectV2) -> RustBuffer {
+    return FfiConverterTypeSubjectV2.lower(value)
 }
 
 
@@ -11732,7 +12088,9 @@ public enum CustomEventView {
         /**
          * The room says this was decided and the board accepted it — a
          * `dev.superpipeline.gate.outcome.v1` for this gate is in the loaded
-         * timeline (`crate::gate_outcome`).
+         * timeline (`crate::gate_outcome`) — or, for a harness permission,
+         * the station's `dev.agentpod.permission.outcome.v1`
+         * (`crate::permission_v2::resolved_permissions`).
          *
          * When set, `decision` is `None`: a resolved gate has nothing left to
          * answer, and a host draws the receipt instead of the buttons. The
@@ -13476,6 +13834,155 @@ public func FfiConverterTypeOptionInputKind_lower(_ value: OptionInputKind) -> R
 
 
 extension OptionInputKind: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Who may take an option (§2). A host shows it ("admins only") and may hide
+ * an option the viewer cannot take; the producer judges it.
+ */
+
+public enum OptionRequires {
+    
+    /**
+     * A workspace owner or admin.
+     */
+    case workspaceAdmin
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOptionRequires: FfiConverterRustBuffer {
+    typealias SwiftType = OptionRequires
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OptionRequires {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .workspaceAdmin
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OptionRequires, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .workspaceAdmin:
+            writeInt(&buf, Int32(1))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOptionRequires_lift(_ buf: RustBuffer) throws -> OptionRequires {
+    return try FfiConverterTypeOptionRequires.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOptionRequires_lower(_ value: OptionRequires) -> RustBuffer {
+    return FfiConverterTypeOptionRequires.lower(value)
+}
+
+
+
+extension OptionRequires: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * How far an option reaches. charter →
+ * `decisions/2026-11-07-strict-decisions-and-permissions-bind-their-subject.md` §2.
+ * A host shows it; the producer judges it.
+ */
+
+public enum OptionScope {
+    
+    /**
+     * This once.
+     */
+    case once
+    /**
+     * For the rest of this run.
+     */
+    case run
+    /**
+     * From now on.
+     */
+    case always
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeOptionScope: FfiConverterRustBuffer {
+    typealias SwiftType = OptionScope
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> OptionScope {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .once
+        
+        case 2: return .run
+        
+        case 3: return .always
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: OptionScope, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .once:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .run:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .always:
+            writeInt(&buf, Int32(3))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOptionScope_lift(_ buf: RustBuffer) throws -> OptionScope {
+    return try FfiConverterTypeOptionScope.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeOptionScope_lower(_ value: OptionScope) -> RustBuffer {
+    return FfiConverterTypeOptionScope.lower(value)
+}
+
+
+
+extension OptionScope: Equatable, Hashable {}
 
 
 
@@ -15688,6 +16195,30 @@ fileprivate struct FfiConverterOptionTypePermissionAnswers: FfiConverterRustBuff
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypePermissionV2Decision: FfiConverterRustBuffer {
+    typealias SwiftType = PermissionV2Decision?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypePermissionV2Decision.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypePermissionV2Decision.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeQuestionFreeText: FfiConverterRustBuffer {
     typealias SwiftType = QuestionFreeText?
 
@@ -15800,6 +16331,30 @@ fileprivate struct FfiConverterOptionTypeRuntimeDto: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeRuntimeDto.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeSubjectV2: FfiConverterRustBuffer {
+    typealias SwiftType = SubjectV2?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeSubjectV2.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeSubjectV2.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }
@@ -16064,6 +16619,54 @@ fileprivate struct FfiConverterOptionTypeNotificationSuppression: FfiConverterRu
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeNotificationSuppression.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeOptionRequires: FfiConverterRustBuffer {
+    typealias SwiftType = OptionRequires?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeOptionRequires.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeOptionRequires.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeOptionScope: FfiConverterRustBuffer {
+    typealias SwiftType = OptionScope?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeOptionScope.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeOptionScope.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

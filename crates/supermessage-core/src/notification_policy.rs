@@ -629,6 +629,8 @@ fn gate_v2_response(
                     meaning,
                     needs_comment: meaning == GateOptionMeaning::Revise,
                     input: None,
+                    scope: None,
+                    requires: None,
                 }],
                 preview: Vec::new(),
                 approvals_withheld: None,
@@ -794,6 +796,7 @@ mod tests {
             gate_v2: None,
             question_v2: None,
             delivery_v2: None,
+            permission_v2: None,
         }
     }
 

@@ -1511,7 +1511,18 @@ data class CustomEventDecision (
      * `send_delivery_answer_v2`. [`Self::options`] is empty: no plain reply
      * answers a follow-up.
      */
-    var `deliveryV2`: GateV2Decision? = null
+    var `deliveryV2`: GateV2Decision? = null, 
+    /**
+     * A harness permission, when the prose message carries
+     * `dev.agentpod.permission.v2` (`crate::permission_v2`): what the agent
+     * would do as a preview, the options by meaning and scope, with every
+     * allowing option already withheld when the preview could not be drawn
+     * in full. Answered with `send_permission_answer_v2`. [`Self::options`]
+     * then holds only the options a plain reply may send — never one that
+     * allows — each id its name, as for a v1 request. `None` otherwise, and
+     * absent from the JSON.
+     */
+    var `permissionV2`: PermissionV2Decision? = null
 ) {
     
     companion object
@@ -1529,6 +1540,7 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeGateV2Decision.read(buf),
             FfiConverterOptionalTypeQuestionV2Decision.read(buf),
             FfiConverterOptionalTypeGateV2Decision.read(buf),
+            FfiConverterOptionalTypePermissionV2Decision.read(buf),
         )
     }
 
@@ -1538,7 +1550,8 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalString.allocationSize(value.`subject`) +
             FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`gateV2`) +
             FfiConverterOptionalTypeQuestionV2Decision.allocationSize(value.`questionV2`) +
-            FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`deliveryV2`)
+            FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`deliveryV2`) +
+            FfiConverterOptionalTypePermissionV2Decision.allocationSize(value.`permissionV2`)
     )
 
     override fun write(value: CustomEventDecision, buf: ByteBuffer) {
@@ -1548,6 +1561,7 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeGateV2Decision.write(value.`gateV2`, buf)
             FfiConverterOptionalTypeQuestionV2Decision.write(value.`questionV2`, buf)
             FfiConverterOptionalTypeGateV2Decision.write(value.`deliveryV2`, buf)
+            FfiConverterOptionalTypePermissionV2Decision.write(value.`permissionV2`, buf)
     }
 }
 
@@ -1947,7 +1961,16 @@ data class GateOptionV2 (
      * option. Always `None` on a gate.v2 option: a decision.v2 carries a
      * comment, never an input's text.
      */
-    var `input`: OptionInput? = null
+    var `input`: OptionInput? = null, 
+    /**
+     * How far the option reaches, when it says — a strict decision's or a
+     * harness permission's option. Display only: the producer judges it.
+     */
+    var `scope`: OptionScope? = null, 
+    /**
+     * Who may take it, when it says. Display only, as `scope`.
+     */
+    var `requires`: OptionRequires? = null
 ) {
     
     companion object
@@ -1964,6 +1987,8 @@ public object FfiConverterTypeGateOptionV2: FfiConverterRustBuffer<GateOptionV2>
             FfiConverterTypeGateOptionMeaning.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalTypeOptionInput.read(buf),
+            FfiConverterOptionalTypeOptionScope.read(buf),
+            FfiConverterOptionalTypeOptionRequires.read(buf),
         )
     }
 
@@ -1972,7 +1997,9 @@ public object FfiConverterTypeGateOptionV2: FfiConverterRustBuffer<GateOptionV2>
             FfiConverterString.allocationSize(value.`label`) +
             FfiConverterTypeGateOptionMeaning.allocationSize(value.`meaning`) +
             FfiConverterBoolean.allocationSize(value.`needsComment`) +
-            FfiConverterOptionalTypeOptionInput.allocationSize(value.`input`)
+            FfiConverterOptionalTypeOptionInput.allocationSize(value.`input`) +
+            FfiConverterOptionalTypeOptionScope.allocationSize(value.`scope`) +
+            FfiConverterOptionalTypeOptionRequires.allocationSize(value.`requires`)
     )
 
     override fun write(value: GateOptionV2, buf: ByteBuffer) {
@@ -1981,6 +2008,8 @@ public object FfiConverterTypeGateOptionV2: FfiConverterRustBuffer<GateOptionV2>
             FfiConverterTypeGateOptionMeaning.write(value.`meaning`, buf)
             FfiConverterBoolean.write(value.`needsComment`, buf)
             FfiConverterOptionalTypeOptionInput.write(value.`input`, buf)
+            FfiConverterOptionalTypeOptionScope.write(value.`scope`, buf)
+            FfiConverterOptionalTypeOptionRequires.write(value.`requires`, buf)
     }
 }
 
@@ -2843,6 +2872,79 @@ public object FfiConverterTypePermissionAnswers: FfiConverterRustBuffer<Permissi
 
 
 /**
+ * A permission.v2 as a host draws and answers it. Rides on
+ * `CustomEventDecision::permission_v2`.
+ */
+data class PermissionV2Decision (
+    /**
+     * `<session_id>:<request_seq>`, handed back verbatim in the answer.
+     */
+    var `requestId`: kotlin.String, 
+    /**
+     * What the agent wants to do, bounded.
+     */
+    var `title`: kotlin.String, 
+    /**
+     * ACP's tool kind (`execute`, `edit`, …), when the harness said.
+     */
+    var `toolKind`: kotlin.String?, 
+    /**
+     * In the harness's order, by meaning and scope. Allowing options are
+     * already gone when the preview could not be drawn in full.
+     */
+    var `options`: List<GateOptionV2>, 
+    /**
+     * What the agent would do, drawn verbatim before the options, and the
+     * binding the answer copies back.
+     */
+    var `subject`: SubjectV2, 
+    /**
+     * [`PERMISSION_APPROVALS_WITHHELD_NOTE`] when allowing options were
+     * withheld.
+     */
+    var `approvalsWithheld`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypePermissionV2Decision: FfiConverterRustBuffer<PermissionV2Decision> {
+    override fun read(buf: ByteBuffer): PermissionV2Decision {
+        return PermissionV2Decision(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceTypeGateOptionV2.read(buf),
+            FfiConverterTypeSubjectV2.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: PermissionV2Decision) = (
+            FfiConverterString.allocationSize(value.`requestId`) +
+            FfiConverterString.allocationSize(value.`title`) +
+            FfiConverterOptionalString.allocationSize(value.`toolKind`) +
+            FfiConverterSequenceTypeGateOptionV2.allocationSize(value.`options`) +
+            FfiConverterTypeSubjectV2.allocationSize(value.`subject`) +
+            FfiConverterOptionalString.allocationSize(value.`approvalsWithheld`)
+    )
+
+    override fun write(value: PermissionV2Decision, buf: ByteBuffer) {
+            FfiConverterString.write(value.`requestId`, buf)
+            FfiConverterString.write(value.`title`, buf)
+            FfiConverterOptionalString.write(value.`toolKind`, buf)
+            FfiConverterSequenceTypeGateOptionV2.write(value.`options`, buf)
+            FfiConverterTypeSubjectV2.write(value.`subject`, buf)
+            FfiConverterOptionalString.write(value.`approvalsWithheld`, buf)
+    }
+}
+
+
+
+/**
  * Someone this account shares a room with.
  */
 data class PersonDto (
@@ -3161,9 +3263,22 @@ data class QuestionV2Decision (
     var `question`: kotlin.String, 
     /**
      * In the question's order. Empty exactly when `free_text` is set.
+     * Approve-meaning options are already gone when the question is bound
+     * to a subject whose preview could not be drawn in full.
      */
     var `options`: List<GateOptionV2>, 
-    var `freeText`: QuestionFreeText?
+    var `freeText`: QuestionFreeText?, 
+    /**
+     * What the question approves — a strict decision's operation, a
+     * board-dispatched permission's request — drawn verbatim before the
+     * options. `None` for an ordinary question.
+     */
+    var `subject`: SubjectV2? = null, 
+    /**
+     * `crate::gate_v2::APPROVALS_WITHHELD_NOTE` when approve-meaning
+     * options were withheld.
+     */
+    var `approvalsWithheld`: kotlin.String? = null
 ) {
     
     companion object
@@ -3179,6 +3294,8 @@ public object FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer<Questio
             FfiConverterString.read(buf),
             FfiConverterSequenceTypeGateOptionV2.read(buf),
             FfiConverterOptionalTypeQuestionFreeText.read(buf),
+            FfiConverterOptionalTypeSubjectV2.read(buf),
+            FfiConverterOptionalString.read(buf),
         )
     }
 
@@ -3186,7 +3303,9 @@ public object FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer<Questio
             FfiConverterString.allocationSize(value.`elicitationId`) +
             FfiConverterString.allocationSize(value.`question`) +
             FfiConverterSequenceTypeGateOptionV2.allocationSize(value.`options`) +
-            FfiConverterOptionalTypeQuestionFreeText.allocationSize(value.`freeText`)
+            FfiConverterOptionalTypeQuestionFreeText.allocationSize(value.`freeText`) +
+            FfiConverterOptionalTypeSubjectV2.allocationSize(value.`subject`) +
+            FfiConverterOptionalString.allocationSize(value.`approvalsWithheld`)
     )
 
     override fun write(value: QuestionV2Decision, buf: ByteBuffer) {
@@ -3194,6 +3313,8 @@ public object FfiConverterTypeQuestionV2Decision: FfiConverterRustBuffer<Questio
             FfiConverterString.write(value.`question`, buf)
             FfiConverterSequenceTypeGateOptionV2.write(value.`options`, buf)
             FfiConverterOptionalTypeQuestionFreeText.write(value.`freeText`, buf)
+            FfiConverterOptionalTypeSubjectV2.write(value.`subject`, buf)
+            FfiConverterOptionalString.write(value.`approvalsWithheld`, buf)
     }
 }
 
@@ -4403,6 +4524,67 @@ public object FfiConverterTypeSpaceSummary: FfiConverterRustBuffer<SpaceSummary>
             FfiConverterTypeMembership.write(value.`membership`, buf)
             FfiConverterTypeRoomIdentity.write(value.`identity`, buf)
             FfiConverterString.write(value.`displayName`, buf)
+    }
+}
+
+
+
+/**
+ * The subject a question.v2 or a permission.v2 is bound to, as a host draws
+ * it: the preview verbatim, and the binding the answer copies back.
+ *
+ * A gate.v2 carries the same subject flattened onto [`GateV2Decision`]; this
+ * is its shape for the decisions that came after it. charter →
+ * `decisions/2026-11-07-strict-decisions-and-permissions-bind-their-subject.md`.
+ */
+data class SubjectV2 (
+    /**
+     * Copied into the answer; never drawn.
+     */
+    var `binding`: GateSubjectBinding, 
+    /**
+     * [`SALAAM_OPERATION_SCHEMA`] or [`HARNESS_PERMISSION_SCHEMA`].
+     */
+    var `schema`: kotlin.String, 
+    /**
+     * Drawn verbatim, as a gate's.
+     */
+    var `preview`: List<GatePreviewBlock>, 
+    /**
+     * When the producer stops accepting an answer, as it said it (an ISO
+     * timestamp), or `None` when it set none. Display only.
+     */
+    var `expiresAt`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeSubjectV2: FfiConverterRustBuffer<SubjectV2> {
+    override fun read(buf: ByteBuffer): SubjectV2 {
+        return SubjectV2(
+            FfiConverterTypeGateSubjectBinding.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeGatePreviewBlock.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: SubjectV2) = (
+            FfiConverterTypeGateSubjectBinding.allocationSize(value.`binding`) +
+            FfiConverterString.allocationSize(value.`schema`) +
+            FfiConverterSequenceTypeGatePreviewBlock.allocationSize(value.`preview`) +
+            FfiConverterOptionalString.allocationSize(value.`expiresAt`)
+    )
+
+    override fun write(value: SubjectV2, buf: ByteBuffer) {
+            FfiConverterTypeGateSubjectBinding.write(value.`binding`, buf)
+            FfiConverterString.write(value.`schema`, buf)
+            FfiConverterSequenceTypeGatePreviewBlock.write(value.`preview`, buf)
+            FfiConverterOptionalString.write(value.`expiresAt`, buf)
     }
 }
 
@@ -6794,7 +6976,9 @@ sealed class CustomEventView {
         /**
          * The room says this was decided and the board accepted it — a
          * `dev.superpipeline.gate.outcome.v1` for this gate is in the loaded
-         * timeline (`crate::gate_outcome`).
+         * timeline (`crate::gate_outcome`) — or, for a harness permission,
+         * the station's `dev.agentpod.permission.outcome.v1`
+         * (`crate::permission_v2::resolved_permissions`).
          *
          * When set, `decision` is `None`: a resolved gate has nothing left to
          * answer, and a host draws the receipt instead of the buttons. The
@@ -8331,6 +8515,87 @@ public object FfiConverterTypeOptionInputKind: FfiConverterRustBuffer<OptionInpu
     override fun allocationSize(value: OptionInputKind) = 4UL
 
     override fun write(value: OptionInputKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Who may take an option (§2). A host shows it ("admins only") and may hide
+ * an option the viewer cannot take; the producer judges it.
+ */
+
+enum class OptionRequires {
+    
+    /**
+     * A workspace owner or admin.
+     */
+    WORKSPACE_ADMIN;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeOptionRequires: FfiConverterRustBuffer<OptionRequires> {
+    override fun read(buf: ByteBuffer) = try {
+        OptionRequires.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: OptionRequires) = 4UL
+
+    override fun write(value: OptionRequires, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * How far an option reaches. charter →
+ * `decisions/2026-11-07-strict-decisions-and-permissions-bind-their-subject.md` §2.
+ * A host shows it; the producer judges it.
+ */
+
+enum class OptionScope {
+    
+    /**
+     * This once.
+     */
+    ONCE,
+    /**
+     * For the rest of this run.
+     */
+    RUN,
+    /**
+     * From now on.
+     */
+    ALWAYS;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeOptionScope: FfiConverterRustBuffer<OptionScope> {
+    override fun read(buf: ByteBuffer) = try {
+        OptionScope.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: OptionScope) = 4UL
+
+    override fun write(value: OptionScope, buf: ByteBuffer) {
         buf.putInt(value.ordinal + 1)
     }
 }
@@ -10399,6 +10664,38 @@ public object FfiConverterOptionalTypePermissionAnswers: FfiConverterRustBuffer<
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypePermissionV2Decision: FfiConverterRustBuffer<PermissionV2Decision?> {
+    override fun read(buf: ByteBuffer): PermissionV2Decision? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypePermissionV2Decision.read(buf)
+    }
+
+    override fun allocationSize(value: PermissionV2Decision?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypePermissionV2Decision.allocationSize(value)
+        }
+    }
+
+    override fun write(value: PermissionV2Decision?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypePermissionV2Decision.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeQuestionFreeText: FfiConverterRustBuffer<QuestionFreeText?> {
     override fun read(buf: ByteBuffer): QuestionFreeText? {
         if (buf.get().toInt() == 0) {
@@ -10549,6 +10846,38 @@ public object FfiConverterOptionalTypeRuntimeDto: FfiConverterRustBuffer<Runtime
         } else {
             buf.put(1)
             FfiConverterTypeRuntimeDto.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeSubjectV2: FfiConverterRustBuffer<SubjectV2?> {
+    override fun read(buf: ByteBuffer): SubjectV2? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeSubjectV2.read(buf)
+    }
+
+    override fun allocationSize(value: SubjectV2?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeSubjectV2.allocationSize(value)
+        }
+    }
+
+    override fun write(value: SubjectV2?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeSubjectV2.write(value, buf)
         }
     }
 }
@@ -10901,6 +11230,70 @@ public object FfiConverterOptionalTypeNotificationSuppression: FfiConverterRustB
         } else {
             buf.put(1)
             FfiConverterTypeNotificationSuppression.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeOptionRequires: FfiConverterRustBuffer<OptionRequires?> {
+    override fun read(buf: ByteBuffer): OptionRequires? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeOptionRequires.read(buf)
+    }
+
+    override fun allocationSize(value: OptionRequires?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeOptionRequires.allocationSize(value)
+        }
+    }
+
+    override fun write(value: OptionRequires?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeOptionRequires.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeOptionScope: FfiConverterRustBuffer<OptionScope?> {
+    override fun read(buf: ByteBuffer): OptionScope? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeOptionScope.read(buf)
+    }
+
+    override fun allocationSize(value: OptionScope?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeOptionScope.allocationSize(value)
+        }
+    }
+
+    override fun write(value: OptionScope?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeOptionScope.write(value, buf)
         }
     }
 }

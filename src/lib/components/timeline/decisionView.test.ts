@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CustomEventDecision } from "$lib/ipc";
 import {
+  ALLOW_ELSEWHERE,
   ANSWER_ELSEWHERE,
   answerElsewhere,
   answeredWhen,
@@ -76,6 +77,34 @@ describe("answerElsewhere", () => {
     expect(
       answerElsewhere({ ...base, subject: null, questionV2: { options: [opt("run")], freeText: null } }),
     ).toBeNull();
+  });
+
+  it("points to a phone or the console for a permission.v2's allow", () => {
+    const allow = { id: "allow_once", label: "Allow once" };
+    const reject = { id: "reject_once", label: "Reject" };
+    const permission = { requestId: "acps_3f0c:12", options: [allow, reject], approvalsWithheld: null };
+    expect(answerElsewhere({ ...base, options: [opt("Reject")], subject: null, permissionV2: permission })).toBe(
+      ALLOW_ELSEWHERE,
+    );
+    const withheld = { ...permission, options: [reject], approvalsWithheld: "Answer it in the console to allow it." };
+    expect(answerElsewhere({ ...base, options: [opt("Reject")], subject: null, permissionV2: withheld })).toBe(
+      "Answer it in the console to allow it.",
+    );
+    const rejectOnly = { ...permission, options: [reject] };
+    expect(answerElsewhere({ ...base, options: [opt("Reject")], subject: null, permissionV2: rejectOnly })).toBeNull();
+  });
+
+  it("points elsewhere for a question bound to a subject", () => {
+    const approve = { id: "approve", label: "Approve" };
+    const deny = { id: "deny", label: "Deny" };
+    const strict = { options: [approve, deny], freeText: null, subject: { schema: "salaam-operation/v1" } };
+    expect(answerElsewhere({ ...base, options: [opt("Deny")], subject: null, questionV2: strict })).toBe(
+      ANSWER_ELSEWHERE,
+    );
+    const withheld = { ...strict, options: [deny], approvalsWithheld: "Open the card to approve it." };
+    expect(answerElsewhere({ ...base, options: [opt("Deny")], subject: null, questionV2: withheld })).toBe(
+      "Open the card to approve it.",
+    );
   });
 
   it("says why when a gate.v2's approvals were withheld", () => {

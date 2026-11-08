@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.GateV2Decision
+import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.QuestionV2Decision
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.Mentionable
@@ -613,6 +614,32 @@ class Session(
                 question = question,
                 optionId = optionId,
                 text = text,
+                inReplyTo = eventId,
+            )
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Answer a harness permission.v2 from its card with one of its options,
+     * bound to the request the card showed. Otherwise as [answerGateV2].
+     */
+    suspend fun answerPermissionV2(
+        eventId: String?,
+        permission: PermissionV2Decision,
+        optionId: String,
+        roomId: String,
+    ): Boolean {
+        if (eventId == null) return false
+        return try {
+            client.sendPermissionAnswerV2(
+                roomId = roomId,
+                permission = permission,
+                optionId = optionId,
                 inReplyTo = eventId,
             )
             true

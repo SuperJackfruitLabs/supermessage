@@ -989,6 +989,17 @@ public protocol CoreProtocol : AnyObject {
     func sendPermissionAnswer(roomId: String, optionId: String) throws 
     
     /**
+     * Answer a harness permission.v2 from its card
+     * (`supermessage_core::permission_v2`). `permission` is the card's
+     * `CustomEventDecision::permission_v2`, handed back unchanged; the core
+     * refuses an option the request did not offer and an allowing option on
+     * a preview the card could not show in full, then sends the
+     * `dev.agentpod.permission.answer.v2` — the binding copied from the card
+     * — referencing `in_reply_to`. The room need not be open.
+     */
+    func sendPermissionAnswerV2(roomId: String, permission: PermissionV2Decision, optionId: String, inReplyTo: String) throws 
+    
+    /**
      * Answer a question.v2 from its card (`supermessage_core::question_v2`).
      *
      * `question` is the `CustomEventDecision::question_v2` the card was
@@ -1981,6 +1992,25 @@ open func sendPermissionAnswer(roomId: String, optionId: String)throws  {try rus
     uniffi_supermessage_ffi_fn_method_core_send_permission_answer(self.uniffiClonePointer(),
         FfiConverterString.lower(roomId),
         FfiConverterString.lower(optionId),$0
+    )
+}
+}
+    
+    /**
+     * Answer a harness permission.v2 from its card
+     * (`supermessage_core::permission_v2`). `permission` is the card's
+     * `CustomEventDecision::permission_v2`, handed back unchanged; the core
+     * refuses an option the request did not offer and an allowing option on
+     * a preview the card could not show in full, then sends the
+     * `dev.agentpod.permission.answer.v2` — the binding copied from the card
+     * — referencing `in_reply_to`. The room need not be open.
+     */
+open func sendPermissionAnswerV2(roomId: String, permission: PermissionV2Decision, optionId: String, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_permission_answer_v2(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterTypePermissionV2Decision_lower(permission),
+        FfiConverterString.lower(optionId),
+        FfiConverterString.lower(inReplyTo),$0
     )
 }
 }
@@ -5190,6 +5220,8 @@ fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
 
 
 
+
+
 /**
  * What the dock above the composer says after the reader wrote to an agent —
  * see `core::acknowledgement`. A free function for the same reason as
@@ -6395,6 +6427,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_permission_answer() != 53383) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_permission_answer_v2() != 62009) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_question_answer_v2() != 6828) {

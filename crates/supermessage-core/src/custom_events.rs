@@ -185,6 +185,17 @@ pub struct CustomEventDecision {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[uniffi(default = None)]
     pub delivery_v2: Option<crate::gate_v2::GateV2Decision>,
+    /// A harness permission, when the prose message carries
+    /// `dev.agentpod.permission.v2` (`crate::permission_v2`): what the agent
+    /// would do as a preview, the options by meaning and scope, with every
+    /// allowing option already withheld when the preview could not be drawn
+    /// in full. Answered with `send_permission_answer_v2`. [`Self::options`]
+    /// then holds only the options a plain reply may send — never one that
+    /// allows — each id its name, as for a v1 request. `None` otherwise, and
+    /// absent from the JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub permission_v2: Option<crate::permission_v2::PermissionV2Decision>,
 }
 
 /// A decision the board has accepted, as the room reports it.
@@ -278,7 +289,9 @@ pub enum CustomEventView {
         link: Option<String>,
         /// The room says this was decided and the board accepted it — a
         /// `dev.superpipeline.gate.outcome.v1` for this gate is in the loaded
-        /// timeline (`crate::gate_outcome`).
+        /// timeline (`crate::gate_outcome`) — or, for a harness permission,
+        /// the station's `dev.agentpod.permission.outcome.v1`
+        /// (`crate::permission_v2::resolved_permissions`).
         ///
         /// When set, `decision` is `None`: a resolved gate has nothing left to
         /// answer, and a host draws the receipt instead of the buttons. The
@@ -417,11 +430,13 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
     // whose options are all v2-only — because its own options, preview and
     // the reason approvals were withheld are on `gate_v2`.
     // The same for a question.v2 (a free-text question offers no option at
-    // all) and a delivery.v2 follow-up.
+    // all), a delivery.v2 follow-up and a permission.v2 whose every option
+    // allows (a plain reply never allows what the card could not show).
     if options.is_empty()
         && decision.gate_v2.is_none()
         && decision.question_v2.is_none()
         && decision.delivery_v2.is_none()
+        && decision.permission_v2.is_none()
     {
         return None;
     }
@@ -435,6 +450,7 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
         gate_v2: decision.gate_v2,
         question_v2: decision.question_v2,
         delivery_v2: decision.delivery_v2,
+        permission_v2: decision.permission_v2,
     })
 }
 
@@ -868,6 +884,7 @@ impl CustomEventRenderer for PermissionRequestRenderer {
                 gate_v2: None,
                 question_v2: None,
                 delivery_v2: None,
+                permission_v2: None,
             }),
         }
     }
@@ -993,6 +1010,7 @@ impl CustomEventRenderer for GateRenderer {
                 gate_v2: None,
                 question_v2: None,
                 delivery_v2: None,
+                permission_v2: None,
             }),
         }
     }
@@ -1012,6 +1030,7 @@ pub fn default_registry() -> &'static CustomEventRegistry {
         registry.register(Box::new(crate::gate_v2::GateV2Renderer));
         registry.register(Box::new(crate::question_v2::QuestionV2Renderer));
         registry.register(Box::new(crate::delivery_v2::DeliveryV2Renderer));
+        registry.register(Box::new(crate::permission_v2::PermissionV2Renderer));
         registry
     })
 }
@@ -1456,6 +1475,7 @@ mod tests {
             gate_v2: None,
             question_v2: None,
             delivery_v2: None,
+            permission_v2: None,
         });
         assert_eq!(
             decision_from(&registry),
@@ -1466,6 +1486,7 @@ mod tests {
                 gate_v2: None,
                 question_v2: None,
                 delivery_v2: None,
+                permission_v2: None,
             })
         );
     }
@@ -1479,6 +1500,7 @@ mod tests {
             gate_v2: None,
             question_v2: None,
             delivery_v2: None,
+            permission_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.prompt.chars().count(), FIELD_VALUE_MAX_CHARS + 1);
@@ -1500,6 +1522,7 @@ mod tests {
             gate_v2: None,
             question_v2: None,
             delivery_v2: None,
+            permission_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options[0].id, long_id);
@@ -1516,6 +1539,7 @@ mod tests {
             gate_v2: None,
             question_v2: None,
             delivery_v2: None,
+            permission_v2: None,
         });
         assert_eq!(
             decision_from(&registry).expect("a decision").options.len(),
@@ -1537,6 +1561,7 @@ mod tests {
             gate_v2: None,
             question_v2: None,
             delivery_v2: None,
+            permission_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options.len(), 2);
@@ -1557,6 +1582,7 @@ mod tests {
             gate_v2: None,
             question_v2: None,
             delivery_v2: None,
+            permission_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options, vec![option("allow", "Allow")]);
@@ -1571,6 +1597,7 @@ mod tests {
             gate_v2: None,
             question_v2: None,
             delivery_v2: None,
+            permission_v2: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -1584,6 +1611,7 @@ mod tests {
             gate_v2: None,
             question_v2: None,
             delivery_v2: None,
+            permission_v2: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -2098,13 +2126,14 @@ mod tests {
             crate::gate_v2::GATE_V2_EVENT_TYPE,
             crate::question_v2::QUESTION_V2_EVENT_TYPE,
             crate::delivery_v2::DELIVERY_V2_EVENT_TYPE,
+            crate::permission_v2::PERMISSION_V2_EVENT_TYPE,
         ] {
             assert!(
                 registry.get(event_type).is_some(),
                 "{event_type} is not registered"
             );
         }
-        assert_eq!(registry.len(), 7);
+        assert_eq!(registry.len(), 8);
     }
 }
 

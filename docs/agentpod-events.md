@@ -404,6 +404,74 @@ Both ride on a prose `m.room.message` with a real `body` and a
   follow-up. Body: "Live at <url>", or the option's label.
 - **Notifications.** A question or a follow-up notifies in the DECISION
   category ("Open" only): their text cannot be checked from a lock screen.
+- **A question bound to a subject** (fixture version 5, `variant:
+  "subject-bound"`; charter
+  `decisions/2026-11-07-strict-decisions-and-permissions-bind-their-subject.md`).
+  A strict decision (`schema: "salaam-operation/v1"`) or a board-dispatched
+  harness permission (`"harness-permission/v1"`) is a question.v2 carrying
+  gate.v2's `subject {id, digest, schema, revision, expires_at, preview,
+  preview_complete}`. It is held to its whole snake_case shape
+  (`core::gate_v2::parse_bound_subject`): a known `schema`, a whole-number
+  `revision` and an explicit boolean `preview_complete` — `previewComplete`,
+  a subject with no digest or another schema leaves the question prose. The
+  preview is drawn verbatim (`QuestionV2Decision.subject`, a `SubjectV2`), and
+  gate.v2's rule applies: no approve-meaning option unless the preview is
+  complete and every block drawable, with `approvals_withheld` saying why. The
+  answer copies `subject {id, digest}` back exactly; the core refuses an
+  approval on a withheld preview even if a host puts the option back.
+  `CustomEventDecision.options` never holds an approval of a subject (a typed
+  reply only declines one), and the desktop says to open the card or answer
+  on a phone for the rest.
+- **Scope and requires.** Any envelope option may carry `scope: "once" |
+  "run" | "always"` and `requires: "workspace-admin"`
+  (`GateOptionV2.scope`/`.requires`). A value this build does not know refuses
+  the option, and the decision with it. Hosts show them as a caption under the
+  option — "Once", "For this run", "Always", "Admins only", joined by " · " —
+  and never judge them: the producer does.
+- **Notifications.** A subject-bound question notifies in the DECISION
+  category too: a notification shows no preview, so it never approves.
+
+### 5c. permission.v2 — a harness permission in AgentPod's envelope
+
+charter `decisions/2026-11-07-strict-decisions-and-permissions-bind-their-subject.md`
+§5–6, fixture version 5. The permission's prose message keeps the v1 card under
+`dev.agentpod.permission`, unchanged, and is also marked
+`suite_event_type: "dev.agentpod.permission.v2"` (AgentPod's namespace: AgentPod
+judges a harness permission).
+
+- **The request** (`core::permission_v2`, registered as
+  `dev.agentpod.permission.v2`, label "Permission"): `request_id`
+  (`<session_id>:<request_seq>`), `session_id`, `request_seq`, `title`,
+  `tool_kind?`, `options [{id, label, meaning, scope?}]` (ACP's kinds:
+  allow_once → approve/once, allow_always → approve/always, reject_once →
+  reject/once, reject_always → reject/always) and a `harness-permission/v1`
+  subject whose `id` is the `request_id`. The preview is the tool and kind,
+  the command or raw input, each diff and the locations, drawn verbatim. A
+  message whose v2 fields do not validate — no `request_id`, an option with no
+  meaning, a subject of another schema or for another request, an unknown
+  scope — reads its v1 card exactly as before. The identity is
+  `permission:<session>:<seq>`, the v1 card's, so a legacy separate event is
+  still hidden beside it.
+- **Withholding.** Every allowing option is withheld unless the preview is
+  complete and drawable; `approvals_withheld` then reads "This card can't show
+  everything the agent would do. Answer it in the console to allow it."
+  `CustomEventDecision.permission_v2` is a `PermissionV2Decision`; `options`
+  holds only the non-allowing options, each id its name (a plain reply, as for
+  v1), so the desktop can reject but never allow, and says "To allow this,
+  answer on your phone or in the console."
+- **permission.answer.v2.** `Core::send_permission_answer_v2(room, permission,
+  option_id, in_reply_to)` (the room need not be open): `request_id`,
+  `option_id`, `subject {id, digest}` copied from the card, the `m.reference`
+  to the prose message, and the option's label as `body`. The core refuses an
+  option the request did not offer and an allowing option on a withheld
+  preview, even one a host put back. The hub judges the rest (session,
+  sequence, digest, pending, unexpired, the answerer's grant) and records who
+  answered.
+- **Notifications.** A permission.v2 notifies in the DECISION category
+  ("Open" only): no Allow from a lock screen, because it cannot show the
+  preview, and no Reject either, because the v1 action sends an unbound typed
+  name and a bound reject is not wired through the notification answer yet. A
+  v1-only permission keeps Allow once / Reject as before.
 
 ## 6. Quiet events — what must never interrupt, at three layers
 
@@ -524,6 +592,28 @@ the outcome then replaces.
 **Notifications.** The prose line notifies as an ordinary message; the custom
 event is suppressed as `NotNews` with the quiet line "… posted an update"
 (§6). Neither is ever a PERMISSION or GATE notification.
+
+### 7a. A permission's outcome
+
+The hub closes a harness permission with `dev.agentpod.permission.outcome.v1`,
+a custom event (with `suite_event_type` repeated) sent beside a prose line:
+`{request_id, session_id, request_seq, outcome: "selected" | "expired" |
+"cancelled", option_id | null, decided_by | null, m.relates_to: m.reference →
+the permission's prose message}`. `core::permission_v2::resolved_permissions`
+reads it in the same reconcile pass as gate outcomes and turns the card — the
+v2 card, or a v1 card from an older hub — into a receipt, whichever arrived
+first. It closes a card only when it comes from the identity that posted the
+permission, references exactly that card's event, and names the same session
+and sequence; an outcome with no `m.reference`, an unknown outcome word, a
+quoted reply, someone else's outcome, or a gate's outcome closes nothing. The
+event itself is never drawn (`ItemView::None`) and notifies as `NotNews`.
+
+**Wording.** By the option's meaning and scope when the card knew them:
+Allowed once / Allowed for this run / Allowed always / Allowed, Rejected /
+Rejected for this run / Rejected always, Chose "<label>" — "by <decided_by>"
+when named. A v1 card's option is said in the hub's words, "<name> — answered
+by <decided_by>"; an expiry reads "Expired unanswered" and a withdrawal
+"Withdrawn" (the hub's "expired unanswered" / "was withdrawn").
 
 ## Adding a field
 

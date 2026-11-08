@@ -62,6 +62,7 @@ import uniffi.supermessage_core.FfiConverterTypeNotificationDto
 import uniffi.supermessage_core.FfiConverterTypeNotificationMode
 import uniffi.supermessage_core.FfiConverterTypeNotificationResponse
 import uniffi.supermessage_core.FfiConverterTypePermissionAnswers
+import uniffi.supermessage_core.FfiConverterTypePermissionV2Decision
 import uniffi.supermessage_core.FfiConverterTypePersonDto
 import uniffi.supermessage_core.FfiConverterTypePlannedNotification
 import uniffi.supermessage_core.FfiConverterTypePlayableAudio
@@ -113,6 +114,7 @@ import uniffi.supermessage_core.NotificationDto
 import uniffi.supermessage_core.NotificationMode
 import uniffi.supermessage_core.NotificationResponse
 import uniffi.supermessage_core.PermissionAnswers
+import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.PersonDto
 import uniffi.supermessage_core.PlannedNotification
 import uniffi.supermessage_core.PlayableAudio
@@ -171,6 +173,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferNotificationDto
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationMode
 import uniffi.supermessage_core.RustBuffer as RustBufferNotificationResponse
 import uniffi.supermessage_core.RustBuffer as RustBufferPermissionAnswers
+import uniffi.supermessage_core.RustBuffer as RustBufferPermissionV2Decision
 import uniffi.supermessage_core.RustBuffer as RustBufferPersonDto
 import uniffi.supermessage_core.RustBuffer as RustBufferPlannedNotification
 import uniffi.supermessage_core.RustBuffer as RustBufferPlayableAudio
@@ -1234,6 +1237,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1374,6 +1379,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_send_message(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`mentions`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_permission_answer(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_send_permission_answer_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`permission`: RustBufferPermissionV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_question_answer_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`question`: RustBufferQuestionV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1911,6 +1918,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_permission_answer(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_permission_answer_v2(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_question_answer_v2(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_reply(
@@ -2347,6 +2356,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_permission_answer() != 53383.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_permission_answer_v2() != 62009.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_question_answer_v2() != 6828.toShort()) {
@@ -3281,6 +3293,17 @@ public interface CoreInterface {
      * need not be open.
      */
     fun `sendPermissionAnswer`(`roomId`: kotlin.String, `optionId`: kotlin.String)
+    
+    /**
+     * Answer a harness permission.v2 from its card
+     * (`supermessage_core::permission_v2`). `permission` is the card's
+     * `CustomEventDecision::permission_v2`, handed back unchanged; the core
+     * refuses an option the request did not offer and an allowing option on
+     * a preview the card could not show in full, then sends the
+     * `dev.agentpod.permission.answer.v2` — the binding copied from the card
+     * — referencing `in_reply_to`. The room need not be open.
+     */
+    fun `sendPermissionAnswerV2`(`roomId`: kotlin.String, `permission`: PermissionV2Decision, `optionId`: kotlin.String, `inReplyTo`: kotlin.String)
     
     /**
      * Answer a question.v2 from its card (`supermessage_core::question_v2`).
@@ -4504,6 +4527,27 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_permission_answer(
         it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`optionId`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Answer a harness permission.v2 from its card
+     * (`supermessage_core::permission_v2`). `permission` is the card's
+     * `CustomEventDecision::permission_v2`, handed back unchanged; the core
+     * refuses an option the request did not offer and an allowing option on
+     * a preview the card could not show in full, then sends the
+     * `dev.agentpod.permission.answer.v2` — the binding copied from the card
+     * — referencing `in_reply_to`. The room need not be open.
+     */
+    @Throws(FfiException::class)override fun `sendPermissionAnswerV2`(`roomId`: kotlin.String, `permission`: PermissionV2Decision, `optionId`: kotlin.String, `inReplyTo`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_permission_answer_v2(
+        it, FfiConverterString.lower(`roomId`),FfiConverterTypePermissionV2Decision.lower(`permission`),FfiConverterString.lower(`optionId`),FfiConverterString.lower(`inReplyTo`),_status)
 }
     }
     
@@ -7963,6 +8007,10 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
         }
     }
 }
+
+
+
+
 
 
 

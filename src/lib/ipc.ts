@@ -824,13 +824,22 @@ export interface CustomEventDecision {
   subject: string | null;
   /**
    * The decision envelope's own shapes (`core::gate_v2`, `core::question_v2`,
-   * `core::delivery_v2`), absent unless the decision arrived as one. The
-   * desktop draws only `options` — what a decision.v1 or a plain reply can
-   * answer — and reads these just to say when more is answerable elsewhere.
+   * `core::delivery_v2`, `core::permission_v2`), absent unless the decision
+   * arrived as one. The desktop draws only `options` — what a decision.v1 or
+   * a plain reply can answer, never an approval of a subject — and reads
+   * these just to say when more is answerable elsewhere.
    */
   gateV2?: EnvelopeDecision;
-  questionV2?: { options: EnvelopeOption[]; freeText: { maxLength: number } | null };
+  questionV2?: {
+    options: EnvelopeOption[];
+    freeText: { maxLength: number } | null;
+    /** Present when the question approves an exact operation (a strict decision). */
+    subject?: unknown;
+    approvalsWithheld?: string | null;
+  };
   deliveryV2?: EnvelopeDecision;
+  /** A harness permission.v2: what the agent would do, and its options by meaning. */
+  permissionV2?: { requestId: string; options: EnvelopeOption[]; approvalsWithheld: string | null };
 }
 
 /** A decision-envelope option, as far as the desktop reads it. */

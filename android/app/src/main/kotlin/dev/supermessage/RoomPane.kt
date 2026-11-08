@@ -309,6 +309,7 @@ internal fun RoomPane(
                             val gateV2 = answer.gateV2
                             val questionV2 = answer.questionV2
                             val deliveryV2 = answer.deliveryV2
+                            val permissionV2 = answer.permissionV2
                             if (gateV2 != null) {
                                 session.answerGateV2(
                                     eventId = row.item.eventId,
@@ -332,6 +333,16 @@ internal fun RoomPane(
                                     delivery = deliveryV2,
                                     optionId = answer.optionId,
                                     text = answer.text,
+                                    roomId = currentRoomId,
+                                )
+                            } else if (permissionV2 != null) {
+                                // A harness permission.v2: bound to the
+                                // request the card showed, before the plain
+                                // v1 reply below.
+                                session.answerPermissionV2(
+                                    eventId = row.item.eventId,
+                                    permission = permissionV2,
+                                    optionId = answer.optionId,
                                     roomId = currentRoomId,
                                 )
                             } else if (gateId == null) {

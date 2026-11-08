@@ -18,6 +18,19 @@
 //! The answer is `dev.superpipeline.question.answer.v2`, built and checked by
 //! [`answer_request`] against the question the reader saw.
 //!
+//! ## A question bound to a subject
+//!
+//! charter → `decisions/2026-11-07-strict-decisions-and-permissions-bind-their-subject.md`.
+//! A strict decision (`salaam-operation/v1`) or a board-dispatched harness
+//! permission (`harness-permission/v1`) arrives as a question carrying
+//! gate.v2's `subject` — the exact operation as preview blocks, and the
+//! binding. The gate's rule applies unchanged: no approve-meaning option is
+//! offered unless the preview is complete and every block drawable
+//! (`crate::gate_v2::offerable`), and the answer copies `subject {id, digest}`
+//! back. Options may say their `scope` (`once | run | always`) and who may
+//! take them (`requires: workspace-admin`); both are shown, never judged here.
+//! A question without a subject is exactly as before.
+//!
 //! Everything here is room content, so it is hostile: read one level at a
 //! time, never coerced, every drawn string bounded.
 
@@ -28,7 +41,11 @@ use crate::custom_events::{
     CustomEventRenderResult, CustomEventRenderer,
 };
 use crate::error::{CoreError, CoreResult};
-use crate::gate_v2::{checked_input, id_field, parse_option_list, GateOptionV2};
+use crate::gate_v2::{
+    checked_input, id_field, offerable, parse_bound_subject, parse_option_list, GateOptionMeaning,
+    GateOptionV2, Subject, SubjectV2, APPROVALS_WITHHELD_NOTE, HARNESS_PERMISSION_SCHEMA,
+    SALAAM_OPERATION_SCHEMA,
+};
 
 /// The `suite_event_type` marker on a question.v2 prose message, and the
 /// event type its card is registered under.
@@ -70,8 +87,21 @@ pub struct QuestionV2Decision {
     /// is the same sentence cut at 300, so a host draws this one.
     pub question: String,
     /// In the question's order. Empty exactly when `free_text` is set.
+    /// Approve-meaning options are already gone when the question is bound
+    /// to a subject whose preview could not be drawn in full.
     pub options: Vec<GateOptionV2>,
     pub free_text: Option<QuestionFreeText>,
+    /// What the question approves — a strict decision's operation, a
+    /// board-dispatched permission's request — drawn verbatim before the
+    /// options. `None` for an ordinary question.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub subject: Option<SubjectV2>,
+    /// `crate::gate_v2::APPROVALS_WITHHELD_NOTE` when approve-meaning
+    /// options were withheld.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub approvals_withheld: Option<String>,
 }
 
 /// A question.v2 that validated.
@@ -84,7 +114,11 @@ pub(crate) struct ParsedQuestionV2 {
     deep_link: Option<String>,
     options: Vec<GateOptionV2>,
     free_text: Option<QuestionFreeText>,
+    subject: Option<Subject>,
 }
+
+/// The schemas a question's subject may name.
+const QUESTION_SUBJECT_SCHEMAS: [&str; 2] = [SALAAM_OPERATION_SCHEMA, HARNESS_PERMISSION_SCHEMA];
 
 /// `content.free_text`: `Ok(None)` when absent, `Err(())` when present and
 /// not `{ max_length }` with a whole number from 1 to the limit.
@@ -109,7 +143,11 @@ fn parse_free_text(content: &Value) -> Result<Option<QuestionFreeText>, ()> {
 /// Refused, as the corpus refuses them: no body, an option with no meaning,
 /// an input spelled `maxLength`, duplicate option ids, `free_text` beside
 /// options, and — because there would be nothing to answer with — no
-/// options and no `free_text`.
+/// options and no `free_text`. A subject is refused (and the question with
+/// it) when it has no id or digest, names another schema, or is not in its
+/// snake_case Matrix shape (`crate::gate_v2::parse_bound_subject`); an
+/// option whose `scope` or `requires` this build does not know is refused
+/// with its question.
 pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedQuestionV2> {
     if content.get("suite_event_type")?.as_str()? != QUESTION_V2_EVENT_TYPE {
         return None;
@@ -121,6 +159,7 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedQuestio
         .filter(|q| !q.trim().is_empty())?;
     let options = parse_option_list(content.get("options")?.as_array()?, true)?;
     let free_text = parse_free_text(content).ok()?;
+    let subject = parse_bound_subject(content, &QUESTION_SUBJECT_SCHEMAS).ok()?;
     match (options.is_empty(), free_text.is_some()) {
         // Text alone answers only a question with nothing to choose.
         (false, true) => return None,
@@ -136,6 +175,7 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedQuestio
         deep_link: safe_link(content, "deep_link"),
         options,
         free_text,
+        subject,
     })
 }
 
@@ -156,12 +196,22 @@ pub fn embedded_payload(content: &Value) -> Option<Value> {
 }
 
 impl ParsedQuestionV2 {
+    /// Whether this client may offer an approving option: a question bound
+    /// to no subject, or one whose whole preview it can draw.
+    fn approvable(&self) -> bool {
+        self.subject.as_ref().is_none_or(|s| s.complete)
+    }
+
     fn decision(&self) -> QuestionV2Decision {
+        let (options, approvals_withheld) =
+            offerable(&self.options, self.approvable(), APPROVALS_WITHHELD_NOTE);
         QuestionV2Decision {
             elicitation_id: self.elicitation_id.clone(),
             question: self.question.clone(),
-            options: self.options.clone(),
+            options,
             free_text: self.free_text.clone(),
+            subject: self.subject.as_ref().map(Subject::view),
+            approvals_withheld,
         }
     }
 
@@ -170,10 +220,13 @@ impl ParsedQuestionV2 {
     /// sending the option's id as text (as for a permission request), and
     /// the hub matches a typed label — so each id here is the label. An
     /// option that asks for input is left out: its text cannot ride along.
+    /// So is an approval of a subject: a typed reply never approves one (the
+    /// hub refuses it), because such a host draws no preview.
     fn legacy_options(&self) -> Vec<CustomEventDecisionOption> {
         self.options
             .iter()
             .filter(|o| o.input.is_none())
+            .filter(|o| self.subject.is_none() || o.meaning != GateOptionMeaning::Approve)
             .map(|o| CustomEventDecisionOption {
                 id: o.label.clone(),
                 label: o.label.clone(),
@@ -223,6 +276,7 @@ impl CustomEventRenderer for QuestionV2Renderer {
                 gate_v2: None,
                 question_v2: Some(question.decision()),
                 delivery_v2: None,
+                permission_v2: None,
             }),
         }
     }
@@ -263,8 +317,12 @@ pub(crate) fn answer_body(option: Option<&GateOptionV2>, text: Option<&str>) -> 
 /// `text` alone. Refuses, with a reason a host can show: an option the
 /// question did not offer, a required input left empty, an input over its
 /// limit or a `url` input that is not `https://`, free text on a question
-/// with options, empty free text, free text over the question's limit, and
-/// a reference that is not an event id.
+/// with options, empty free text, free text over the question's limit, an
+/// approval of a subject whose preview was not shown in full, and a
+/// reference that is not an event id.
+///
+/// `subject {id, digest}` is present exactly when the question was bound to
+/// one, copied from what the reader was shown — never computed.
 pub(crate) fn answer_request(
     question: &QuestionV2Decision,
     option_id: Option<&str>,
@@ -283,6 +341,12 @@ pub(crate) fn answer_request(
                 .ok_or_else(|| {
                     CoreError::Protocol(format!("not an option this question offers: {option_id}"))
                 })?;
+            if option.meaning == GateOptionMeaning::Approve && question.approvals_withheld.is_some()
+            {
+                return Err(CoreError::Protocol(
+                    "this card could not show everything being approved".into(),
+                ));
+            }
             (Some(option), checked_input(option, text)?)
         }
         None => {
@@ -322,6 +386,12 @@ pub(crate) fn answer_request(
     }
     if let Some(text) = text {
         content["text"] = Value::String(text);
+    }
+    if let Some(subject) = &question.subject {
+        content["subject"] = serde_json::json!({
+            "id": subject.binding.id,
+            "digest": subject.binding.digest,
+        });
     }
     Ok(content)
 }
@@ -589,6 +659,230 @@ mod tests {
             answer_request(&options, Some("skip"), Some("ignored"), QUESTION_EVENT).unwrap();
         assert!(content.get("text").is_none());
         assert_eq!(content["body"], "Skip them");
+    }
+
+    // ---- a question bound to a subject -------------------------------------
+
+    use crate::gate_v2::{
+        GatePreviewBlock, GateSubjectBinding, OptionRequires, OptionScope, SALAAM_OPERATION_SCHEMA,
+    };
+
+    const SUBJECT_BOUND: &str = "subject-bound";
+
+    fn bound_cases(suite_type: &str, which: &str) -> Vec<(String, Value)> {
+        let corpus: Value = serde_json::from_str(CORPUS).expect("the corpus is JSON");
+        corpus["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["suiteEventType"] == suite_type && e["variant"] == SUBJECT_BOUND)
+            .unwrap_or_else(|| panic!("the corpus pins a subject-bound {suite_type}"))[which]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (c["why"].as_str().unwrap().to_string(), c["content"].clone()))
+            .collect()
+    }
+
+    /// The strict decision: four options, a complete preview.
+    fn strict() -> Value {
+        bound_cases(QUESTION_V2_EVENT_TYPE, "accept")[0].1.clone()
+    }
+
+    const DIGEST: &str = "0588c96c7eff47e1a83d9fc1d0ecda3cc3b72e559a5c402bb9da29d9851dbceb";
+
+    #[test]
+    fn every_accepted_subject_bound_question_is_drawn_from_v2() {
+        for (why, content) in bound_cases(QUESTION_V2_EVENT_TYPE, "accept") {
+            assert!(parse(&content, body(&content)).is_some(), "{why}");
+            assert!(embedded_payload(&content).is_some(), "{why}");
+        }
+    }
+
+    #[test]
+    fn every_rejected_subject_bound_question_stays_prose() {
+        let rejects = bound_cases(QUESTION_V2_EVENT_TYPE, "reject");
+        assert_eq!(rejects.len(), 3, "the corpus grew; read the new case");
+        for (why, content) in rejects {
+            assert!(parse(&content, body(&content)).is_none(), "{why}");
+            assert!(embedded_payload(&content).is_none(), "{why}");
+        }
+    }
+
+    #[test]
+    fn a_strict_decision_shows_its_operation_and_each_options_reach() {
+        let decision = decision_for(&strict());
+        let question = decision.question_v2.as_ref().unwrap();
+        let subject = question.subject.as_ref().expect("bound to a subject");
+        assert_eq!(
+            subject.binding,
+            GateSubjectBinding {
+                id: "8f9a0d0e-4b2a-4c1e-9c55-1a2b3c4d5e6f".into(),
+                digest: DIGEST.into(),
+            }
+        );
+        assert_eq!(subject.schema, SALAAM_OPERATION_SCHEMA);
+        assert_eq!(
+            subject.preview,
+            [
+                GatePreviewBlock::Text {
+                    label: None,
+                    text: "Edit app.js in the workspace".into()
+                },
+                GatePreviewBlock::Field {
+                    label: "File".into(),
+                    value: "app.js · edit · 16 bytes".into()
+                },
+                GatePreviewBlock::Text {
+                    label: None,
+                    text: "console.log(1);\n".into()
+                },
+            ]
+        );
+        assert_eq!(question.approvals_withheld, None);
+        let drawn: Vec<(
+            &str,
+            GateOptionMeaning,
+            Option<OptionScope>,
+            Option<OptionRequires>,
+        )> = question
+            .options
+            .iter()
+            .map(|o| (o.id.as_str(), o.meaning, o.scope, o.requires))
+            .collect();
+        use GateOptionMeaning::{Approve, Reject};
+        assert_eq!(
+            drawn,
+            [
+                ("approve", Approve, Some(OptionScope::Once), None),
+                ("approve-run", Approve, Some(OptionScope::Run), None),
+                (
+                    "always",
+                    Approve,
+                    Some(OptionScope::Always),
+                    Some(OptionRequires::WorkspaceAdmin)
+                ),
+                ("deny", Reject, Some(OptionScope::Once), None),
+            ]
+        );
+        // A host without v2 is offered only the decline a typed reply may send.
+        let legacy: Vec<&str> = decision.options.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(legacy, ["Deny"]);
+    }
+
+    #[test]
+    fn an_incomplete_preview_offers_no_approval_on_a_question() {
+        let mut incomplete = strict();
+        incomplete["subject"]["preview_complete"] = json!(false);
+        let mut undrawable = strict();
+        undrawable["subject"]["preview"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "type": "image", "url": "https://x.example/a.png" }));
+        let mut empty = strict();
+        empty["subject"]["preview"] = json!([]);
+        for (why, content) in [
+            ("preview_complete false", incomplete),
+            ("a block this build cannot draw", undrawable),
+            ("an empty preview", empty),
+        ] {
+            let question = v2(&content);
+            let ids: Vec<&str> = question.options.iter().map(|o| o.id.as_str()).collect();
+            assert_eq!(ids, ["deny"], "{why}");
+            assert_eq!(
+                question.approvals_withheld.as_deref(),
+                Some(crate::gate_v2::APPROVALS_WITHHELD_NOTE),
+                "{why}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_subject_of_another_schema_or_an_unknown_requirement_stays_prose() {
+        let mut schema = strict();
+        schema["subject"]["schema"] = json!("x-post/v1");
+        assert!(embedded_payload(&schema).is_none());
+        let mut requires = strict();
+        requires["options"][2]["requires"] = json!("owner");
+        assert!(embedded_payload(&requires).is_none());
+        let mut flag = strict();
+        flag["subject"]
+            .as_object_mut()
+            .unwrap()
+            .remove("preview_complete");
+        assert!(embedded_payload(&flag).is_none());
+    }
+
+    #[test]
+    fn a_question_without_a_subject_is_unchanged() {
+        let question = v2(&with_options());
+        assert_eq!(question.subject, None);
+        assert_eq!(question.approvals_withheld, None);
+        assert!(question
+            .options
+            .iter()
+            .all(|o| o.scope.is_none() && o.requires.is_none()));
+        let content = answer_request(&question, Some("run_them"), None, QUESTION_EVENT).unwrap();
+        assert!(content.get("subject").is_none());
+    }
+
+    #[test]
+    fn the_subject_bound_answers_are_exactly_the_corpus_answers() {
+        let accepts = bound_cases(QUESTION_ANSWER_V2_SUITE_TYPE, "accept");
+        assert_eq!(accepts.len(), 2, "the corpus grew; read the new case");
+        let question = v2(&strict());
+        assert_eq!(
+            answer_request(&question, Some("approve"), None, QUESTION_EVENT).unwrap(),
+            accepts[0].1,
+            "{}",
+            accepts[0].0
+        );
+        assert_eq!(
+            answer_request(&question, Some("deny"), None, QUESTION_EVENT).unwrap(),
+            accepts[1].1,
+            "{}",
+            accepts[1].0
+        );
+    }
+
+    #[test]
+    fn every_rejected_subject_bound_answer_is_never_what_the_client_sends() {
+        let rejects = bound_cases(QUESTION_ANSWER_V2_SUITE_TYPE, "reject");
+        assert_eq!(rejects.len(), 3, "the corpus grew; read the new case");
+        let question = v2(&strict());
+        for (why, content) in &rejects {
+            let option = content["option_id"].as_str().unwrap();
+            let sent = answer_request(&question, Some(option), None, QUESTION_EVENT).unwrap();
+            assert_ne!(&sent, content, "{why}");
+            assert_eq!(
+                sent["subject"],
+                json!({ "id": "8f9a0d0e-4b2a-4c1e-9c55-1a2b3c4d5e6f", "digest": DIGEST }),
+                "{why}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_withheld_approval_cannot_be_sent_even_if_a_host_puts_it_back() {
+        let mut content = strict();
+        content["subject"]["preview_complete"] = json!(false);
+        let question = v2(&content);
+        assert!(answer_request(&question, Some("approve"), None, QUESTION_EVENT).is_err());
+        let mut forged = question.clone();
+        forged.options.insert(
+            0,
+            GateOptionV2 {
+                id: "approve".into(),
+                label: "Approve".into(),
+                meaning: GateOptionMeaning::Approve,
+                needs_comment: false,
+                input: None,
+                scope: Some(OptionScope::Once),
+                requires: None,
+            },
+        );
+        assert!(answer_request(&forged, Some("approve"), None, QUESTION_EVENT).is_err());
+        assert!(answer_request(&question, Some("deny"), None, QUESTION_EVENT).is_ok());
     }
 
     #[test]

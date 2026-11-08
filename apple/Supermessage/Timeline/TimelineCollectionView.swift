@@ -1007,6 +1007,12 @@ struct TimelineList: UIViewRepresentable {
                     row.item.eventId, delivery: delivery, optionId: answer.optionId,
                     text: answer.text, in: roomId)
             }
+            if let permission = answer.permissionV2 {
+                // A harness permission.v2: bound to the request the card showed.
+                return await session.answerPermissionV2(
+                    row.item.eventId, permission: permission, optionId: answer.optionId,
+                    in: roomId)
+            }
             guard let gateId = answer.subject else {
                 // A permission request: the option, as a plain reply.
                 return await session.answerPermission(optionId: answer.optionId, in: roomId)

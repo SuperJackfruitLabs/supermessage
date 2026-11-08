@@ -756,6 +756,26 @@ public final class Session {
         }
     }
 
+    /// Answer a harness permission.v2 from its card: the bound
+    /// `dev.agentpod.permission.answer.v2` referencing the permission's
+    /// prose message. Same contract as `answerQuestionV2`; sent to the room
+    /// directly, as `answerPermission` is.
+    @discardableResult
+    public func answerPermissionV2(
+        _ eventId: String?, permission: PermissionV2Decision, optionId: String,
+        in roomId: String
+    ) async -> Bool {
+        guard phase == .signedIn, let eventId else { return false }
+        do {
+            try await client.sendPermissionAnswerV2(
+                roomId: roomId, permission: permission, optionId: optionId, inReplyTo: eventId)
+            decisionAnswered?(roomId, eventId, optionId)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Register this device's APNs pusher. Returns whether it landed; `false`
     /// also when the client behind this session cannot register one.
     @discardableResult

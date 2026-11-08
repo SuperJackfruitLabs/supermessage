@@ -71,6 +71,34 @@ class WidgetRedrawTest {
         assertEquals(AlarmManager.RTC, alarm.type)
     }
 
+    /**
+     * The last widget's removal arms with nothing placed, which cancels. An arm already under way,
+     * one that read "placed" before the widget went, must not write its alarm and backstop after
+     * that: once it has written, it asks again and cancels. (CI's widget receiver test timed out
+     * on this.)
+     */
+    @Test(timeout = 30_000)
+    fun theRemovalWaitsForAnArmAlreadyUnderWayThenCancels() {
+        val placed = java.util.concurrent.atomic.AtomicBoolean(true)
+        val asking = java.util.concurrent.CountDownLatch(1)
+        val answer = java.util.concurrent.CountDownLatch(1)
+        val schedule = WidgetRedraw(
+            app,
+            nextChangeMs = { asking.countDown(); answer.await(); now + 60_000 },
+            now = { now }, widgets = { emptyList() }, placed = { placed.get() },
+        )
+        val arming = Thread { schedule.arm() }.apply { start() }
+        asking.await() // it has read "placed" and is asking the core for the next frame
+        placed.set(false)
+        val removing = Thread { schedule.arm() }.apply { start() }
+        removing.join() // the removal's cancel finishes first, while the arm is still asking
+        answer.countDown()
+        arming.join()
+        removing.join()
+        assertNull("no frame alarm with no widget placed", alarmFor(WidgetRedraw.FRAME))
+        assertTrue("no backstop with no widget placed", backstop().isEmpty())
+    }
+
     @Test
     fun noNextFrameSchedulesNothing() {
         redraw(next = now + 60_000).arm()
