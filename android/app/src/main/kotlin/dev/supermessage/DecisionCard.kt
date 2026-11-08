@@ -84,6 +84,7 @@ import uniffi.supermessage_core.OptionRequires
 import uniffi.supermessage_core.OptionScope
 import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.QuestionV2Decision
+import uniffi.supermessage_ffi.decisionDeadlineLine
 
 /**
  * A suite event — a Superpipeline card or run, a permission request, station
@@ -613,9 +614,12 @@ private fun PendingBody(
             // sentence cut at 300 characters.
             Text(decision.questionV2?.question ?: decision.prompt, style = MaterialTheme.typography.titleMedium)
             // Who is asking. A decision from nobody in particular is one a
-            // reader cannot weigh.
+            // reader cannot weigh. Then, when the stage has a timeout, when it
+            // escalates — worded by the core against this device's clock
+            // (`core::decision_timeout::deadline_line`).
+            val deadline = decision.deadline?.let { decisionDeadlineLine(it, System.currentTimeMillis()) }
             Text(
-                "Asked by $senderName",
+                askedByLine(senderName, deadline),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -648,6 +652,10 @@ private fun PendingBody(
         DecisionButtons(decision, answers, answerKey, onDecide)
     }
 }
+
+/** "Asked by Hermes", and the decision's deadline after it when it has one: "Asked by Hermes · Escalates in 3 h". */
+internal fun askedByLine(senderName: String, deadline: String?): String =
+    if (deadline.isNullOrBlank()) "Asked by $senderName" else "Asked by $senderName · $deadline"
 
 /**
  * A gate.v2 subject's preview — what the reader approves, exactly.

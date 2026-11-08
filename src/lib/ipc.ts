@@ -847,6 +847,11 @@ export interface CustomEventDecision {
    * instruction, so the desktop answers none of it.
    */
   attentionV2?: { boardId: string; cardId: string; waitId: string; options: EnvelopeOption[] };
+  /**
+   * When the decision is reminded and escalated (`core::decision_timeout`), ISO times as the board
+   * sent them; absent when its stage has no timeout. Not drawn on the desktop yet.
+   */
+  deadline?: { remindAt: string | null; escalateAt: string | null };
 }
 
 /** A decision-envelope option, as far as the desktop reads it. */

@@ -426,4 +426,13 @@ class DecisionChoiceTest {
         )
         assertEquals("Always · Admins only", DecisionChoice.v2(always).qualifier)
     }
+
+    @Test
+    fun theAskedByLineCarriesTheDeadlineWhenThereIsOne() {
+        // The deadline's words are the core's (`decisionDeadlineLine`); the card only joins them.
+        assertEquals("Asked by Hermes", askedByLine("Hermes", null))
+        assertEquals("Asked by Hermes", askedByLine("Hermes", ""))
+        assertEquals("Asked by Hermes · Escalates in 3 h", askedByLine("Hermes", "Escalates in 3 h"))
+        assertEquals("Asked by Hermes · Escalated", askedByLine("Hermes", "Escalated"))
+    }
 }
