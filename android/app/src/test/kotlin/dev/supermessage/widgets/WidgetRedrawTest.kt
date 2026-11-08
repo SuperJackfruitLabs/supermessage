@@ -74,7 +74,8 @@ class WidgetRedrawTest {
     /**
      * The last widget's removal arms with nothing placed, which cancels. An arm already under way,
      * one that read "placed" before the widget went, must not write its alarm and backstop after
-     * that: the removal waits for it, then cancels. (CI's widget receiver test timed out on this.)
+     * that: once it has written, it asks again and cancels. (CI's widget receiver test timed out
+     * on this.)
      */
     @Test(timeout = 30_000)
     fun theRemovalWaitsForAnArmAlreadyUnderWayThenCancels() {
@@ -90,7 +91,7 @@ class WidgetRedrawTest {
         asking.await() // it has read "placed" and is asking the core for the next frame
         placed.set(false)
         val removing = Thread { schedule.arm() }.apply { start() }
-        removing.join(500) // unserialised, the removal's cancel would finish here, first
+        removing.join() // the removal's cancel finishes first, while the arm is still asking
         answer.countDown()
         arming.join()
         removing.join()
