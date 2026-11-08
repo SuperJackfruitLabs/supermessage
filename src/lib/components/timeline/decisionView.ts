@@ -65,11 +65,27 @@ export function answeredWhen(atMs: number, nowMs: number): string {
  */
 export const ANSWER_ELSEWHERE = "Open the card, or answer on your phone, for the rest of this one.";
 
+/**
+ * The same for a harness permission.v2, which has no board card to open: the
+ * desktop never allows (it draws no preview), so allowing is on a phone or in
+ * the console.
+ */
+export const ALLOW_ELSEWHERE = "To allow this, answer on your phone or in the console.";
+
 export function answerElsewhere(decision: CustomEventDecision): string | null {
   if (decision.deliveryV2) return ANSWER_ELSEWHERE;
+  const permission = decision.permissionV2;
+  if (permission) {
+    if (permission.approvalsWithheld) return permission.approvalsWithheld;
+    return permission.options.length > decision.options.length ? ALLOW_ELSEWHERE : null;
+  }
   const question = decision.questionV2;
   if (question && (question.freeText !== null || question.options.some((o) => o.input))) {
     return ANSWER_ELSEWHERE;
+  }
+  // A question bound to a subject: its approvals are never among `options`.
+  if (question?.subject && (question.approvalsWithheld || question.options.length > decision.options.length)) {
+    return question.approvalsWithheld ?? ANSWER_ELSEWHERE;
   }
   const gate = decision.gateV2;
   if (gate && (gate.approvalsWithheld !== null || gate.options.length > decision.options.length)) {
