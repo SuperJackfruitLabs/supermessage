@@ -993,7 +993,7 @@ struct TimelineList: UIViewRepresentable {
             if let gate = answer.gateV2 {
                 return await session.answerGateV2(
                     row.item.eventId, gate: gate, optionId: answer.optionId,
-                    comment: answer.comment, in: roomId)
+                    chosenVariant: answer.chosenVariant, comment: answer.comment, in: roomId)
             }
             if let question = answer.questionV2 {
                 // An empty option id is a free-text answer.

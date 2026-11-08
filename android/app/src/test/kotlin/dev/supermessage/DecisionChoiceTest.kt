@@ -12,6 +12,7 @@ import uniffi.supermessage_core.GateOptionMeaning
 import uniffi.supermessage_core.GateOptionV2
 import uniffi.supermessage_core.GateSubjectBinding
 import uniffi.supermessage_core.GateV2Decision
+import uniffi.supermessage_core.GateVariantV2
 import uniffi.supermessage_core.OptionInput
 import uniffi.supermessage_core.OptionInputKind
 import uniffi.supermessage_core.OptionRequires
@@ -434,5 +435,63 @@ class DecisionChoiceTest {
         assertEquals("Asked by Hermes", askedByLine("Hermes", ""))
         assertEquals("Asked by Hermes · Escalates in 3 h", askedByLine("Hermes", "Escalates in 3 h"))
         assertEquals("Asked by Hermes · Escalated", askedByLine("Hermes", "Escalated"))
+    }
+
+    // ---- a choice of versions (corpus `matrix_gate_events.json`, v8)
+
+    private fun version(id: String, label: String, n: Int, approvable: Boolean) = GateVariantV2(
+        id = id,
+        label = label,
+        subject = SubjectV2(
+            binding = GateSubjectBinding(id = "aps_v$n", digest = "sha256:v${n}d1"),
+            schema = "social-publish/v1",
+            preview = emptyList(),
+            expiresAt = "2030-01-02T03:04:05Z",
+        ),
+        approvable = approvable,
+        withheld = if (approvable) null else "Too long to show here — choose it on the board.",
+    )
+
+    /** The corpus's choice as the core hands it over: the third version was cut, so it is withheld alone. */
+    private val choice = GateV2Decision(
+        gateId = "gate_5d72",
+        options = publishingOptions,
+        preview = emptyList(),
+        approvalsWithheld = null,
+        subject = null,
+        variants = listOf(
+            version("short", "Short", 1, approvable = true),
+            version("thread", "With the thread", 2, approvable = true),
+            version("long", "Long form", 3, approvable = false),
+        ),
+    )
+
+    @Test
+    fun aChoiceApprovesOnlyOnceAVersionShownWholeIsPicked() {
+        assertFalse("nothing picked yet", variantApprovalReady(choice, null))
+        assertTrue(variantApprovalReady(choice, "short"))
+        assertTrue(variantApprovalReady(choice, "thread"))
+        assertFalse("cut to its share: chosen on the board", variantApprovalReady(choice, "long"))
+        assertFalse("not a version of this gate", variantApprovalReady(choice, "fourth"))
+    }
+
+    @Test
+    fun aGateWithoutVersionsNeverWaitsOnAPick() {
+        assertTrue(variantApprovalReady(publishing().gateV2, null))
+        assertTrue(variantApprovalReady(null, null))
+    }
+
+    @Test
+    fun onlyAnApprovalOfAChoiceCarriesTheVersion() {
+        val (all, primaries) = DecisionChoice.of(publishing().copy(gateV2 = choice))
+        // Both approvals still lead; whether they are pressable is the pick's.
+        assertEquals(listOf("approve_manual", "approve_automatic"), primaries.map { it.id })
+        val byId = all.associateBy { it.id }
+        assertEquals("thread", chosenVariantFor(choice, byId.getValue("approve_automatic").role, "thread"))
+        // The set is sent back or rejected whole.
+        assertEquals(null, chosenVariantFor(choice, byId.getValue("reject").role, "thread"))
+        assertEquals(null, chosenVariantFor(choice, byId.getValue("request_changes").role, "thread"))
+        // A gate without versions refuses one, so none is sent.
+        assertEquals(null, chosenVariantFor(publishing().gateV2, DecisionOptionRole.APPROVE, "thread"))
     }
 }

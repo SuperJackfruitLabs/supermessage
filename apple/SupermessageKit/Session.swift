@@ -473,17 +473,18 @@ public final class Session {
     /// core drew it: the core checks the answer against what the reader was
     /// shown and binds it to the subject they saw. Same contract as
     /// `answerGate` otherwise — the event id, and a result that says whether
-    /// it landed.
+    /// it landed. `chosenVariant` is the version picked on a gate that offers
+    /// a choice of them; an approval of such a gate is refused without one.
     @discardableResult
     public func answerGateV2(
-        _ eventId: String?, gate: GateV2Decision, optionId: String, comment: String?,
-        in roomId: String
+        _ eventId: String?, gate: GateV2Decision, optionId: String,
+        chosenVariant: String? = nil, comment: String?, in roomId: String
     ) async -> Bool {
         guard let eventId else { return false }
         do {
             try await client.sendGateDecisionV2(
-                roomId: roomId, gate: gate, optionId: optionId, comment: comment,
-                inReplyTo: eventId)
+                roomId: roomId, gate: gate, optionId: optionId, chosenVariant: chosenVariant,
+                comment: comment, inReplyTo: eventId)
             decisionAnswered?(roomId, eventId, optionId)
             return true
         } catch {

@@ -545,6 +545,10 @@ private struct DecisionButtons: View {
     @State private var inputText = ""
     /// A free-text question's answer, typed in the card.
     @State private var freeText = ""
+    /// The version picked on a gate that offers a choice of them
+    /// (`GateV2Decision.variants`, charter 2026-11-09). None until the reader
+    /// picks one: an approval names exactly what they chose, never a default.
+    @State private var chosenVariant: String?
     @State private var sending = false
     /// Bumped when a send does not land, which is what the error haptic
     /// watches. A count rather than a flag so two failures in a row are two.
@@ -576,6 +580,17 @@ private struct DecisionButtons: View {
         }
         return decision.options.map(DecisionChoice.init(legacy:))
     }
+    /// A gate's choice of versions; empty for any other decision.
+    private var variants: [GateVariantV2] { decision.gateV2?.variants ?? [] }
+    /// Whether an approving option may be sent: always, unless the gate
+    /// offers versions — then only once one the core marked approvable is
+    /// picked. Request changes and reject never wait on it. The core refuses
+    /// anything else (`gate_v2::decision_request`); this only keeps a button
+    /// that would be refused from looking pressable.
+    private var approvalReady: Bool {
+        guard !variants.isEmpty else { return true }
+        return variants.contains { $0.id == chosenVariant && $0.approvable }
+    }
     /// Drawn from the decision envelope — by meaning, never by id.
     private var isEnvelope: Bool {
         decision.gateV2 != nil || decision.questionV2 != nil || decision.deliveryV2 != nil
@@ -602,6 +617,12 @@ private struct DecisionButtons: View {
             if let free = decision.questionV2?.freeText {
                 freeTextBox(maxLength: Int(free.maxLength))
             }
+            if !variants.isEmpty {
+                // What each version is, exactly, before the buttons that
+                // approve one. No editing here: a change is "Request changes".
+                VariantPicker(variants: variants, selection: $chosenVariant)
+                    .disabled(sending)
+            }
             ForEach(Array(primaries.enumerated()), id: \.offset) { _, primary in
                 // The label colour is set rather than inherited. `signal-soft`
                 // on `signal` is the pair the token contract holds at 6:1 in
@@ -617,7 +638,7 @@ private struct DecisionButtons: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(Theme.signal)
-                .disabled(!answerable || sending)
+                .disabled(!answerable || sending || !approvalReady)
             }
 
             if !secondaries.isEmpty || !rejections.isEmpty {
@@ -783,7 +804,10 @@ private struct DecisionButtons: View {
             deliveryV2: decision.deliveryV2,
             permissionV2: decision.permissionV2,
             attentionV2: decision.attentionV2,
-            text: (typed?.isEmpty ?? true) ? nil : typed)
+            text: (typed?.isEmpty ?? true) ? nil : typed,
+            // Only an approval carries a version; the set is sent back or
+            // rejected whole.
+            chosenVariant: choice.role == .approve && !variants.isEmpty ? chosenVariant : nil)
         sending = true
         Task {
             let landed = await onDecide(answer)
@@ -959,6 +983,60 @@ private struct GatePreviewBlocks: View {
     }
 }
 
+/// A gate's choice of versions (charter →
+/// `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md`): one
+/// section per version — a radio mark, its label and its preview, drawn
+/// verbatim as any subject's — and at most one picked. A version the core
+/// could not show whole is still shown as far as it goes, says it is chosen
+/// on the board, and never enables an approval here.
+private struct VariantPicker: View {
+    let variants: [GateVariantV2]
+    @Binding var selection: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(variants.enumerated()), id: \.offset) { _, variant in
+                let picked = selection == variant.id
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        selection = variant.id
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: picked ? "largecircle.fill.circle" : "circle")
+                                .foregroundStyle(picked ? Theme.content : Theme.contentMuted)
+                                .accessibilityHidden(true)
+                            Text(verbatim: variant.label)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(Theme.content)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        // The tap target a text row does not get for free.
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(picked ? .isSelected : [])
+                    .accessibilityIdentifier("gate-variant-\(variant.id)")
+                    GatePreviewBlocks(blocks: variant.subject.preview)
+                    if let withheld = variant.withheld {
+                        Text(withheld)
+                            .font(.footnote)
+                            .foregroundStyle(Theme.contentMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("gate-variant-withheld")
+                    }
+                }
+                .padding(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Metrics.radiusControl)
+                        .stroke(picked ? Theme.content : Theme.border, lineWidth: 1))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// An option's label, in the colour its button needs.
 ///
 /// Set explicitly, which means it no longer dims on its own when the button
@@ -1023,6 +1101,9 @@ struct GateAnswer {
     var attentionV2: AttentionV2Decision? = nil
     /// An option's input, or a free-text answer.
     var text: String? = nil
+    /// The version picked on a gate.v2 that offers a choice of them, sent with
+    /// an approval of it. `nil` on every other answer.
+    var chosenVariant: String? = nil
 }
 
 #if DEBUG

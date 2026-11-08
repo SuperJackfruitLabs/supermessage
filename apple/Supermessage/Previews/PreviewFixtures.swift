@@ -163,8 +163,8 @@ struct PreviewClient: SessionClient {
         inReplyTo: String, prompt: String
     ) async throws {}
     func sendGateDecisionV2(
-        roomId: String, gate: GateV2Decision, optionId: String, comment: String?,
-        inReplyTo: String
+        roomId: String, gate: GateV2Decision, optionId: String, chosenVariant: String?,
+        comment: String?, inReplyTo: String
     ) async throws {}
     func sendQuestionAnswerV2(
         roomId: String, question: QuestionV2Decision, optionId: String?, text: String?,
