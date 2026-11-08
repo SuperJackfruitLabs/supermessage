@@ -95,5 +95,46 @@ enum DecisionRevampFixtures {
                 subject: nil),
             link: nil, outcome: nil)
     }
+
+    /// A harness permission.v2 (`core::permission_v2`): the request as a
+    /// preview, options by meaning with their reach, bound to the request.
+    /// The legacy list holds only what a plain reply may send.
+    static var permissionV2Pending: CustomEventView {
+        let option = { (id: String, label: String, meaning: GateOptionMeaning, scope: OptionScope) in
+            GateOptionV2(
+                id: id, label: label, meaning: meaning, needsComment: false, input: nil,
+                scope: scope, requires: nil)
+        }
+        return .rendered(
+            fields: [CustomEventField(label: "Wants to", value: "Run the test suite")],
+            reasoning: nil, newerVersion: false,
+            decision: CustomEventDecision(
+                prompt: "Allow Run the test suite?",
+                options: [
+                    CustomEventDecisionOption(label: "Reject", id: "Reject"),
+                    CustomEventDecisionOption(label: "Never allow", id: "Never allow"),
+                ],
+                subject: nil,
+                permissionV2: PermissionV2Decision(
+                    requestId: "acps_3f0c:12", title: "Run the test suite", toolKind: "execute",
+                    options: [
+                        option("allow_once", "Allow once", .approve, .once),
+                        option("allow_always", "Always allow", .approve, .always),
+                        option("reject_once", "Reject", .reject, .once),
+                        option("reject_always", "Never allow", .reject, .always),
+                    ],
+                    subject: SubjectV2(
+                        binding: GateSubjectBinding(id: "acps_3f0c:12", digest: "bb03bfd8"),
+                        schema: "harness-permission/v1",
+                        preview: [
+                            .field(label: "Tool", value: "Run the test suite"),
+                            .field(label: "Kind", value: "execute"),
+                            .text(label: "Command", text: "bun test"),
+                            .field(label: "Location", value: "apps/hub"),
+                        ],
+                        expiresAt: "2026-11-07T10:30:00.000Z"),
+                    approvalsWithheld: nil)),
+            link: nil, outcome: nil)
+    }
 }
 #endif

@@ -373,6 +373,18 @@ public actor CoreClient {
         try await run { try $0.sendPermissionAnswer(roomId: roomId, optionId: optionId) }
     }
 
+    /// Answer a harness permission.v2. `permission` is the card's own
+    /// `CustomEventDecision.permissionV2`; the core refuses an option it did
+    /// not offer and an allow it withheld, and copies the binding.
+    public func sendPermissionAnswerV2(
+        roomId: String, permission: PermissionV2Decision, optionId: String, inReplyTo: String
+    ) async throws {
+        try await run {
+            try $0.sendPermissionAnswerV2(
+                roomId: roomId, permission: permission, optionId: optionId, inReplyTo: inReplyTo)
+        }
+    }
+
     public func sendGateDecisionTo(
         roomId: String, gateId: String, optionId: String, comment: String?,
         inReplyTo: String, prompt: String

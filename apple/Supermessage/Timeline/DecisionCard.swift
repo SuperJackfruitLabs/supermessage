@@ -263,13 +263,30 @@ struct CustomEventCard: View {
                         .accessibilityIdentifier("decision-approvals-withheld")
                 }
             }
+            if let subject = decision.questionV2?.subject ?? decision.permissionV2?.subject {
+                // A strict decision's operation, a harness permission's
+                // request: drawn verbatim before the buttons, by the same
+                // rule as a gate's preview.
+                GatePreviewBlocks(blocks: subject.preview)
+            }
+            if let withheld = decision.questionV2?.approvalsWithheld
+                ?? decision.permissionV2?.approvalsWithheld
+            {
+                Text(withheld)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.contentMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("decision-approvals-withheld")
+            }
             reasoningDisclosure(reasoning)
             linkButton(link)
 
             DecisionButtons(decision: decision, onDecide: onDecide) { choice in
                 // Only reached once the send has landed. See `answer`.
                 withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0.15)) {
-                    answer = DecisionAnswerRecord(option: choice.record, at: .now, role: choice.role)
+                    answer = DecisionAnswerRecord(
+                        option: choice.record, at: .now, role: choice.role,
+                        permission: decision.permissionV2 != nil, scope: choice.scope)
                 }
             }
             .padding(.top, 2)
@@ -537,11 +554,15 @@ private struct DecisionButtons: View {
         if let gate = decision.gateV2 { return gate.options.map(DecisionChoice.init) }
         if let question = decision.questionV2 { return question.options.map(DecisionChoice.init) }
         if let delivery = decision.deliveryV2 { return delivery.options.map(DecisionChoice.init) }
+        if let permission = decision.permissionV2 {
+            return permission.options.map(DecisionChoice.init)
+        }
         return decision.options.map(DecisionChoice.init(legacy:))
     }
     /// Drawn from the decision envelope — by meaning, never by id.
     private var isEnvelope: Bool {
         decision.gateV2 != nil || decision.questionV2 != nil || decision.deliveryV2 != nil
+            || decision.permissionV2 != nil
     }
     /// The main action. A gate.v2 can have more than one — a publishing gate
     /// approves automatically or manually — and each is a main action. A
@@ -570,9 +591,11 @@ private struct DecisionButtons: View {
                 // every appearance, including dark, where `signal` is light
                 // amber and a white label would vanish.
                 Button { tapped(primary) } label: {
-                    OptionLabel(text: primary.label, colour: Theme.signalSoft)
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
+                    OptionLabel(
+                        text: primary.label, colour: Theme.signalSoft, caption: primary.qualifier
+                    )
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
@@ -694,7 +717,7 @@ private struct DecisionButtons: View {
     private var secondaryButtons: some View {
         ForEach(Array(secondaries.enumerated()), id: \.offset) { _, option in
             Button { tapped(option) } label: {
-                OptionLabel(text: option.label, colour: Theme.content)
+                OptionLabel(text: option.label, colour: Theme.content, caption: option.qualifier)
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -708,7 +731,7 @@ private struct DecisionButtons: View {
     private var rejectButtons: some View {
         ForEach(Array(rejections.enumerated()), id: \.offset) { _, option in
             Button(role: .destructive) { tapped(option) } label: {
-                OptionLabel(text: option.label, colour: Theme.danger)
+                OptionLabel(text: option.label, colour: Theme.danger, caption: option.qualifier)
                     .padding(.horizontal, 12)
                     // The tap target a text button does not get for free.
                     .frame(minHeight: 44)
@@ -741,6 +764,7 @@ private struct DecisionButtons: View {
             gateV2: decision.gateV2,
             questionV2: decision.questionV2,
             deliveryV2: decision.deliveryV2,
+            permissionV2: decision.permissionV2,
             text: (typed?.isEmpty ?? true) ? nil : typed)
         sending = true
         Task {
@@ -779,6 +803,11 @@ struct DecisionChoice: Equatable {
     /// What this option asks for before it is sent — a question's typed
     /// answer, a follow-up's live link. `nil` on a gate and a legacy option.
     let input: OptionInput?
+    /// How far the option reaches, when it said — a strict decision's or a
+    /// harness permission's option. Shown, never judged: the producer does.
+    var scope: OptionScope? = nil
+    /// Who may take it, when it said. Shown as `scope` is.
+    var requires: OptionRequires? = nil
 
     init(legacy option: CustomEventDecisionOption) {
         id = option.id
@@ -794,6 +823,8 @@ struct DecisionChoice: Equatable {
         role = DecisionOptionRole(option.meaning)
         comment = option.needsComment ? .required : .none
         input = option.input
+        scope = option.scope
+        requires = option.requires
     }
 
     /// A free-text answer: no option, so an empty id, and the text itself as
@@ -804,6 +835,20 @@ struct DecisionChoice: Equatable {
         role = .other
         comment = .none
         input = nil
+    }
+
+    /// The option's reach as a caption under its label — "Once", "For this
+    /// run", "Always", "Admins only" — or `nil` when it said neither.
+    var qualifier: String? {
+        var parts: [String] = []
+        switch scope {
+        case .once?: parts.append("Once")
+        case .run?: parts.append("For this run")
+        case .always?: parts.append("Always")
+        case nil: break
+        }
+        if requires == .workspaceAdmin { parts.append("Admins only") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// Why `text` cannot be sent for this option's input, or `nil` when it
@@ -904,6 +949,8 @@ private struct GatePreviewBlocks: View {
 private struct OptionLabel: View {
     let text: String
     let colour: Color
+    /// The option's reach ("Once", "Always · Admins only"), when it said.
+    var caption: String? = nil
     @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
@@ -911,10 +958,17 @@ private struct OptionLabel: View {
         // disabled fill — where `signal-soft`, chosen for amber, all but
         // vanished. So a disabled label drops to content, dimmed: still
         // legible, plainly not pressable.
-        Text(text)
-            .foregroundStyle(isEnabled ? colour : Theme.content)
-            .multilineTextAlignment(.center)
-            .opacity(isEnabled ? 1 : 0.45)
+        VStack(spacing: 2) {
+            Text(text)
+            if let caption {
+                Text(caption)
+                    .font(.caption)
+                    .accessibilityLabel(caption)
+            }
+        }
+        .foregroundStyle(isEnabled ? colour : Theme.content)
+        .multilineTextAlignment(.center)
+        .opacity(isEnabled ? 1 : 0.45)
     }
 }
 
@@ -942,6 +996,9 @@ struct GateAnswer {
     /// The delivery.v2 follow-up the card was drawn from — answered with
     /// `Session.answerDeliveryV2`.
     var deliveryV2: GateV2Decision? = nil
+    /// The harness permission.v2 the card was drawn from — answered with
+    /// `Session.answerPermissionV2`, bound to the request the card showed.
+    var permissionV2: PermissionV2Decision? = nil
     /// An option's input, or a free-text answer.
     var text: String? = nil
 }
@@ -1044,6 +1101,17 @@ struct GateAnswer {
         CustomEventCard(
             view: DecisionRevampFixtures.permissionPending, label: "Permission",
             eventType: "dev.agentpod.permission.v1", senderName: "Atlas — Platform",
+            onDecide: { _ in true })
+    }
+}
+
+// A harness permission.v2: what the agent would run, then the options by
+// meaning with their reach.
+#Preview("Permission v2") {
+    PreviewGround(width: 360) {
+        CustomEventCard(
+            view: DecisionRevampFixtures.permissionV2Pending, label: "Permission",
+            eventType: "dev.agentpod.permission.v2", senderName: "Atlas — Platform",
             onDecide: { _ in true })
     }
 }

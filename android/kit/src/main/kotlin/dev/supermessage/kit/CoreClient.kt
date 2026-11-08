@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import uniffi.supermessage_core.Acknowledgement
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.GateV2Decision
+import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.QuestionV2Decision
 import uniffi.supermessage_core.NotificationDto
 import uniffi.supermessage_core.NotificationMode
@@ -382,6 +383,21 @@ class CoreClient(
         inReplyTo: String,
     ) {
         run { it.sendQuestionAnswerV2(roomId, question, optionId, text, inReplyTo) }
+    }
+
+    /**
+     * Answer a harness permission.v2. [permission] is the card's own
+     * `CustomEventDecision.permissionV2`; the core refuses an option it did
+     * not offer and an allowing option on an incomplete preview. The room
+     * need not be open.
+     */
+    suspend fun sendPermissionAnswerV2(
+        roomId: String,
+        permission: PermissionV2Decision,
+        optionId: String,
+        inReplyTo: String,
+    ) {
+        run { it.sendPermissionAnswerV2(roomId, permission, optionId, inReplyTo) }
     }
 
     /**

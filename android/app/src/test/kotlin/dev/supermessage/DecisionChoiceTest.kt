@@ -12,8 +12,12 @@ import uniffi.supermessage_core.GateSubjectBinding
 import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.OptionInput
 import uniffi.supermessage_core.OptionInputKind
+import uniffi.supermessage_core.OptionRequires
+import uniffi.supermessage_core.OptionScope
+import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.QuestionFreeText
 import uniffi.supermessage_core.QuestionV2Decision
+import uniffi.supermessage_core.SubjectV2
 
 /** How the card draws a decision: a gate.v2 by meaning, anything else by id, as before. */
 class DecisionChoiceTest {
@@ -189,5 +193,129 @@ class DecisionChoiceTest {
         val (all, primaries) = DecisionChoice.of(question(emptyList(), QuestionFreeText(2000u)))
         assertTrue(all.isEmpty())
         assertTrue(primaries.isEmpty())
+    }
+
+    // ---- permission.v2 and subject-bound questions (corpus v5)
+
+    private val permissionSubject = SubjectV2(
+        binding = GateSubjectBinding(
+            id = "acps_3f0c:12",
+            digest = "bb03bfd8ee6d757e6957d029cd6a7b8e004f16386755ce672e3f97f445563878",
+        ),
+        schema = "harness-permission/v1",
+        preview = emptyList(),
+        expiresAt = "2026-11-07T10:30:00.000Z",
+    )
+
+    private val allowOnce = GateOptionV2(
+        "allow_once", "Allow once", GateOptionMeaning.APPROVE, false, null, OptionScope.ONCE, null,
+    )
+    private val allowAlways = GateOptionV2(
+        "allow_always", "Always allow", GateOptionMeaning.APPROVE, false, null, OptionScope.ALWAYS, null,
+    )
+    private val rejectOnce = GateOptionV2(
+        "reject_once", "Reject", GateOptionMeaning.REJECT, false, null, OptionScope.ONCE, null,
+    )
+    private val rejectAlways = GateOptionV2(
+        "reject_always", "Never allow", GateOptionMeaning.REJECT, false, null, OptionScope.ALWAYS, null,
+    )
+
+    /** The core withholds allowing options itself; [options] is what it handed over. */
+    private fun permission(options: List<GateOptionV2>, withheld: String? = null) = CustomEventDecision(
+        prompt = "Allow Run the test suite?",
+        options = listOf(CustomEventDecisionOption(label = "Reject", id = "Reject")),
+        subject = null,
+        permissionV2 = PermissionV2Decision(
+            requestId = "acps_3f0c:12",
+            title = "Run the test suite",
+            toolKind = "execute",
+            options = options,
+            subject = permissionSubject,
+            approvalsWithheld = withheld,
+        ),
+    )
+
+    @Test
+    fun aPermissionIsDrawnByMeaningNotFromTheLegacyList() {
+        val (all, primaries) = DecisionChoice.of(permission(listOf(allowOnce, allowAlways, rejectOnce, rejectAlways)))
+        assertEquals(listOf("allow_once", "allow_always", "reject_once", "reject_always"), all.map { it.id })
+        assertEquals(listOf("allow_once", "allow_always"), primaries.map { it.id })
+        assertEquals(DecisionOptionRole.REJECT, all[3].role)
+        assertEquals(listOf("Once", "Always", "Once", "Always"), all.map { it.qualifier })
+    }
+
+    @Test
+    fun aWithheldPermissionOffersNoAllow() {
+        val (all, primaries) = DecisionChoice.of(
+            permission(listOf(rejectOnce, rejectAlways), withheld = "Answer it in the console to allow it."),
+        )
+        assertEquals(listOf("reject_once", "reject_always"), all.map { it.id })
+        assertTrue(primaries.isEmpty())
+        assertFalse(all.any { it.role == DecisionOptionRole.APPROVE })
+    }
+
+    @Test
+    fun aQualifierSaysReachThenWhoMayTakeIt() {
+        assertEquals("Once", DecisionChoice.qualifier(OptionScope.ONCE, null))
+        assertEquals("For this run", DecisionChoice.qualifier(OptionScope.RUN, null))
+        assertEquals("Always · Admins only", DecisionChoice.qualifier(OptionScope.ALWAYS, OptionRequires.WORKSPACE_ADMIN))
+        assertEquals("Admins only", DecisionChoice.qualifier(null, OptionRequires.WORKSPACE_ADMIN))
+        assertEquals(null, DecisionChoice.qualifier(null, null))
+        // A gate option that says neither draws no caption.
+        assertEquals(null, DecisionChoice.v2(GateOptionV2("ship_it", "Ship it", GateOptionMeaning.APPROVE, false)).qualifier)
+    }
+
+    @Test
+    fun aPermissionReceiptSaysMeaningAndScope() {
+        fun said(option: GateOptionV2): String {
+            val choice = DecisionChoice.permission(option)
+            return choice.receipt ?: receiptOutcome(choice.record, choice.role)
+        }
+        assertEquals("Allowed once by you", said(allowOnce))
+        assertEquals("Allowed always by you", said(allowAlways))
+        assertEquals("Rejected by you", said(rejectOnce))
+        assertEquals("Rejected always by you", said(rejectAlways))
+        assertEquals("Allowed for this run by you", permissionReceipt(GateOptionMeaning.APPROVE, OptionScope.RUN))
+        assertEquals("Allowed by you", permissionReceipt(GateOptionMeaning.APPROVE, null))
+        assertEquals("Rejected for this run by you", permissionReceipt(GateOptionMeaning.REJECT, OptionScope.RUN))
+        assertEquals(null, permissionReceipt(GateOptionMeaning.CHOOSE, null))
+        // A gate option keeps its own receipt.
+        assertEquals(null, DecisionChoice.v2(allowOnce).receipt)
+    }
+
+    @Test
+    fun aSubjectBoundQuestionWithWithheldApprovalsOffersOnlyTheDecline() {
+        val deny = GateOptionV2("deny", "Deny", GateOptionMeaning.REJECT, false, null, OptionScope.ONCE, null)
+        val decision = CustomEventDecision(
+            prompt = "Edit app.js in the workspace?",
+            options = listOf(CustomEventDecisionOption(label = "Deny", id = "Deny")),
+            subject = null,
+            questionV2 = QuestionV2Decision(
+                elicitationId = "elc_9b44",
+                question = "Edit app.js in the workspace?",
+                options = listOf(deny),
+                freeText = null,
+                subject = SubjectV2(
+                    binding = GateSubjectBinding("8f9a0d0e-4b2a-4c1e-9c55-1a2b3c4d5e6f", "0588c96c"),
+                    schema = "salaam-operation/v1",
+                    preview = emptyList(),
+                    expiresAt = null,
+                ),
+                approvalsWithheld = "This card can't show everything you would be approving. Open the card to approve it.",
+            ),
+        )
+        val (all, primaries) = DecisionChoice.of(decision)
+        assertEquals(listOf("deny"), all.map { it.id })
+        assertTrue(primaries.isEmpty())
+        assertEquals("Once", all[0].qualifier)
+    }
+
+    @Test
+    fun aStrictDecisionsAlwaysOptionSaysAdminsOnly() {
+        val always = GateOptionV2(
+            "always", "Always allow", GateOptionMeaning.APPROVE, false, null,
+            OptionScope.ALWAYS, OptionRequires.WORKSPACE_ADMIN,
+        )
+        assertEquals("Always · Admins only", DecisionChoice.v2(always).qualifier)
     }
 }

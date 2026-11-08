@@ -230,6 +230,11 @@ public protocol NotificationAnswering: Sendable {
         roomId: String, gate: GateV2Decision, optionId: String, comment: String?,
         inReplyTo: String
     ) async throws
+    /// A harness permission.v2's bound answer, from its card — which needs
+    /// no focused timeline, as `sendPermissionAnswer` does not.
+    func sendPermissionAnswerV2(
+        roomId: String, permission: PermissionV2Decision, optionId: String, inReplyTo: String
+    ) async throws
 }
 
 /// A conformer that predates gate.v2 notifications — a test double — answers
@@ -238,6 +243,12 @@ extension NotificationAnswering {
     public func sendGateDecisionV2To(
         roomId: String, gate: GateV2Decision, optionId: String, comment: String?,
         inReplyTo: String
+    ) async throws {
+        throw CancellationError()
+    }
+
+    public func sendPermissionAnswerV2(
+        roomId: String, permission: PermissionV2Decision, optionId: String, inReplyTo: String
     ) async throws {
         throw CancellationError()
     }

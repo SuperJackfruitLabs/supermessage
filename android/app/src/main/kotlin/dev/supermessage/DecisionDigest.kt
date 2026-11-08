@@ -5,6 +5,7 @@ import java.time.Instant
 import uniffi.supermessage_core.CustomEventDecisionOption
 import uniffi.supermessage_core.CustomEventField
 import uniffi.supermessage_core.GateOptionMeaning
+import uniffi.supermessage_core.OptionScope
 
 /**
  * The leading fields of a decision card, folded into one line, and the rest
@@ -90,6 +91,28 @@ internal fun receiptOutcome(option: CustomEventDecisionOption, role: DecisionOpt
         DecisionOptionRole.OTHER -> "You chose “${option.label}”"
     }
 }
+
+/**
+ * The local receipt for a harness permission answered here, by meaning and
+ * scope — the words `core::permission_v2` gives the room's receipt, so this
+ * line and the station's agree. Null for a meaning a permission does not
+ * carry, which then reads by role as any other option.
+ */
+internal fun permissionReceipt(meaning: GateOptionMeaning, scope: OptionScope?): String? =
+    when (meaning) {
+        GateOptionMeaning.APPROVE -> when (scope) {
+            OptionScope.ONCE -> "Allowed once by you"
+            OptionScope.RUN -> "Allowed for this run by you"
+            OptionScope.ALWAYS -> "Allowed always by you"
+            null -> "Allowed by you"
+        }
+        GateOptionMeaning.REJECT -> when (scope) {
+            OptionScope.RUN -> "Rejected for this run by you"
+            OptionScope.ALWAYS -> "Rejected always by you"
+            OptionScope.ONCE, null -> "Rejected by you"
+        }
+        GateOptionMeaning.REVISE, GateOptionMeaning.CHOOSE, GateOptionMeaning.DEFER -> null
+    }
 
 private val HUB_WORDS = mapOf(
     "approve_automatic" to "Approved for automatic delivery",

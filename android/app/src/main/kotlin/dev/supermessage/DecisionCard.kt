@@ -79,6 +79,9 @@ import uniffi.supermessage_core.GatePreviewBlock
 import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.OptionInput
 import uniffi.supermessage_core.OptionInputKind
+import uniffi.supermessage_core.OptionRequires
+import uniffi.supermessage_core.OptionScope
+import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.QuestionV2Decision
 
 /**
@@ -209,6 +212,8 @@ class DecisionAnswers internal constructor(
         onLanded: () -> Unit,
         /** The part the option played, when known from more than its id (a gate.v2 meaning). */
         role: DecisionOptionRole? = null,
+        /** The receipt itself, when the option said more than its role (a permission's scope). */
+        said: String? = null,
     ) {
         if (answeredKeys.containsKey(key) || sendingKeys[key] == true) return
         sendingKeys[key] = true
@@ -223,7 +228,7 @@ class DecisionAnswers internal constructor(
             }
             // Answered first, so no frame sees neither state.
             if (landed) {
-                answeredKeys[key] = AnsweredHere(receiptOutcome(option, role), Instant.now())
+                answeredKeys[key] = AnsweredHere(said ?: receiptOutcome(option, role), Instant.now())
                 haptics.play(Haptic.Success)
                 onLanded()
                 onAnswered(key, option.id)
@@ -616,19 +621,26 @@ private fun PendingBody(
         }
         Summary(digest.summary)
         Details(digest.rest, detailsOpenInitially)
-        (decision.gateV2 ?: decision.deliveryV2)?.let { gate ->
-            // What is being approved, exactly — before the buttons that
-            // approve it. The core withheld every approving option when this
-            // could not be drawn in full, and says so.
-            GatePreviewBlocks(gate.preview)
-            gate.approvalsWithheld?.let {
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.testTag("decision-approvals-withheld"),
-                )
-            }
+        // What is being approved, exactly — before the buttons that approve
+        // it: a gate's or follow-up's post, a strict decision's operation, what
+        // a harness would do. The core withheld every approving option when
+        // this could not be drawn in full, and says so.
+        val gate = decision.gateV2 ?: decision.deliveryV2
+        val preview = gate?.preview
+            ?: decision.permissionV2?.subject?.preview
+            ?: decision.questionV2?.subject?.preview
+            ?: emptyList()
+        val withheld = gate?.approvalsWithheld
+            ?: decision.permissionV2?.approvalsWithheld
+            ?: decision.questionV2?.approvalsWithheld
+        GatePreviewBlocks(preview)
+        withheld?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("decision-approvals-withheld"),
+            )
         }
         if (reasoning != null) ReasoningDisclosure(reasoning)
         LinkButton(link)
@@ -693,6 +705,10 @@ internal data class DecisionChoice(
     val comment: CommentAsk,
     /** What the option asks for before it is sent — a question's typed answer, a follow-up's live link. */
     val input: OptionInput? = null,
+    /** How far the option reaches and who may take it ("Always · Admins only"), drawn under its label. */
+    val qualifier: String? = null,
+    /** The local receipt when the meaning and scope say more than [role] (a harness permission). */
+    val receipt: String? = null,
 ) {
     enum class CommentAsk {
         /** Sent as tapped. */
@@ -740,7 +756,31 @@ internal data class DecisionChoice(
             role = DecisionOptionRole.of(option.meaning),
             comment = if (option.needsComment) CommentAsk.REQUIRED else CommentAsk.NONE,
             input = option.input,
+            qualifier = qualifier(option.scope, option.requires),
         )
+
+        /** A harness permission's option: by meaning, with a receipt that says its scope. */
+        fun permission(option: GateOptionV2) = v2(option).copy(
+            receipt = permissionReceipt(option.meaning, option.scope),
+        )
+
+        /**
+         * The caption under an option: its reach, then who may take it. Shown,
+         * never judged — the producer decides who may take an option.
+         */
+        fun qualifier(scope: OptionScope?, requires: OptionRequires?): String? {
+            val reach = when (scope) {
+                OptionScope.ONCE -> "Once"
+                OptionScope.RUN -> "For this run"
+                OptionScope.ALWAYS -> "Always"
+                null -> null
+            }
+            val who = when (requires) {
+                OptionRequires.WORKSPACE_ADMIN -> "Admins only"
+                null -> null
+            }
+            return listOfNotNull(reach, who).joinToString(" · ").ifEmpty { null }
+        }
 
         /** A free-text answer: no option, so an empty id, and the text as what the receipt names. */
         fun freeText(text: String) = DecisionChoice(
@@ -761,6 +801,10 @@ internal data class DecisionChoice(
             // The decision envelope — a gate, a question, a follow-up — is
             // drawn by meaning: only an approving option leads, so a question's
             // `choose` options are all neutral.
+            decision.permissionV2?.let { asked ->
+                val all = asked.options.map { permission(it) }
+                return all to all.filter { it.role == DecisionOptionRole.APPROVE }
+            }
             val envelope = decision.gateV2?.options
                 ?: decision.questionV2?.options
                 ?: decision.deliveryV2?.options
@@ -830,11 +874,13 @@ private fun DecisionButtons(
                 questionV2 = decision.questionV2,
                 deliveryV2 = decision.deliveryV2,
                 text = if (input.isNullOrEmpty()) null else input,
+                permissionV2 = decision.permissionV2,
             ),
             handler = handler,
             haptics = haptics,
             onLanded = { comment = ""; inputText = ""; freeText = "" },
             role = choice.role,
+            said = choice.receipt,
         )
     }
 
@@ -882,6 +928,7 @@ private fun DecisionButtons(
                 enabled = enabled,
                 onClick = { tapped(primary) },
                 modifier = Modifier.fillMaxWidth().testTag("decision-primary"),
+                caption = primary.qualifier,
             )
         }
         if (secondaries.isNotEmpty() || rejections.isNotEmpty()) {
@@ -898,6 +945,7 @@ private fun DecisionButtons(
                         enabled = enabled,
                         onClick = { tapped(it) },
                         modifier = Modifier.testTag("decision-secondary"),
+                        caption = it.qualifier,
                     )
                 }
                 rejections.forEach {
@@ -908,6 +956,7 @@ private fun DecisionButtons(
                         enabled = enabled,
                         onClick = { tapped(it) },
                         modifier = Modifier.testTag("decision-reject"),
+                        caption = it.qualifier,
                     )
                 }
             }
@@ -1029,6 +1078,8 @@ private fun DecisionButton(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** An option's reach and who may take it, under its label ("Always · Admins only"). */
+    caption: String? = null,
 ) {
     val colors = SupermessageTheme.colors
     val shape = RoundedCornerShape(if (kind == ButtonKind.Primary) 10.dp else 16.dp)
@@ -1070,15 +1121,28 @@ private fun DecisionButton(
             .padding(horizontal = 12.dp, vertical = 6.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            // `option.label` only. `option.id` is an identifier handed back
-            // verbatim when the reader answers, never rendered.
-            text,
-            style = style,
-            color = labelColor,
-            textAlign = TextAlign.Center,
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.alpha(if (interactive && !enabled) 0.45f else 1f),
-        )
+        ) {
+            Text(
+                // `option.label` only. `option.id` is an identifier handed back
+                // verbatim when the reader answers, never rendered.
+                text,
+                style = style,
+                color = labelColor,
+                textAlign = TextAlign.Center,
+            )
+            caption?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = labelColor.copy(alpha = 0.8f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag("decision-option-qualifier"),
+                )
+            }
+        }
     }
 }
 
@@ -1143,6 +1207,8 @@ data class GateAnswer(
     val deliveryV2: GateV2Decision? = null,
     /** An option's input, or a free-text answer. */
     val text: String? = null,
+    /** The harness permission.v2 the card was drawn from; answered with `Session.answerPermissionV2`. */
+    val permissionV2: PermissionV2Decision? = null,
 ) {
     companion object {
         /** Superpipeline's only option id that expects a comment. */

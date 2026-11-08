@@ -12,6 +12,11 @@ struct DecisionAnswerRecord: Equatable {
     /// The part the option played, when the card knew it from more than the
     /// id — a gate.v2 option's `meaning`. `nil` reads it from the id, as v1.
     var role: DecisionOptionRole? = nil
+    /// Answered on a harness permission.v2, whose words are "allowed" and
+    /// "rejected" with the option's reach — the core's receipt words
+    /// (`core::permission_v2::summary`), so this line and the room's agree.
+    var permission = false
+    var scope: OptionScope? = nil
 
     /// What happened, in a sentence the reader said.
     ///
@@ -29,11 +34,34 @@ struct DecisionAnswerRecord: Equatable {
         // the hub's own words (`OUTCOME_VERBS`; `core::gate_outcome`'s
         // summaries), so this line and the room's receipt agree.
         if let said = Self.hubWords[option.id] { return "\(said) by you" }
+        if permission, let said = permissionWords { return "\(said) by you" }
         switch role ?? DecisionOptionRole(option) {
         case .approve: return "Approved by you"
         case .requestChanges: return "Changes requested by you"
         case .reject: return "Rejected by you"
         case .other: return "You chose \u{201C}\(option.label)\u{201D}"
+        }
+    }
+
+    /// A permission answer by meaning and reach, or `nil` for an option
+    /// that neither allows nor rejects.
+    private var permissionWords: String? {
+        switch role ?? DecisionOptionRole(option) {
+        case .approve:
+            switch scope {
+            case .once?: return "Allowed once"
+            case .run?: return "Allowed for this run"
+            case .always?: return "Allowed always"
+            case nil: return "Allowed"
+            }
+        case .reject:
+            switch scope {
+            case .run?: return "Rejected for this run"
+            case .always?: return "Rejected always"
+            case .once?, nil: return "Rejected"
+            }
+        case .requestChanges, .other:
+            return nil
         }
     }
 
