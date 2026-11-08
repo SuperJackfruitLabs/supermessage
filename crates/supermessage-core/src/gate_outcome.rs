@@ -230,8 +230,19 @@ fn closes(outcome: &Outcome, gate: &Gate<'_>) -> bool {
     }
 }
 
+/// What a gate closed as `expired` says (charter →
+/// `decisions/2026-11-08-unanswered-decisions-remind-then-escalate.md` §7),
+/// in the hub's own words (`OUTCOME_SENTENCES`, agentpod `gate-decision.ts`).
+/// A whole sentence and never "by" anyone: nobody chose it, and "Expired by
+/// …" would read as though somebody had answered.
+pub const EXPIRED_SUMMARY: &str = "Expired — what this gate approves passed its expiry before \
+                                   anyone approved it, so it can no longer be approved here.";
+
 /// The sentence a receipt says. Past tense, because it is over.
 fn summary(decision: &str, decided_by: Option<&str>) -> String {
+    if decision == "expired" {
+        return EXPIRED_SUMMARY.to_string();
+    }
     let verb = match decision {
         "approve" => "Approved",
         // The two approvals a publishing gate offers, in the hub's own words
@@ -1003,5 +1014,67 @@ mod tests {
             json!({ "msgtype": "m.text", "body": "dev.superpipeline.gate.outcome.v1 is live" }),
         );
         assert_eq!(row.item.detail, None);
+    }
+
+    /// The corpus's expired outcome (`variant: "expired"`).
+    fn corpus_expired() -> Value {
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+        ))
+        .unwrap();
+        corpus["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["variant"] == "expired")
+            .find(|e| e["suiteEventType"] == GATE_OUTCOME_EVENT_TYPE)
+            .expect("the corpus pins the expired outcome")["accept"][0]["content"]
+            .clone()
+    }
+
+    #[test]
+    fn an_expired_outcome_closes_the_gate_card_in_the_hubs_words() {
+        let mut content = corpus_expired();
+        assert_eq!(content["decided_by"], Value::Null);
+        // The corpus's gate is `gate_8f3a` on `brd_7c1f`; point it at ours.
+        content["gate_id"] = json!("gate_1");
+        content["board_id"] = json!("brd_1");
+        let mut rows = vec![
+            row(
+                "g",
+                "message",
+                Some("m.text"),
+                HUB,
+                crate::gate_v2::GATE_V2_EVENT_TYPE,
+                v2_gate("gate_1"),
+            ),
+            outcome_event("o", HUB, content),
+        ];
+        assert!(is_pending(&rows[0]));
+        reconcile(&mut rows);
+        assert!(is_receipt(&rows[0]), "an expired gate offers no buttons");
+        let receipt = state(&rows[0]).1.unwrap();
+        assert_eq!(receipt.decision, "expired");
+        assert_eq!(receipt.decided_by, None);
+        assert_eq!(receipt.summary, EXPIRED_SUMMARY);
+        assert!(receipt.summary.starts_with("Expired — "));
+        assert!(!receipt.summary.contains(" by "), "nobody chose it");
+        assert_eq!(receipt.prompt.as_deref(), Some("Approve \"Launch post\"?"));
+    }
+
+    #[test]
+    fn an_expired_outcome_never_closes_a_follow_up() {
+        let mut content = corpus_expired();
+        content["gate_id"] = json!("gate_1");
+        content["board_id"] = json!("brd_1");
+        let mut rows = vec![follow_up("f", "gate_1"), outcome_event("o", HUB, content)];
+        reconcile(&mut rows);
+        assert!(is_pending(&rows[0]));
+    }
+
+    #[test]
+    fn an_expired_summary_ignores_who_the_hub_names() {
+        assert_eq!(summary("expired", None), EXPIRED_SUMMARY);
+        assert_eq!(summary("expired", Some("rakesh")), EXPIRED_SUMMARY);
     }
 }

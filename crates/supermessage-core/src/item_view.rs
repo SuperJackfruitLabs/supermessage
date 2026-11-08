@@ -626,6 +626,11 @@ fn image_caption(item: &TimelineItemDto) -> Option<String> {
 
 /// Render decision for `kind: "message"`, switching on `msgtype`.
 fn message_view(item: &TimelineItemDto) -> ItemView {
+    // A decision's reminder or escalation is the room speaking about a card,
+    // not a message in the speaker's voice and never a card of its own.
+    if let Some(line) = crate::decision_timeout::notice_view(item) {
+        return line;
+    }
     if let Some(card) = embedded_decision_view(item) {
         return card;
     }

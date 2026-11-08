@@ -211,6 +211,8 @@ impl CustomEventRenderer for DeliveryV2Renderer {
                 delivery_v2: Some(delivery.decision()),
                 permission_v2: None,
                 attention_v2: None,
+                // The stage's timeout (`crate::decision_timeout`).
+                deadline: crate::decision_timeout::parse_deadline(content),
             }),
         }
     }

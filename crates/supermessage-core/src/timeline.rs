@@ -1913,6 +1913,12 @@ pub(crate) fn row_from_parts(
         // registered for the type, so the view falls through to the bubble.
         dto.detail = Some(crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE.to_string());
         dto.custom_payload = Some(crate::dto::CustomPayload(payload));
+    } else if let Some((notice_type, payload)) = decision_notice_from_raw(raw) {
+        // A reminder or an escalation (`crate::decision_timeout`): drawn as
+        // a quiet system line, and read by `crate::notification` to tell
+        // the two apart.
+        dto.detail = Some(notice_type.to_string());
+        dto.custom_payload = Some(crate::dto::CustomPayload(payload));
     }
     // An agent's answer, spoken: the voice message names the text it speaks,
     // and `crate::voice_reply::reconcile` folds the two into one row once
@@ -2003,6 +2009,24 @@ fn gate_outcome_from_raw(raw: Option<&Raw<AnySyncTimelineEvent>>) -> Option<serd
         return None;
     }
     bound_custom_payload(content, CUSTOM_PAYLOAD_MAX_BYTES)
+}
+
+/// A message's `content` and its notice type, when the message is a
+/// decision's reminder or escalation (`crate::decision_timeout`) that the
+/// corpus accepts, bounded like a custom event's payload.
+///
+/// [`embedded_from_raw`]'s twin, for the same reasons.
+fn decision_notice_from_raw(
+    raw: Option<&Raw<AnySyncTimelineEvent>>,
+) -> Option<(&'static str, serde_json::Value)> {
+    let raw = raw?;
+    if !crate::decision_timeout::may_carry_notice(raw.json().get()) {
+        return None;
+    }
+    let content: serde_json::Value = raw.get_field("content").ok()??;
+    let notice_type = crate::decision_timeout::notice_type(&content)?;
+    let payload = bound_custom_payload(content, CUSTOM_PAYLOAD_MAX_BYTES)?;
+    Some((notice_type, payload))
 }
 
 /// Project a raw batch of SDK diffs into the wire ops for one envelope.

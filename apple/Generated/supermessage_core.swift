@@ -1539,6 +1539,15 @@ public struct CustomEventDecision {
      * JSON.
      */
     public var attentionV2: AttentionV2Decision?
+    /**
+     * When this decision is reminded and escalated, on a gate.v2,
+     * question.v2, delivery.v2 or attention.v2 whose stage has a timeout
+     * (`crate::decision_timeout`). A host words it with
+     * `decision_timeout::deadline_line` and its own clock, in the card's
+     * existing text, while the card is pending. `None` otherwise, and absent
+     * from the JSON.
+     */
+    public var deadline: DecisionDeadline?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1604,7 +1613,15 @@ public struct CustomEventDecision {
          * `send_attention_answer_v2`. [`Self::options`] is empty: no plain
          * reply answers a waiting card. `None` otherwise, and absent from the
          * JSON.
-         */attentionV2: AttentionV2Decision? = nil) {
+         */attentionV2: AttentionV2Decision? = nil, 
+        /**
+         * When this decision is reminded and escalated, on a gate.v2,
+         * question.v2, delivery.v2 or attention.v2 whose stage has a timeout
+         * (`crate::decision_timeout`). A host words it with
+         * `decision_timeout::deadline_line` and its own clock, in the card's
+         * existing text, while the card is pending. `None` otherwise, and absent
+         * from the JSON.
+         */deadline: DecisionDeadline? = nil) {
         self.prompt = prompt
         self.options = options
         self.subject = subject
@@ -1613,6 +1630,7 @@ public struct CustomEventDecision {
         self.deliveryV2 = deliveryV2
         self.permissionV2 = permissionV2
         self.attentionV2 = attentionV2
+        self.deadline = deadline
     }
 }
 
@@ -1644,6 +1662,9 @@ extension CustomEventDecision: Equatable, Hashable {
         if lhs.attentionV2 != rhs.attentionV2 {
             return false
         }
+        if lhs.deadline != rhs.deadline {
+            return false
+        }
         return true
     }
 
@@ -1656,6 +1677,7 @@ extension CustomEventDecision: Equatable, Hashable {
         hasher.combine(deliveryV2)
         hasher.combine(permissionV2)
         hasher.combine(attentionV2)
+        hasher.combine(deadline)
     }
 }
 
@@ -1674,7 +1696,8 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
                 questionV2: FfiConverterOptionTypeQuestionV2Decision.read(from: &buf), 
                 deliveryV2: FfiConverterOptionTypeGateV2Decision.read(from: &buf), 
                 permissionV2: FfiConverterOptionTypePermissionV2Decision.read(from: &buf), 
-                attentionV2: FfiConverterOptionTypeAttentionV2Decision.read(from: &buf)
+                attentionV2: FfiConverterOptionTypeAttentionV2Decision.read(from: &buf), 
+                deadline: FfiConverterOptionTypeDecisionDeadline.read(from: &buf)
         )
     }
 
@@ -1687,6 +1710,7 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
         FfiConverterOptionTypeGateV2Decision.write(value.deliveryV2, into: &buf)
         FfiConverterOptionTypePermissionV2Decision.write(value.permissionV2, into: &buf)
         FfiConverterOptionTypeAttentionV2Decision.write(value.attentionV2, into: &buf)
+        FfiConverterOptionTypeDecisionDeadline.write(value.deadline, into: &buf)
     }
 }
 
@@ -1995,6 +2019,78 @@ public func FfiConverterTypeCustomEventOutcome_lift(_ buf: RustBuffer) throws ->
 #endif
 public func FfiConverterTypeCustomEventOutcome_lower(_ value: CustomEventOutcome) -> RustBuffer {
     return FfiConverterTypeCustomEventOutcome.lower(value)
+}
+
+
+/**
+ * When a waiting decision is reminded and escalated, as the board said it.
+ *
+ * Each half is an ISO 8601 time exactly as sent, and at least one is
+ * present. A host passes it to [`deadline_line`] with its own clock.
+ */
+public struct DecisionDeadline {
+    public var remindAt: String?
+    public var escalateAt: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(remindAt: String?, escalateAt: String?) {
+        self.remindAt = remindAt
+        self.escalateAt = escalateAt
+    }
+}
+
+
+
+extension DecisionDeadline: Equatable, Hashable {
+    public static func ==(lhs: DecisionDeadline, rhs: DecisionDeadline) -> Bool {
+        if lhs.remindAt != rhs.remindAt {
+            return false
+        }
+        if lhs.escalateAt != rhs.escalateAt {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(remindAt)
+        hasher.combine(escalateAt)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeDecisionDeadline: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> DecisionDeadline {
+        return
+            try DecisionDeadline(
+                remindAt: FfiConverterOptionString.read(from: &buf), 
+                escalateAt: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: DecisionDeadline, into buf: inout [UInt8]) {
+        FfiConverterOptionString.write(value.remindAt, into: &buf)
+        FfiConverterOptionString.write(value.escalateAt, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDecisionDeadline_lift(_ buf: RustBuffer) throws -> DecisionDeadline {
+    return try FfiConverterTypeDecisionDeadline.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeDecisionDeadline_lower(_ value: DecisionDeadline) -> RustBuffer {
+    return FfiConverterTypeDecisionDeadline.lower(value)
 }
 
 
@@ -16318,6 +16414,30 @@ fileprivate struct FfiConverterOptionTypeCustomEventOutcome: FfiConverterRustBuf
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeCustomEventOutcome.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeDecisionDeadline: FfiConverterRustBuffer {
+    typealias SwiftType = DecisionDeadline?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeDecisionDeadline.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeDecisionDeadline.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

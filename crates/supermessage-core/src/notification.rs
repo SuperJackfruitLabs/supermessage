@@ -292,6 +292,10 @@ pub const QUIET_REMOVED_BODY: &str = "A message was removed";
 /// because the push cannot be taken back.
 pub const QUIET_OWN_BODY: &str = "Sent from your other device";
 
+/// An escalation notification's subtitle, where a decision's is its card's
+/// label ("Approval"): what happened to the decision.
+pub const ESCALATED_SUBTITLE: &str = "Escalated";
+
 /// The longest reaction key quoted in full. A key is free text — usually one
 /// emoji, occasionally a sentence.
 const REACTION_KEY_MAX_CHARS: usize = 16;
@@ -366,6 +370,22 @@ pub fn notification_for_row(
     // hidden because its note now carries it (`crate::voice_transcript`).
     if row.voice_transcript.is_some() {
         return None;
+    }
+    // A decision's escalation (`crate::decision_timeout`) may be an admin's
+    // first sight of the card it replies to: a decision notification that
+    // only opens, since nothing on it can be answered from here. A reminder
+    // is not news — the card already notified the people it reminds — and
+    // falls through to the system line's `None`.
+    if crate::decision_timeout::is_escalation(&row.item) {
+        if let ItemView::System { text, .. } = &row.view {
+            return Some(NotificationDto {
+                title: room_name.to_string(),
+                subtitle: Some(ESCALATED_SUBTITLE.to_string()),
+                body: text.clone(),
+                category: NotificationCategory::Decision,
+                ..NotificationDto::generic(room_id, event_id, "")
+            });
+        }
     }
     match &row.view {
         ItemView::CustomEvent { view, label, .. } => {
@@ -951,6 +971,10 @@ fn decide_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> NotificationDt
         let line = match &row.view {
             _ if row.voice_reply.is_some() => format!("{who} replied with a voice message"),
             ItemView::VoiceTranscript { .. } => format!("{who} transcribed a voice message"),
+            // A decision's reminder: its own sentence, said quietly.
+            ItemView::System { text, .. } if crate::decision_timeout::is_notice(&row.item) => {
+                text.clone()
+            }
             _ => format!("{who} posted an update"),
         };
         quiet(NotificationSuppression::NotNews, line)
@@ -980,6 +1004,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            deadline: None,
         }
     }
 
@@ -1768,5 +1793,50 @@ mod tests {
         })));
         assert_eq!(note.category, NotificationCategory::GateReview);
         assert_eq!(note.gate.unwrap().v2, None);
+    }
+
+    // --- unanswered decisions: the reminder and the escalation
+
+    #[test]
+    fn a_reminder_is_not_news() {
+        let content = corpus_accept(crate::decision_timeout::DECISION_REMINDED_EVENT_TYPE, 0);
+        let note = notify(message(content));
+        assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
+        assert_eq!(note.gate, None);
+        assert_eq!(note.permission, None);
+        assert_eq!(
+            note.fallback_body.as_deref(),
+            Some("Still waiting: \"Launch post\" has waited 3 h for an approval.")
+        );
+        assert!(note.activity.is_none(), "nothing for the widgets either");
+    }
+
+    #[test]
+    fn an_escalation_notifies_as_a_decision_that_only_opens() {
+        let content = corpus_accept(crate::decision_timeout::DECISION_ESCALATED_EVENT_TYPE, 0);
+        let note = notify(message(content));
+        assert_eq!(note.suppress, None);
+        assert_eq!(note.category, NotificationCategory::Decision);
+        assert_eq!(note.gate, None, "no Approve or Reject from a notice");
+        assert_eq!(note.permission, None);
+        assert_eq!(
+            note.title, "Hermes",
+            "titled with the room, as a decision is"
+        );
+        assert_eq!(note.subtitle.as_deref(), Some(ESCALATED_SUBTITLE));
+        let sentence = "Escalated to workspace admins after 6 h: \"Launch post\" is still \
+                        waiting for an approval at Review.";
+        assert_eq!(note.body, sentence, "no markdown link");
+        assert_eq!(note.activity.map(|a| a.kind), Some(ActivityKind::Decision));
+    }
+
+    #[test]
+    fn a_notice_the_corpus_refuses_is_an_ordinary_message() {
+        // "no m.relates_to": a client cannot tell which card it is about.
+        let mut content = corpus_accept(crate::decision_timeout::DECISION_ESCALATED_EVENT_TYPE, 0);
+        content.as_object_mut().unwrap().remove("m.relates_to");
+        let note = notify(message(content));
+        assert_eq!(note.category, NotificationCategory::Message);
+        assert_eq!(note.subtitle.as_deref(), Some("Hermes"));
     }
 }

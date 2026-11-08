@@ -216,6 +216,17 @@ struct CustomEventCard: View {
 
     // MARK: Pending
 
+    /// "Asked by Hermes", and the decision's deadline after it when it has
+    /// one: "Asked by Hermes · Escalates in 3 h".
+    static func askedBy(_ senderName: String, deadline: DecisionDeadline?, now: Date = Date()) -> String {
+        let asked = "Asked by \(senderName)"
+        guard let deadline,
+              let line = SupermessageFFI.decisionDeadlineLine(
+                  deadline: deadline, nowMs: Int64((now.timeIntervalSince1970 * 1000).rounded()))
+        else { return asked }
+        return "\(asked) · \(line)"
+    }
+
     private func pendingCard(
         decision: CustomEventDecision, fields: [CustomEventField], reasoning: String?,
         newerVersion: Bool, link: String?
@@ -241,8 +252,10 @@ struct CustomEventCard: View {
                     .foregroundStyle(Theme.content)
                     .fixedSize(horizontal: false, vertical: true)
                 // Who is asking. A decision from nobody in particular is one
-                // a reader cannot weigh.
-                Text("Asked by \(senderName)")
+                // a reader cannot weigh. Then, when the stage has a timeout,
+                // when it escalates — worded by the core against this
+                // device's clock (`core::decision_timeout::deadline_line`).
+                Text(Self.askedBy(senderName, deadline: decision.deadline))
                     .metaFace()
                     .foregroundStyle(Theme.contentMuted)
             }

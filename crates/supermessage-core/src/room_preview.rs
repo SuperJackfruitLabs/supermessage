@@ -66,7 +66,15 @@ pub fn decision_bearing_event_types() -> &'static HashSet<String> {
 /// whose v2 fields do not validate, which the room shows as prose, is not
 /// pending either. An answer (`*.answer.v2`, `decision.v2`) and a receipt
 /// (`*.outcome.v1`) carry no decision.
+///
+/// A decision's reminder or escalation notice (`crate::decision_timeout`)
+/// counts too, typed as the card it is about: the hub posts one only for a
+/// decision that is still open, so a room whose newest message is a notice
+/// still owes that answer.
 pub fn pending_decision_type(content: &Value) -> Option<&'static str> {
+    if let Some(event_type) = crate::decision_timeout::notice_card_type(content) {
+        return Some(event_type);
+    }
     let (event_type, _) = crate::embedded::embedded_suite_event(content)?;
     decision_bearing_event_types()
         .contains(event_type)
@@ -416,6 +424,65 @@ mod tests {
         assert!(!lit(&card, false));
         let chat = json!({ "msgtype": "m.text", "body": "hello" });
         assert!(!lit(&chat, false));
+    }
+
+    #[test]
+    fn a_reminder_or_an_escalation_keeps_needs_you_lit() {
+        // The hub posts one only while its decision is open, so the room
+        // still owes the answer. Typed as the card it is about (the corpus
+        // notices are about a gate); the notice type itself is not a
+        // decision-bearing type.
+        for suite_type in [
+            crate::decision_timeout::DECISION_REMINDED_EVENT_TYPE,
+            crate::decision_timeout::DECISION_ESCALATED_EVENT_TYPE,
+        ] {
+            let notice = corpus_accept(suite_type);
+            let gate = crate::gate_v2::GATE_V2_EVENT_TYPE;
+            assert_eq!(pending_decision_type(&notice), Some(gate), "{suite_type}");
+            let preview = row_for(&notice, false).expect("a preview");
+            assert!(preview.pending, "{suite_type}");
+            assert_eq!(preview.text, "Approval needed", "{suite_type}");
+            assert!(!decision_bearing_event_types().contains(suite_type));
+        }
+    }
+
+    #[test]
+    fn a_notice_is_typed_as_the_kind_it_names() {
+        let mut notice = corpus_accept(crate::decision_timeout::DECISION_REMINDED_EVENT_TYPE);
+        for (kind, card) in [
+            ("question", crate::question_v2::QUESTION_V2_EVENT_TYPE),
+            ("delivery", crate::delivery_v2::DELIVERY_V2_EVENT_TYPE),
+            ("attention", crate::attention_v2::ATTENTION_V2_EVENT_TYPE),
+        ] {
+            notice["decision_kind"] = json!(kind);
+            assert_eq!(pending_decision_type(&notice), Some(card), "{kind}");
+        }
+    }
+
+    #[test]
+    fn a_notice_the_corpus_refuses_keeps_nothing_lit() {
+        // "no m.relates_to": not a notice, just a sentence.
+        let mut notice = corpus_accept(crate::decision_timeout::DECISION_ESCALATED_EVENT_TYPE);
+        notice.as_object_mut().unwrap().remove("m.relates_to");
+        assert_eq!(pending_decision_type(&notice), None);
+        assert!(!lit(&notice, false));
+        // And this account's own copy of one never lights it.
+        let notice = corpus_accept(crate::decision_timeout::DECISION_REMINDED_EVENT_TYPE);
+        assert!(!lit(&notice, true));
+    }
+
+    #[test]
+    fn a_card_carrying_a_deadline_still_lights_needs_you() {
+        let corpus: Value = serde_json::from_str(CORPUS).unwrap();
+        let card = corpus["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["variant"] == "deadline")
+            .find(|e| e["suiteEventType"] == crate::gate_v2::GATE_V2_EVENT_TYPE)
+            .unwrap()["accept"][0]["content"]
+            .clone();
+        assert!(lit(&card, false));
     }
 
     #[test]

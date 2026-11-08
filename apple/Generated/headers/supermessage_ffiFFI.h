@@ -743,6 +743,11 @@ RustBuffer uniffi_supermessage_ffi_fn_func_audio_clock_label(uint64_t ms, RustCa
 RustBuffer uniffi_supermessage_ffi_fn_func_collect_mentions(RustBuffer text, RustBuffer members, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_DECISION_DEADLINE_LINE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_DECISION_DEADLINE_LINE
+RustBuffer uniffi_supermessage_ffi_fn_func_decision_deadline_line(RustBuffer deadline, int64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_DISPLAY_INITIAL
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_DISPLAY_INITIAL
 RustBuffer uniffi_supermessage_ffi_fn_func_display_initial(RustBuffer name, RustCallStatus *_Nonnull out_status
@@ -1369,6 +1374,12 @@ uint16_t uniffi_supermessage_ffi_checksum_func_audio_clock_label(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_COLLECT_MENTIONS
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_COLLECT_MENTIONS
 uint16_t uniffi_supermessage_ffi_checksum_func_collect_mentions(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_DECISION_DEADLINE_LINE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_DECISION_DEADLINE_LINE
+uint16_t uniffi_supermessage_ffi_checksum_func_decision_deadline_line(void
     
 );
 #endif

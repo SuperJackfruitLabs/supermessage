@@ -207,6 +207,15 @@ pub struct CustomEventDecision {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[uniffi(default = None)]
     pub attention_v2: Option<crate::attention_v2::AttentionV2Decision>,
+    /// When this decision is reminded and escalated, on a gate.v2,
+    /// question.v2, delivery.v2 or attention.v2 whose stage has a timeout
+    /// (`crate::decision_timeout`). A host words it with
+    /// `decision_timeout::deadline_line` and its own clock, in the card's
+    /// existing text, while the card is pending. `None` otherwise, and absent
+    /// from the JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub deadline: Option<crate::decision_timeout::DecisionDeadline>,
 }
 
 /// A decision the board has accepted, as the room reports it.
@@ -465,6 +474,7 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
         delivery_v2: decision.delivery_v2,
         permission_v2: decision.permission_v2,
         attention_v2: decision.attention_v2,
+        deadline: decision.deadline,
     })
 }
 
@@ -900,6 +910,7 @@ impl CustomEventRenderer for PermissionRequestRenderer {
                 delivery_v2: None,
                 permission_v2: None,
                 attention_v2: None,
+                deadline: None,
             }),
         }
     }
@@ -1027,6 +1038,7 @@ impl CustomEventRenderer for GateRenderer {
                 delivery_v2: None,
                 permission_v2: None,
                 attention_v2: None,
+                deadline: None,
             }),
         }
     }
@@ -1494,6 +1506,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            deadline: None,
         });
         assert_eq!(
             decision_from(&registry),
@@ -1506,6 +1519,7 @@ mod tests {
                 delivery_v2: None,
                 permission_v2: None,
                 attention_v2: None,
+                deadline: None,
             })
         );
     }
@@ -1521,6 +1535,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            deadline: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.prompt.chars().count(), FIELD_VALUE_MAX_CHARS + 1);
@@ -1544,6 +1559,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            deadline: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options[0].id, long_id);
@@ -1562,6 +1578,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            deadline: None,
         });
         assert_eq!(
             decision_from(&registry).expect("a decision").options.len(),
@@ -1585,6 +1602,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            deadline: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options.len(), 2);
@@ -1607,6 +1625,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            deadline: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options, vec![option("allow", "Allow")]);
@@ -1623,6 +1642,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            deadline: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -1638,6 +1658,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            deadline: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
