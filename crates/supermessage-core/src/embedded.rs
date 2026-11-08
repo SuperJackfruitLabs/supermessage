@@ -35,6 +35,7 @@
 
 use serde_json::Value;
 
+use crate::attention_v2::ATTENTION_V2_EVENT_TYPE;
 use crate::custom_events::{GATE_EVENT_TYPE, PERMISSION_REQUEST_EVENT_TYPE};
 use crate::delivery_v2::DELIVERY_V2_EVENT_TYPE;
 use crate::dto::TimelineRow;
@@ -79,6 +80,9 @@ pub const EMBEDDED_SUITE_KEYS: [(&str, &str); 2] = [
 /// (`crate::permission_v2`), with fields that validate, is read as v2 in
 /// place of the v1 card beside it; anything less reads the v1 card exactly
 /// as before.
+///
+/// A card waiting on a person (`crate::attention_v2`) has no v1 form: without
+/// valid v2 fields it stays prose.
 pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
     if let Some(payload) = crate::permission_v2::embedded_payload(content) {
         return Some((PERMISSION_V2_EVENT_TYPE, payload));
@@ -96,6 +100,9 @@ pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
         if let Some(payload) = crate::delivery_v2::embedded_payload(content) {
             return Some((DELIVERY_V2_EVENT_TYPE, payload));
         }
+        if let Some(payload) = crate::attention_v2::embedded_payload(content) {
+            return Some((ATTENTION_V2_EVENT_TYPE, payload));
+        }
     }
     EMBEDDED_SUITE_KEYS.iter().find_map(|(key, event_type)| {
         content
@@ -112,13 +119,15 @@ pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
 /// text, so a v2 message that carries no v1 card is found too. The question
 /// and follow-up markers do not, so they are searched for by name. The
 /// permission.v2 marker, `dev.agentpod.permission.v2`, contains the
-/// permission key's text, so it is found like the gate's.
+/// permission key's text, so it is found like the gate's. The attention.v2
+/// marker does not, so it is searched for by name too.
 pub fn may_carry_embedded(raw_json: &str) -> bool {
     EMBEDDED_SUITE_KEYS
         .iter()
         .any(|(key, _)| raw_json.contains(key))
         || raw_json.contains(QUESTION_V2_EVENT_TYPE)
         || raw_json.contains(DELIVERY_V2_EVENT_TYPE)
+        || raw_json.contains(ATTENTION_V2_EVENT_TYPE)
 }
 
 /// What makes two carriers of a decision the same decision.
@@ -152,6 +161,19 @@ pub fn decision_identity(event_type: &str, payload: &Value) -> Option<String> {
             let gate = payload.get("gate_id")?.as_str()?;
             (!gate.is_empty()).then(|| format!("delivery:{gate}"))
         }
+        // A waiting card is one wait: the same card parking again is a new
+        // wait, a new message and a new decision.
+        ATTENTION_V2_EVENT_TYPE => {
+            fn id<'a>(payload: &'a Value, key: &str) -> Option<&'a str> {
+                payload.get(key)?.as_str().filter(|s| !s.is_empty())
+            }
+            Some(format!(
+                "attention:{}:{}:{}",
+                id(payload, "board_id")?,
+                id(payload, "card_id")?,
+                id(payload, "wait_id")?
+            ))
+        }
         _ => None,
     }
 }
@@ -184,7 +206,8 @@ fn carrier(row: &TimelineRow) -> Option<(String, bool)> {
 ///   its buttons, whichever carrier is on screen and in whichever order the
 ///   two arrived — and drawn pending again if the outcome goes. The same for
 ///   a permission the station says is closed
-///   (`crate::permission_v2::resolved_permissions`).
+///   (`crate::permission_v2::resolved_permissions`) and a waiting card the
+///   board says is settled (`crate::attention_v2::resolved_attention`).
 ///
 /// Every other row is untouched, so a timeline with no suite decision costs
 /// one pass and changes nothing.
@@ -195,8 +218,10 @@ pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
         .filter_map(|(identity, embedded)| embedded.then_some(identity))
         .collect();
     let mut resolved = crate::gate_outcome::resolved_gates(rows);
-    // Gate and permission identities never collide (`gate:` / `permission:`).
+    // Gate, permission and waiting-card identities never collide (`gate:` /
+    // `permission:` / `attention:`).
     resolved.extend(crate::permission_v2::resolved_permissions(rows));
+    resolved.extend(crate::attention_v2::resolved_attention(rows));
 
     let mut changed = Vec::new();
     for (index, row) in rows.iter_mut().enumerate() {

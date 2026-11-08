@@ -910,6 +910,18 @@ public protocol CoreProtocol : AnyObject {
     func searchMessages(term: String, roomId: String?) throws  -> [SearchResultDto]
     
     /**
+     * Answer a card waiting on a person from its card
+     * (`supermessage_core::attention_v2`). `attention` is the card's
+     * `CustomEventDecision::attention_v2`, handed back unchanged; `text` is
+     * a resume's instruction (required, at most its input's `max_length`).
+     * The core refuses an option the card did not offer and a resume with no
+     * instruction or one over its limit, then sends the
+     * `dev.superpipeline.attention.answer.v2` — board, card and wait copied
+     * from the card — referencing `in_reply_to`. The room need not be open.
+     */
+    func sendAttentionAnswerV2(roomId: String, attention: AttentionV2Decision, optionId: String, text: String?, inReplyTo: String) throws 
+    
+    /**
      * Answer a manual-delivery follow-up from its card
      * (`supermessage_core::delivery_v2`): `record_live_url` with the live
      * link as `text`, or `switch_to_automatic`. `delivery` is the card's
@@ -1855,6 +1867,27 @@ open func searchMessages(term: String, roomId: String?)throws  -> [SearchResultD
         FfiConverterOptionString.lower(roomId),$0
     )
 })
+}
+    
+    /**
+     * Answer a card waiting on a person from its card
+     * (`supermessage_core::attention_v2`). `attention` is the card's
+     * `CustomEventDecision::attention_v2`, handed back unchanged; `text` is
+     * a resume's instruction (required, at most its input's `max_length`).
+     * The core refuses an option the card did not offer and a resume with no
+     * instruction or one over its limit, then sends the
+     * `dev.superpipeline.attention.answer.v2` — board, card and wait copied
+     * from the card — referencing `in_reply_to`. The room need not be open.
+     */
+open func sendAttentionAnswerV2(roomId: String, attention: AttentionV2Decision, optionId: String, text: String?, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_attention_answer_v2(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterTypeAttentionV2Decision_lower(attention),
+        FfiConverterString.lower(optionId),
+        FfiConverterOptionString.lower(text),
+        FfiConverterString.lower(inReplyTo),$0
+    )
+}
 }
     
     /**
@@ -5222,6 +5255,8 @@ fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
 
 
 
+
+
 /**
  * What the dock above the composer says after the reader wrote to an agent —
  * see `core::acknowledgement`. A free function for the same reason as
@@ -6406,6 +6441,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_search_messages() != 28627) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_attention_answer_v2() != 36441) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_delivery_answer_v2() != 25249) {

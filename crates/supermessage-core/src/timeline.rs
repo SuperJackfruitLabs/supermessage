@@ -1307,9 +1307,11 @@ pub struct MessagePreview {
     /// and dropping the prefix everywhere loses a real signal on every
     /// non-emote message.
     pub names_sender: bool,
-    /// The Matrix event type, populated **only** for a custom
-    /// (`MsgLikeKind::Other`) event. `None` for an ordinary message — the
-    /// webview keys its pending-decision branch off this being `Some`.
+    /// The Matrix event type for a custom (`MsgLikeKind::Other`) event.
+    /// `None` here for an ordinary message; `core::rooms::room_preview` sets
+    /// it afterwards for someone else's message carrying a decision card —
+    /// the roster's pending-decision line keys off it
+    /// (`core::room_preview`).
     pub event_type: Option<String>,
 }
 
@@ -1969,13 +1971,15 @@ fn embedded_from_raw(
     // A question and a follow-up were measured against the same bound when
     // they were chosen (`crate::question_v2`, `crate::delivery_v2`).
     // A permission.v2 carries the request's preview, measured the same way
-    // (`crate::permission_v2`).
+    // (`crate::permission_v2`), and an attention.v2 the agent's detail
+    // (`crate::attention_v2`).
     let max_bytes = if matches!(
         event_type,
         crate::gate_v2::GATE_V2_EVENT_TYPE
             | crate::question_v2::QUESTION_V2_EVENT_TYPE
             | crate::delivery_v2::DELIVERY_V2_EVENT_TYPE
             | crate::permission_v2::PERMISSION_V2_EVENT_TYPE
+            | crate::attention_v2::ATTENTION_V2_EVENT_TYPE
     ) {
         crate::gate_v2::GATE_V2_PAYLOAD_MAX_BYTES
     } else {

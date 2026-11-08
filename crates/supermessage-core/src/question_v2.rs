@@ -31,6 +31,22 @@
 //! take them (`requires: workspace-admin`); both are shown, never judged here.
 //! A question without a subject is exactly as before.
 //!
+//! ## A SuperToolkit approval request
+//!
+//! charter → `decisions/2026-11-08-waiting-cards-and-broker-approvals-reach-chat.md`
+//! §3–4. A SuperToolkit write held for approval is hosted on a board but on
+//! **no card**: a question.v2 with `card_id`, `run_id` and `stage_key` empty,
+//! `approval_request_id` equal to `elicitation_id`, and a
+//! `stk-capability/v1` subject previewing the exact request. Options are
+//! `allow_once` (`approve`, `requires: workspace-admin`) and `deny`. The
+//! subject rule above applies unchanged. What changes: the card names no
+//! board card (no link, no "Card" or "Stage" row — it says it is a
+//! SuperToolkit approval), and its withheld note points nowhere it cannot
+//! go. Anything less — no `approval_request_id`, a subject of another
+//! schema, a link to a card that does not exist, an approving option not
+//! limited to workspace admins — stays prose. Only owners and admins may
+//! allow it; superpipeline judges that, never this client.
+//!
 //! Everything here is room content, so it is hostile: read one level at a
 //! time, never coerced, every drawn string bounded.
 
@@ -43,8 +59,8 @@ use crate::custom_events::{
 use crate::error::{CoreError, CoreResult};
 use crate::gate_v2::{
     checked_input, id_field, offerable, parse_bound_subject, parse_option_list, GateOptionMeaning,
-    GateOptionV2, Subject, SubjectV2, APPROVALS_WITHHELD_NOTE, HARNESS_PERMISSION_SCHEMA,
-    SALAAM_OPERATION_SCHEMA,
+    GateOptionV2, OptionRequires, Subject, SubjectV2, APPROVALS_WITHHELD_NOTE,
+    HARNESS_PERMISSION_SCHEMA, SALAAM_OPERATION_SCHEMA, STK_CAPABILITY_SCHEMA,
 };
 
 /// The `suite_event_type` marker on a question.v2 prose message, and the
@@ -65,6 +81,16 @@ pub const FREE_TEXT_MAX_LENGTH: u32 = 2_000;
 /// How long the question itself may be on the card. It is the one sentence
 /// the reader must answer, so far above a field's 300 characters.
 const QUESTION_MAX_CHARS: usize = 2_000;
+
+/// What a SuperToolkit approval request's card says when it withholds
+/// `allow_once`. Not gate.v2's note: there is no board card to open.
+pub const STK_APPROVALS_WITHHELD_NOTE: &str =
+    "This card can't show everything this request would do, so it can't be allowed from here.";
+
+/// The row a SuperToolkit approval request draws in place of a card's
+/// title: it is on no card.
+pub const STK_APPROVAL_FIELD_VALUE: &str = "SuperToolkit approval";
+
 const FIELD_VALUE_MAX_CHARS: usize = 300;
 const FIELD_LABEL_MAX_CHARS: usize = 60;
 
@@ -102,6 +128,13 @@ pub struct QuestionV2Decision {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[uniffi(default = None)]
     pub approvals_withheld: Option<String>,
+    /// Set on a SuperToolkit approval request — a write held for approval,
+    /// hosted on a board but on no card — to its request id. A host then
+    /// says it is a SuperToolkit approval and offers no card to open. `None`
+    /// for every question asked on a card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub approval_request_id: Option<String>,
 }
 
 /// A question.v2 that validated.
@@ -115,10 +148,49 @@ pub(crate) struct ParsedQuestionV2 {
     options: Vec<GateOptionV2>,
     free_text: Option<QuestionFreeText>,
     subject: Option<Subject>,
+    /// A SuperToolkit approval request's id, on a question asked on no card.
+    approval_request_id: Option<String>,
 }
 
 /// The schemas a question's subject may name.
-const QUESTION_SUBJECT_SCHEMAS: [&str; 2] = [SALAAM_OPERATION_SCHEMA, HARNESS_PERMISSION_SCHEMA];
+const QUESTION_SUBJECT_SCHEMAS: [&str; 3] = [
+    SALAAM_OPERATION_SCHEMA,
+    HARNESS_PERMISSION_SCHEMA,
+    STK_CAPABILITY_SCHEMA,
+];
+
+/// Whether a question is a SuperToolkit approval request a client may draw,
+/// given what [`parse`] already read: `Some(true)` when it is one, held to
+/// the whole of its shape; `Some(false)` when it is an ordinary question
+/// (asked on a card, with no approval request and no `stk-capability/v1`
+/// subject); `None` when it is neither — half of one is not the wire.
+///
+/// A request is board-less (`card_id` empty), names its
+/// `approval_request_id` (equal to `elicitation_id`), is bound to a
+/// `stk-capability/v1` subject, carries no link (there is no card to open),
+/// and limits every approving option to workspace owners and admins.
+fn approval_request(
+    content: &Value,
+    elicitation_id: &str,
+    approval_request_id: Option<&str>,
+    subject: Option<&Subject>,
+    options: &[GateOptionV2],
+) -> Option<bool> {
+    let board_less = content.get("card_id").and_then(Value::as_str) == Some("");
+    let stk = subject.is_some_and(|s| s.schema.as_deref() == Some(STK_CAPABILITY_SCHEMA));
+    if !board_less && !stk && approval_request_id.is_none() {
+        return Some(false);
+    }
+    let whole = board_less
+        && stk
+        && approval_request_id == Some(elicitation_id)
+        && matches!(content.get("deep_link"), None | Some(Value::Null))
+        && options.iter().all(|o| {
+            o.meaning != GateOptionMeaning::Approve
+                || o.requires == Some(OptionRequires::WorkspaceAdmin)
+        });
+    whole.then_some(true)
+}
 
 /// `content.free_text`: `Ok(None)` when absent, `Err(())` when present and
 /// not `{ max_length }` with a whole number from 1 to the limit.
@@ -160,6 +232,17 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedQuestio
     let options = parse_option_list(content.get("options")?.as_array()?, true)?;
     let free_text = parse_free_text(content).ok()?;
     let subject = parse_bound_subject(content, &QUESTION_SUBJECT_SCHEMAS).ok()?;
+    let approval_request_id = match content.get("approval_request_id") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(id_field(content, "approval_request_id")?),
+    };
+    let is_approval_request = approval_request(
+        content,
+        &elicitation_id,
+        approval_request_id.as_deref(),
+        subject.as_ref(),
+        &options,
+    )?;
     match (options.is_empty(), free_text.is_some()) {
         // Text alone answers only a question with nothing to choose.
         (false, true) => return None,
@@ -176,6 +259,7 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedQuestio
         options,
         free_text,
         subject,
+        approval_request_id: approval_request_id.filter(|_| is_approval_request),
     })
 }
 
@@ -203,8 +287,12 @@ impl ParsedQuestionV2 {
     }
 
     fn decision(&self) -> QuestionV2Decision {
-        let (options, approvals_withheld) =
-            offerable(&self.options, self.approvable(), APPROVALS_WITHHELD_NOTE);
+        let note = if self.approval_request_id.is_some() {
+            STK_APPROVALS_WITHHELD_NOTE
+        } else {
+            APPROVALS_WITHHELD_NOTE
+        };
+        let (options, approvals_withheld) = offerable(&self.options, self.approvable(), note);
         QuestionV2Decision {
             elicitation_id: self.elicitation_id.clone(),
             question: self.question.clone(),
@@ -212,6 +300,7 @@ impl ParsedQuestionV2 {
             free_text: self.free_text.clone(),
             subject: self.subject.as_ref().map(Subject::view),
             approvals_withheld,
+            approval_request_id: self.approval_request_id.clone(),
         }
     }
 
@@ -255,20 +344,33 @@ impl CustomEventRenderer for QuestionV2Renderer {
         let Some(question) = parse(content, body) else {
             return CustomEventRenderResult::default();
         };
-        let mut fields = vec![CustomEventField {
-            label: "Card".into(),
-            value: question.card_title.clone(),
-        }];
-        if let Some(stage) = &question.stage_key {
-            fields.push(CustomEventField {
-                label: "Stage".into(),
-                value: stage.clone(),
-            });
-        }
+        let fields = if question.approval_request_id.is_some() {
+            // On no card: never a card's title, a stage or a link to one.
+            vec![CustomEventField {
+                label: "Request".into(),
+                value: STK_APPROVAL_FIELD_VALUE.into(),
+            }]
+        } else {
+            let mut fields = vec![CustomEventField {
+                label: "Card".into(),
+                value: question.card_title.clone(),
+            }];
+            if let Some(stage) = &question.stage_key {
+                fields.push(CustomEventField {
+                    label: "Stage".into(),
+                    value: stage.clone(),
+                });
+            }
+            fields
+        };
         CustomEventRenderResult {
             fields,
             reasoning: None,
-            link: question.deep_link.clone(),
+            link: question
+                .approval_request_id
+                .is_none()
+                .then(|| question.deep_link.clone())
+                .flatten(),
             decision: Some(CustomEventDecision {
                 prompt: question.question.clone(),
                 options: question.legacy_options(),
@@ -277,6 +379,7 @@ impl CustomEventRenderer for QuestionV2Renderer {
                 question_v2: Some(question.decision()),
                 delivery_v2: None,
                 permission_v2: None,
+                attention_v2: None,
             }),
         }
     }
@@ -883,6 +986,193 @@ mod tests {
         );
         assert!(answer_request(&forged, Some("approve"), None, QUESTION_EVENT).is_err());
         assert!(answer_request(&question, Some("deny"), None, QUESTION_EVENT).is_ok());
+    }
+
+    // ---- a SuperToolkit approval request -----------------------------------
+
+    const APPROVAL_REQUEST: &str = "approval-request";
+
+    fn approval_cases(suite_type: &str, which: &str) -> Vec<(String, Value)> {
+        let corpus: Value = serde_json::from_str(CORPUS).expect("the corpus is JSON");
+        corpus["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["suiteEventType"] == suite_type && e["variant"] == APPROVAL_REQUEST)
+            .unwrap_or_else(|| panic!("the corpus pins an approval-request {suite_type}"))[which]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| (c["why"].as_str().unwrap().to_string(), c["content"].clone()))
+            .collect()
+    }
+
+    /// The issues.create request, its preview complete.
+    fn stk() -> Value {
+        approval_cases(QUESTION_V2_EVENT_TYPE, "accept")[0]
+            .1
+            .clone()
+    }
+
+    const STK_EVENT: &str = "$aprEventId";
+
+    #[test]
+    fn every_accepted_approval_request_is_drawn_from_v2() {
+        for (why, content) in approval_cases(QUESTION_V2_EVENT_TYPE, "accept") {
+            assert!(parse(&content, body(&content)).is_some(), "{why}");
+            assert!(embedded_payload(&content).is_some(), "{why}");
+        }
+    }
+
+    #[test]
+    fn every_rejected_approval_request_stays_prose() {
+        let rejects = approval_cases(QUESTION_V2_EVENT_TYPE, "reject");
+        assert_eq!(rejects.len(), 4, "the corpus grew; read the new case");
+        for (why, content) in rejects {
+            assert!(parse(&content, body(&content)).is_none(), "{why}");
+            assert!(embedded_payload(&content).is_none(), "{why}");
+        }
+    }
+
+    #[test]
+    fn an_approval_request_is_a_supertoolkit_approval_on_no_card() {
+        let content = stk();
+        let payload = embedded_payload(&content).unwrap();
+        let view = resolve_custom_event(
+            default_registry(),
+            Some(QUESTION_V2_EVENT_TYPE),
+            Some(&payload),
+            body(&content),
+        );
+        let CustomEventView::Rendered { fields, link, .. } = view else {
+            panic!("expected a card");
+        };
+        let drawn: Vec<(&str, &str)> = fields
+            .iter()
+            .map(|f| (f.label.as_str(), f.value.as_str()))
+            .collect();
+        assert_eq!(drawn, [("Request", STK_APPROVAL_FIELD_VALUE)]);
+        assert_eq!(link, None, "no card to open");
+
+        let decision = decision_for(&content);
+        assert_eq!(decision.prompt, "Allow github issues.create on acme/site?");
+        // A host without v2 is offered only the deny a reply may send.
+        let legacy: Vec<&str> = decision.options.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(legacy, ["Deny"]);
+        let question = decision.question_v2.unwrap();
+        let request = question.approval_request_id.as_deref();
+        assert_eq!(request, Some("apr_5d2e9c41"));
+        assert_eq!(question.approvals_withheld, None);
+        let subject = question.subject.expect("bound to the request");
+        assert_eq!(subject.schema, STK_CAPABILITY_SCHEMA);
+        assert_eq!(subject.binding.id, "stkreq_8f2c");
+        assert_eq!(subject.binding.digest, "sha256:4be1c0de9a7f30b2");
+        let expires = subject.expires_at.as_deref();
+        assert_eq!(expires, Some("2026-11-08T10:30:00.000Z"));
+        assert_eq!(subject.preview.len(), 6);
+        let arguments = "{\n  \"title\": \"Flaky login test\",\n  \"labels\": [\"ci\"]\n}";
+        assert_eq!(
+            subject.preview[3],
+            GatePreviewBlock::Text {
+                label: Some("Arguments".into()),
+                text: arguments.into(),
+            }
+        );
+        let allow = &question.options[0];
+        assert_eq!(allow.id, "allow_once");
+        assert_eq!(allow.meaning, GateOptionMeaning::Approve);
+        assert_eq!(allow.scope, Some(OptionScope::Once));
+        assert_eq!(allow.requires, Some(OptionRequires::WorkspaceAdmin));
+        let deny = &question.options[1];
+        assert_eq!(deny.id, "deny");
+        assert_eq!(deny.meaning, GateOptionMeaning::Reject);
+        assert_eq!(deny.requires, None);
+        assert_eq!(question.options.len(), 2);
+    }
+
+    #[test]
+    fn an_approval_request_with_an_incomplete_preview_withholds_allow() {
+        let mut incomplete = stk();
+        incomplete["subject"]["preview_complete"] = json!(false);
+        let mut undrawable = stk();
+        undrawable["subject"]["preview"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({ "type": "diff", "path": "x" }));
+        for (why, content) in [("said incomplete", incomplete), ("undrawable", undrawable)] {
+            let question = v2(&content);
+            let ids: Vec<&str> = question.options.iter().map(|o| o.id.as_str()).collect();
+            assert_eq!(ids, ["deny"], "{why}");
+            assert_eq!(
+                question.approvals_withheld.as_deref(),
+                Some(STK_APPROVALS_WITHHELD_NOTE),
+                "{why}"
+            );
+            assert!(answer_request(&question, Some("allow_once"), None, STK_EVENT).is_err());
+            assert!(answer_request(&question, Some("deny"), None, STK_EVENT).is_ok());
+        }
+    }
+
+    #[test]
+    fn half_an_approval_request_stays_prose() {
+        // An stk-capability subject on a question asked on a card.
+        let mut on_a_card = stk();
+        on_a_card["card_id"] = json!("crd_51d0");
+        // A request id on a card.
+        let mut id_on_card = strict();
+        let elicitation_id = id_on_card["elicitation_id"].clone();
+        id_on_card["approval_request_id"] = elicitation_id;
+        // A request id that is not the elicitation's.
+        let mut other_id = stk();
+        other_id["approval_request_id"] = json!("apr_other");
+        for (why, content) in [
+            ("stk subject on a card", on_a_card),
+            ("request id on a card", id_on_card),
+            ("another request id", other_id),
+        ] {
+            assert!(embedded_payload(&content).is_none(), "{why}");
+        }
+        // A question asked on a card is unchanged: no request id, its link kept.
+        let question = v2(&with_options());
+        assert_eq!(question.approval_request_id, None);
+    }
+
+    #[test]
+    fn the_approval_answers_carry_the_binding() {
+        let accepts = approval_cases(QUESTION_ANSWER_V2_SUITE_TYPE, "accept");
+        assert_eq!(accepts.len(), 2, "the corpus grew; read the new case");
+        let question = v2(&stk());
+        for ((why, expected), option) in accepts.iter().zip(["allow_once", "deny"]) {
+            let mut sent = answer_request(&question, Some(option), None, STK_EVENT).unwrap();
+            // Every question.answer.v2 this client sends says its schema
+            // version; the hub reads none (its parser ignores it) and the
+            // corpus's approval answers omit it. Everything else is exact.
+            assert_eq!(sent["schema_version"], 1, "{why}");
+            sent.as_object_mut().unwrap().remove("schema_version");
+            assert_eq!(&sent, expected, "{why}");
+        }
+    }
+
+    #[test]
+    fn every_rejected_approval_answer_is_never_what_the_client_sends() {
+        let rejects = approval_cases(QUESTION_ANSWER_V2_SUITE_TYPE, "reject");
+        assert_eq!(rejects.len(), 4, "the corpus grew; read the new case");
+        let question = v2(&stk());
+        for (why, content) in &rejects {
+            let option = content["option_id"].as_str().unwrap();
+            match answer_request(&question, Some(option), None, STK_EVENT) {
+                Ok(sent) => {
+                    assert_ne!(&sent, content, "{why}");
+                    assert_eq!(
+                        sent["subject"],
+                        json!({ "id": "stkreq_8f2c", "digest": "sha256:4be1c0de9a7f30b2" }),
+                        "{why}"
+                    );
+                }
+                // Allow always is never offered.
+                Err(_) => assert_eq!(option, "allow_always", "{why}"),
+            }
+        }
     }
 
     #[test]

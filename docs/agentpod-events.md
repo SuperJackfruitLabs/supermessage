@@ -430,6 +430,31 @@ Both ride on a prose `m.room.message` with a real `body` and a
   and never judge them: the producer does.
 - **Notifications.** A subject-bound question notifies in the DECISION
   category too: a notification shows no preview, so it never approves.
+- **A SuperToolkit approval request** (fixture version 6, `variant:
+  "approval-request"`; charter
+  `decisions/2026-11-08-waiting-cards-and-broker-approvals-reach-chat.md`
+  §3–4). A SuperToolkit write held for approval is hosted on a board but on
+  **no card**: a question.v2 with `card_id`, `run_id` and `stage_key` empty,
+  `approval_request_id` equal to `elicitation_id`, and a `stk-capability/v1`
+  subject (`core::gate_v2::STK_CAPABILITY_SCHEMA`) whose preview is the
+  service, capability, target, every argument in full, the station and the
+  requesting agent. Options are `allow_once` (`approve`, `scope: once`,
+  `requires: workspace-admin`) and `deny` (`reject`); there is no "always".
+  The subject rule above applies unchanged, and the answer carries
+  `subject {id, digest}`. What differs: `QuestionV2Decision.approval_request_id`
+  is set, the card draws one row, "Request: SuperToolkit approval", in place
+  of a card's title and stage, offers no link, and its withheld note reads
+  "This card can't show everything this request would do, so it can't be
+  allowed from here." Half of one stays prose: no `approval_request_id` (or
+  one that is not the elicitation's), a subject of another schema, a link
+  (`deep_link`) to a card that does not exist, an approving option not limited
+  to workspace admins, an `stk-capability/v1` subject or a request id on a
+  question asked on a card. Only owners and admins may allow it —
+  superpipeline judges that, and SuperToolkit re-checks the digest and expiry
+  before it acts; this client never does. The desktop says "To allow this, a
+  workspace owner or admin answers on their phone." Its answer is a
+  question.answer.v2 like every other, carrying `schema_version: 1` where the
+  corpus's approval answers omit it (the hub reads none).
 
 ### 5c. permission.v2 — a harness permission in AgentPod's envelope
 
@@ -472,6 +497,54 @@ judges a harness permission).
   preview, and no Reject either, because the v1 action sends an unbound typed
   name and a bound reject is not wired through the notification answer yet. A
   v1-only permission keeps Allow once / Reject as before.
+
+### 5d. attention.v2 — a card waiting on a person
+
+charter `decisions/2026-11-08-waiting-cards-and-broker-approvals-reach-chat.md`
+§1–2, fixture version 6. When a card parks for a person for a reason other than
+a question or a review, the hub posts one prose `m.room.message` into the
+board's room, marked `suite_event_type: "dev.superpipeline.attention.v2"`. There
+is no v1 card: a message whose fields do not validate stays prose.
+
+- **The card** (`core::attention_v2`, registered as
+  `dev.superpipeline.attention.v2`, label "Waiting card"): `schema_version`,
+  `board_id`, `card_id`, `card_title`, `stage_key`, `stage_name`, `wait_id`,
+  `reason` (`repeated-failure | blocked | not-authorised`), `detail`,
+  `summary` and `failure_count` (each `null` when the park gave none, never
+  absent), `options`, and `deep_link?`. It draws "Card", "Stage", "Why" (the
+  reason in words: "Failed twice", "Failed 3 times", "Failed repeatedly",
+  "Blocked", "Not authorised" — `attention_v2::reason_words`) and "Summary"
+  rows, the agent's detail verbatim below them, and the card's link. The
+  prompt is "“<title>” is waiting on you". The identity is
+  `attention:<board>:<card>:<wait>`: the same card parking again is a new wait
+  and a new decision.
+- **Options, by meaning.** Only `resume_here` (`approve`), `resume_at:<stageKey>`
+  (`choose`, one per earlier stage) and `archive` (`reject`). Each resume has a
+  **required** `text` input of at most 2,730 characters (the board's comment
+  limit); archive has none. A forward move or any other option, a resume
+  whose instruction is optional, an input spelled `maxLength` or longer than
+  the board takes, a reason this build does not know, a missing `wait_id`, and
+  a `subject` (nothing is frozen on a waiting card) all leave the message
+  prose. `CustomEventDecision.attention_v2` is an `AttentionV2Decision`;
+  `options` is empty: no plain reply answers a waiting card.
+- **attention.answer.v2.** `Core::send_attention_answer_v2(room, attention,
+  option_id, text, in_reply_to)` (the room need not be open): `{msgtype,
+  body, suite_event_type, board_id, card_id, wait_id, option_id, text?,
+  m.relates_to: m.reference → the card's message}`, exactly the corpus's
+  shape, with no `schema_version`. Board, card and wait are copied from the
+  card, so an answer can name no other wait; the board refuses a stale one
+  (`WAIT_CHANGED`). The core refuses an option the card did not offer and a
+  resume with no instruction or one over its limit; text beside `archive`
+  is dropped. The body is the option's label.
+- **Apps.** iOS/macOS and Android draw it with the decision card: Resume here
+  leads, Resume at <stage> is neutral, Archive is the quiet rejection, and
+  each resume asks for its instruction in the input prompt step 2 added. The
+  local receipt reads "Resumed by you", "Resumed at Plan by you", "Archived by
+  you". The desktop answers none of it and says "Resume or archive on your
+  phone or the board."
+- **Notifications.** DECISION category, "Open" only: a resume needs an
+  instruction a notification cannot check, and archiving a card unread is not
+  a lock-screen choice.
 
 ## 6. Quiet events — what must never interrupt, at three layers
 
@@ -614,6 +687,56 @@ Rejected for this run / Rejected always, Chose "<label>" — "by <decided_by>"
 when named. A v1 card's option is said in the hub's words, "<name> — answered
 by <decided_by>"; an expiry reads "Expired unanswered" and a withdrawal
 "Withdrawn" (the hub's "expired unanswered" / "was withdrawn").
+
+### 7b. A waiting card's outcome
+
+The hub closes a waiting card with `dev.superpipeline.attention.outcome.v1` — its
+own type, because `gate.outcome.v1` is keyed by gate and a wait has none — a
+custom event (with `suite_event_type` repeated) sent beside a prose line:
+`{board_id, card_id, wait_id, decision, decided_by | null, m.relates_to:
+m.reference → the card's message}`. `decision` is the option taken
+(`resume_here`, `resume_at:<key>`, `archive`) or `settled_elsewhere` when the
+wait ended anywhere but this room (the sweep stopped listing it, or the board
+answered `WAIT_CHANGED`). `core::attention_v2::resolved_attention` reads it in
+the same reconcile pass and turns the card into a receipt, whichever arrived
+first. It closes a card only when it comes from the identity that posted the
+card, references exactly that card's message, and names the same board, card
+and wait; an outcome with no wait, no `m.reference`, no decision, a quoted
+reply, someone else's outcome or a gate's outcome closes nothing. The event is
+never drawn and notifies as `NotNews`.
+
+**Wording.** "Resumed by <who>", "Resumed at <stage> by <who>" (the stage as the
+card's option named it, "Resume at Plan" → "Plan", or its key), "Archived by
+<who>", and "Settled on the board" for `settled_elsewhere`, which names nobody.
+The hub's own line says "Resumed (Resume at Plan) by <who> — the board has it."
+
+## 8. Needs you — which rooms owe an answer
+
+charter `decisions/2026-11-08-waiting-cards-and-broker-approvals-reach-chat.md`
+("decisions light the Needs you inbox"). Every Needs you surface — the inbox
+and its badge, the pill, the roster's amber line and status dot, the desktop
+title count and tray dot, the widgets — reads `RoomPreview.pending`
+(`core::room_preview`), which is set when the room's latest event type is in
+`decision_bearing_event_types()`: `dev.superpipeline.gate.v1`,
+`dev.agentpod.permission.v1`, `dev.superpipeline.gate.v2`,
+`dev.superpipeline.question.v2`, `dev.superpipeline.delivery.v2`,
+`dev.agentpod.permission.v2` and `dev.superpipeline.attention.v2`. That set was
+empty until fixture version 6, so no real decision ever lit Needs you (defect D1
+of the 2026-10-23 parity verification).
+
+A decision is carried on a prose `m.room.message`, which the room list's latest
+event classifies as an ordinary message. `core::rooms::room_preview` therefore
+reads that same latest event's raw content and, for someone else's message,
+reports the decision it carries with `room_preview::pending_decision_type` —
+the timeline's own reading (`embedded::embedded_suite_event`), so a card the
+room draws as prose is not pending either. **Pending means the room's newest
+message is an open decision card.** Every way a decision ends puts a newer
+message after it — the reader's answer, from this device or another, and the
+hub's receipt line beside every outcome — so an answered or settled decision
+stops counting without any per-device state. The rule errs one way only: a
+decision followed by unrelated chatter stops counting though its card still
+waits; amber never claims a decision that is not owed. The line still reads
+"Approval needed" for every kind.
 
 ## Adding a field
 

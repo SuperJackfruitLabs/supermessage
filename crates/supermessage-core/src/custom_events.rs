@@ -196,6 +196,17 @@ pub struct CustomEventDecision {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[uniffi(default = None)]
     pub permission_v2: Option<crate::permission_v2::PermissionV2Decision>,
+    /// A card waiting on a person, when the prose message carries
+    /// `dev.superpipeline.attention.v2` (`crate::attention_v2`): the card,
+    /// the stage, the reason in words, the agent's detail, and the options
+    /// by meaning — resume here, resume at an earlier stage (each with a
+    /// required instruction), archive. Answered with
+    /// `send_attention_answer_v2`. [`Self::options`] is empty: no plain
+    /// reply answers a waiting card. `None` otherwise, and absent from the
+    /// JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub attention_v2: Option<crate::attention_v2::AttentionV2Decision>,
 }
 
 /// A decision the board has accepted, as the room reports it.
@@ -430,13 +441,15 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
     // whose options are all v2-only — because its own options, preview and
     // the reason approvals were withheld are on `gate_v2`.
     // The same for a question.v2 (a free-text question offers no option at
-    // all), a delivery.v2 follow-up and a permission.v2 whose every option
-    // allows (a plain reply never allows what the card could not show).
+    // all), a delivery.v2 follow-up, a permission.v2 whose every option
+    // allows (a plain reply never allows what the card could not show) and
+    // an attention.v2, which no plain reply answers.
     if options.is_empty()
         && decision.gate_v2.is_none()
         && decision.question_v2.is_none()
         && decision.delivery_v2.is_none()
         && decision.permission_v2.is_none()
+        && decision.attention_v2.is_none()
     {
         return None;
     }
@@ -451,6 +464,7 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
         question_v2: decision.question_v2,
         delivery_v2: decision.delivery_v2,
         permission_v2: decision.permission_v2,
+        attention_v2: decision.attention_v2,
     })
 }
 
@@ -885,6 +899,7 @@ impl CustomEventRenderer for PermissionRequestRenderer {
                 question_v2: None,
                 delivery_v2: None,
                 permission_v2: None,
+                attention_v2: None,
             }),
         }
     }
@@ -1011,6 +1026,7 @@ impl CustomEventRenderer for GateRenderer {
                 question_v2: None,
                 delivery_v2: None,
                 permission_v2: None,
+                attention_v2: None,
             }),
         }
     }
@@ -1031,6 +1047,7 @@ pub fn default_registry() -> &'static CustomEventRegistry {
         registry.register(Box::new(crate::question_v2::QuestionV2Renderer));
         registry.register(Box::new(crate::delivery_v2::DeliveryV2Renderer));
         registry.register(Box::new(crate::permission_v2::PermissionV2Renderer));
+        registry.register(Box::new(crate::attention_v2::AttentionV2Renderer));
         registry
     })
 }
@@ -1476,6 +1493,7 @@ mod tests {
             question_v2: None,
             delivery_v2: None,
             permission_v2: None,
+            attention_v2: None,
         });
         assert_eq!(
             decision_from(&registry),
@@ -1487,6 +1505,7 @@ mod tests {
                 question_v2: None,
                 delivery_v2: None,
                 permission_v2: None,
+                attention_v2: None,
             })
         );
     }
@@ -1501,6 +1520,7 @@ mod tests {
             question_v2: None,
             delivery_v2: None,
             permission_v2: None,
+            attention_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.prompt.chars().count(), FIELD_VALUE_MAX_CHARS + 1);
@@ -1523,6 +1543,7 @@ mod tests {
             question_v2: None,
             delivery_v2: None,
             permission_v2: None,
+            attention_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options[0].id, long_id);
@@ -1540,6 +1561,7 @@ mod tests {
             question_v2: None,
             delivery_v2: None,
             permission_v2: None,
+            attention_v2: None,
         });
         assert_eq!(
             decision_from(&registry).expect("a decision").options.len(),
@@ -1562,6 +1584,7 @@ mod tests {
             question_v2: None,
             delivery_v2: None,
             permission_v2: None,
+            attention_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options.len(), 2);
@@ -1583,6 +1606,7 @@ mod tests {
             question_v2: None,
             delivery_v2: None,
             permission_v2: None,
+            attention_v2: None,
         });
         let decision = decision_from(&registry).expect("a decision");
         assert_eq!(decision.options, vec![option("allow", "Allow")]);
@@ -1598,6 +1622,7 @@ mod tests {
             question_v2: None,
             delivery_v2: None,
             permission_v2: None,
+            attention_v2: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -1612,6 +1637,7 @@ mod tests {
             question_v2: None,
             delivery_v2: None,
             permission_v2: None,
+            attention_v2: None,
         });
         assert_eq!(decision_from(&registry), None);
     }
@@ -2127,13 +2153,14 @@ mod tests {
             crate::question_v2::QUESTION_V2_EVENT_TYPE,
             crate::delivery_v2::DELIVERY_V2_EVENT_TYPE,
             crate::permission_v2::PERMISSION_V2_EVENT_TYPE,
+            crate::attention_v2::ATTENTION_V2_EVENT_TYPE,
         ] {
             assert!(
                 registry.get(event_type).is_some(),
                 "{event_type} is not registered"
             );
         }
-        assert_eq!(registry.len(), 8);
+        assert_eq!(registry.len(), 9);
     }
 }
 

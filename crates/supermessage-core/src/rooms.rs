@@ -385,9 +385,10 @@ fn sender_display_name(profile: &TimelineDetails<Profile>, sender: &UserId) -> S
 ///   this one is inside the SDK's own background task and cannot be
 ///   overridden from here. So a Superpipeline card/run/permission-request event
 ///   does not become the latest-event value at all; the roster shows the
-///   last ordinary message underneath it instead. `lastEventType` is
-///   therefore unreachable in production twice over (no gate schema exists
-///   yet either), which is why `None` is passed for `custom_body` below:
+///   last ordinary message underneath it instead. A decision the hub carries
+///   on its prose message is an ordinary message to that filter, and lights
+///   the roster through `with_pending_decision`. `None` is passed for
+///   `custom_body` below because
 ///   `MsgLikeKind::Other` discards the content, and unlike
 ///   `custom_message_payload` there is no raw event here to read a fallback
 ///   `body` back out of. Fix the filter upstream, not this comment, if a
@@ -407,7 +408,7 @@ async fn room_preview(item: &RoomListItem) -> Option<MessagePreview> {
     // be the only thing keeping this off the base `Room::latest_event` one
     // deref further down, which returns a raw event and no classification.
     let room: &Room = item;
-    match RoomExt::latest_event(room).await {
+    let preview = match RoomExt::latest_event(room).await {
         LatestEventValue::Remote {
             sender,
             is_own,
@@ -440,7 +441,39 @@ async fn room_preview(item: &RoomListItem) -> Option<MessagePreview> {
         // ordinary state for any room the room-list service never subscribed
         // to while the event cache was listening.
         LatestEventValue::None | LatestEventValue::RemoteInvite { .. } => None,
+    };
+    preview.map(|preview| with_pending_decision(room, preview))
+}
+
+/// `preview` with its `event_type` set to the decision its event carries,
+/// when it is someone else's message carrying a decision card this client
+/// draws (`crate::room_preview::pending_decision_type`) — the hook the
+/// roster's amber line keys off (`crate::room_preview`).
+///
+/// A decision card is an `m.room.message` with the decision on it, so the
+/// classified content above keeps only its body and msgtype. The decision is
+/// read from the same latest-event value's raw event instead — the base
+/// `Room::latest_event`, which the UI one is built from and which still
+/// holds the (decrypted) event. Never for this account's own message: an
+/// answer this device sent is what ends a decision.
+fn with_pending_decision(room: &Room, mut preview: MessagePreview) -> MessagePreview {
+    if preview.event_type.is_none() && !preview.is_own {
+        preview.event_type = latest_decision_type(room).map(str::to_string);
     }
+    preview
+}
+
+/// The decision type the room's latest event carries, read off its raw
+/// content, or `None`.
+fn latest_decision_type(room: &Room) -> Option<&'static str> {
+    let base: &matrix_sdk::BaseRoom = room;
+    let matrix_sdk::latest_events::LatestEventValue::Remote(event) =
+        matrix_sdk::BaseRoom::latest_event(base)
+    else {
+        return None;
+    };
+    let content: serde_json::Value = event.raw().get_field("content").ok()??;
+    crate::room_preview::pending_decision_type(&content)
 }
 
 /// Project an SDK [`RoomListItem`] into the wire [`RoomSummary`].

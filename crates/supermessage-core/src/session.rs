@@ -487,6 +487,33 @@ impl Session {
         Ok(())
     }
 
+    /// Answers a card waiting on a person (`crate::attention_v2`) in
+    /// `room_id`, whether or not that room is open, and returns once the
+    /// homeserver has the event.
+    ///
+    /// `attention` is the card's `CustomEventDecision::attention_v2`, handed
+    /// back unchanged; `text` is a resume's instruction. The
+    /// `dev.superpipeline.attention.answer.v2` is built and checked by
+    /// `crate::attention_v2::answer_request` before anything else: an option
+    /// the card did not offer, or a resume with no instruction or one over
+    /// its limit, is refused here. The board, card and wait are copied from
+    /// the card.
+    pub async fn send_attention_answer_v2(
+        &self,
+        room_id: &str,
+        attention: &crate::attention_v2::AttentionV2Decision,
+        option_id: &str,
+        text: Option<&str>,
+        in_reply_to: &str,
+    ) -> CoreResult<()> {
+        let content = crate::attention_v2::answer_request(attention, option_id, text, in_reply_to)?;
+        let room = self.room_to_answer_in(room_id).await?;
+        room.send_raw("m.room.message", content)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
     /// Answers a superpipeline gate in `room_id`, whether or not that room is
     /// open, and returns once the homeserver has the event.
     ///

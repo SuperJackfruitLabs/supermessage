@@ -917,6 +917,13 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         {
             ItemView::None
         }
+        // And for a waiting card's receipt (`crate::attention_v2`).
+        "customMessage"
+            if item.detail.as_deref()
+                == Some(crate::attention_v2::ATTENTION_OUTCOME_EVENT_TYPE) =>
+        {
+            ItemView::None
+        }
 
         "customMessage" => ItemView::CustomEvent {
             label: custom_event_label(default_registry(), item.detail.as_deref()),
