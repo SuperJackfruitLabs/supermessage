@@ -2246,7 +2246,16 @@ data class GateV2Decision (
     /**
      * Present on a subject-bound gate; copied into the answer.
      */
-    var `subject`: GateSubjectBinding?
+    var `subject`: GateSubjectBinding?, 
+    /**
+     * A choice of versions (charter →
+     * `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md`), in
+     * the gate's order; empty for any other gate. On a variant gate
+     * `subject` and `preview` are empty — each version carries its own —
+     * and an approving option is answered with the chosen version
+     * ([`decision_request`]), which must be [`GateVariantV2::approvable`].
+     */
+    var `variants`: List<GateVariantV2> = listOf()
 ) {
     
     companion object
@@ -2263,6 +2272,7 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterSequenceTypeGatePreviewBlock.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalTypeGateSubjectBinding.read(buf),
+            FfiConverterSequenceTypeGateVariantV2.read(buf),
         )
     }
 
@@ -2271,7 +2281,8 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterSequenceTypeGateOptionV2.allocationSize(value.`options`) +
             FfiConverterSequenceTypeGatePreviewBlock.allocationSize(value.`preview`) +
             FfiConverterOptionalString.allocationSize(value.`approvalsWithheld`) +
-            FfiConverterOptionalTypeGateSubjectBinding.allocationSize(value.`subject`)
+            FfiConverterOptionalTypeGateSubjectBinding.allocationSize(value.`subject`) +
+            FfiConverterSequenceTypeGateVariantV2.allocationSize(value.`variants`)
     )
 
     override fun write(value: GateV2Decision, buf: ByteBuffer) {
@@ -2280,6 +2291,72 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterSequenceTypeGatePreviewBlock.write(value.`preview`, buf)
             FfiConverterOptionalString.write(value.`approvalsWithheld`, buf)
             FfiConverterOptionalTypeGateSubjectBinding.write(value.`subject`, buf)
+            FfiConverterSequenceTypeGateVariantV2.write(value.`variants`, buf)
+    }
+}
+
+
+
+/**
+ * One version a variant gate offers: its label, its own subject and
+ * preview, and whether this client may approve it.
+ */
+data class GateVariantV2 (
+    /**
+     * Handed back verbatim as the chosen version; never drawn.
+     */
+    var `id`: kotlin.String, 
+    /**
+     * One line, bounded. Display only.
+     */
+    var `label`: kotlin.String, 
+    /**
+     * Its preview drawn verbatim, and the binding an approval copies.
+     */
+    var `subject`: SubjectV2, 
+    /**
+     * Its whole preview was drawable and the board said it was complete.
+     * Only such a version may be chosen here; the rest are chosen on the
+     * board. Request changes and reject never depend on it.
+     */
+    var `approvable`: kotlin.Boolean, 
+    /**
+     * [`VARIANT_WITHHELD_NOTE`] exactly when not `approvable`.
+     */
+    var `withheld`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateVariantV2: FfiConverterRustBuffer<GateVariantV2> {
+    override fun read(buf: ByteBuffer): GateVariantV2 {
+        return GateVariantV2(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterTypeSubjectV2.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateVariantV2) = (
+            FfiConverterString.allocationSize(value.`id`) +
+            FfiConverterString.allocationSize(value.`label`) +
+            FfiConverterTypeSubjectV2.allocationSize(value.`subject`) +
+            FfiConverterBoolean.allocationSize(value.`approvable`) +
+            FfiConverterOptionalString.allocationSize(value.`withheld`)
+    )
+
+    override fun write(value: GateVariantV2, buf: ByteBuffer) {
+            FfiConverterString.write(value.`id`, buf)
+            FfiConverterString.write(value.`label`, buf)
+            FfiConverterTypeSubjectV2.write(value.`subject`, buf)
+            FfiConverterBoolean.write(value.`approvable`, buf)
+            FfiConverterOptionalString.write(value.`withheld`, buf)
     }
 }
 
@@ -11912,6 +11989,34 @@ public object FfiConverterSequenceTypeGateOptionV2: FfiConverterRustBuffer<List<
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeGateOptionV2.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeGateVariantV2: FfiConverterRustBuffer<List<GateVariantV2>> {
+    override fun read(buf: ByteBuffer): List<GateVariantV2> {
+        val len = buf.getInt()
+        return List<GateVariantV2>(len) {
+            FfiConverterTypeGateVariantV2.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<GateVariantV2>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeGateVariantV2.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<GateVariantV2>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeGateVariantV2.write(it, buf)
         }
     }
 }

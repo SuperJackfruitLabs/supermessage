@@ -1384,7 +1384,7 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_to(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,`prompt`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
-    fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gate`: RustBufferGateV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gate`: RustBufferGateV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`chosenVariant`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2_to(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gate`: RustBufferGateV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -2370,7 +2370,7 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_to() != 20932.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2() != 3925.toShort()) {
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2() != 39486.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2_to() != 24924.toShort()) {
@@ -3301,8 +3301,14 @@ public interface CoreInterface {
      * binding into the `dev.superpipeline.gate.decision.v2` it sends. The
      * sentence left in the room is the core's, as for
      * [`Core::send_gate_decision`].
+     *
+     * `chosen_variant` is the id of the version picked on a variant gate
+     * (`GateV2Decision::variants`): an approval must name one whose
+     * `approvable` is true, and carries that version's binding; request
+     * changes and reject send none. `None` on any other gate — a chosen
+     * version there is refused.
      */
-    fun `sendGateDecisionV2`(`roomId`: kotlin.String, `gate`: GateV2Decision, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String)
+    fun `sendGateDecisionV2`(`roomId`: kotlin.String, `gate`: GateV2Decision, `optionId`: kotlin.String, `chosenVariant`: kotlin.String?, `comment`: kotlin.String?, `inReplyTo`: kotlin.String)
     
     /**
      * [`Core::send_gate_decision_v2`] for a room that need not be open — a
@@ -4522,13 +4528,19 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
      * binding into the `dev.superpipeline.gate.decision.v2` it sends. The
      * sentence left in the room is the core's, as for
      * [`Core::send_gate_decision`].
+     *
+     * `chosen_variant` is the id of the version picked on a variant gate
+     * (`GateV2Decision::variants`): an approval must name one whose
+     * `approvable` is true, and carries that version's binding; request
+     * changes and reject send none. `None` on any other gate — a chosen
+     * version there is refused.
      */
-    @Throws(FfiException::class)override fun `sendGateDecisionV2`(`roomId`: kotlin.String, `gate`: GateV2Decision, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String)
+    @Throws(FfiException::class)override fun `sendGateDecisionV2`(`roomId`: kotlin.String, `gate`: GateV2Decision, `optionId`: kotlin.String, `chosenVariant`: kotlin.String?, `comment`: kotlin.String?, `inReplyTo`: kotlin.String)
         = 
     callWithPointer {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2(
-        it, FfiConverterString.lower(`roomId`),FfiConverterTypeGateV2Decision.lower(`gate`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),_status)
+        it, FfiConverterString.lower(`roomId`),FfiConverterTypeGateV2Decision.lower(`gate`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`chosenVariant`),FfiConverterOptionalString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),_status)
 }
     }
     

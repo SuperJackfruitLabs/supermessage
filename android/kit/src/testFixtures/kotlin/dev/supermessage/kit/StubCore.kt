@@ -71,7 +71,7 @@ open class StubCore : CoreInterface {
     override fun restoreSessionQuietly(): kotlin.Boolean = throw NotImplementedError()
     override fun sendPermissionAnswer(roomId: kotlin.String, optionId: kotlin.String): Unit = throw NotImplementedError()
     override fun sendGateDecisionTo(roomId: kotlin.String, gateId: kotlin.String, optionId: kotlin.String, comment: kotlin.String?, inReplyTo: kotlin.String, prompt: kotlin.String): Unit = throw NotImplementedError()
-    override fun sendGateDecisionV2(roomId: kotlin.String, gate: GateV2Decision, optionId: kotlin.String, comment: kotlin.String?, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
+    override fun sendGateDecisionV2(roomId: kotlin.String, gate: GateV2Decision, optionId: kotlin.String, chosenVariant: kotlin.String?, comment: kotlin.String?, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
     override fun sendGateDecisionV2To(roomId: kotlin.String, gate: GateV2Decision, optionId: kotlin.String, comment: kotlin.String?, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
     override fun sendQuestionAnswerV2(roomId: kotlin.String, question: QuestionV2Decision, optionId: kotlin.String?, text: kotlin.String?, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
     override fun sendDeliveryAnswerV2(roomId: kotlin.String, delivery: GateV2Decision, optionId: kotlin.String, text: kotlin.String?, inReplyTo: kotlin.String): Unit = throw NotImplementedError()

@@ -2926,7 +2926,10 @@ impl FocusedTimeline {
     /// from, handed back by the host: the answer is checked against what the
     /// reader was shown — the option was offered, an approval was not
     /// withheld, a comment is present where one is needed — and carries the
-    /// subject binding copied from it. Everything else is as for
+    /// subject binding copied from it. On a variant gate `chosen_variant` is
+    /// the version the reader picked: an approval must name one it may
+    /// approve and carries that version's binding; on any other gate it must
+    /// be `None`. Everything else is as for
     /// [`Self::send_gate_decision`]: an ordinary `m.room.message` that
     /// references the gate's event, validated before the focus check.
     pub async fn send_gate_decision_v2(
@@ -2934,10 +2937,17 @@ impl FocusedTimeline {
         room_id: &str,
         gate: &crate::gate_v2::GateV2Decision,
         option_id: &str,
+        chosen_variant: Option<&str>,
         comment: Option<&str>,
         in_reply_to: &str,
     ) -> CoreResult<()> {
-        let content = crate::gate_v2::decision_request(gate, option_id, comment, in_reply_to)?;
+        let content = crate::gate_v2::decision_request(
+            gate,
+            option_id,
+            chosen_variant,
+            comment,
+            in_reply_to,
+        )?;
         let timeline = self.active_timeline_for(room_id)?;
         timeline
             .room()

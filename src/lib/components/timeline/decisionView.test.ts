@@ -5,6 +5,7 @@ import {
   ALLOW_ELSEWHERE,
   ANSWER_ELSEWHERE,
   APPROVAL_REQUEST_ELSEWHERE,
+  CHOOSE_ELSEWHERE,
   RESUME_ELSEWHERE,
   answerElsewhere,
   answeredWhen,
@@ -141,5 +142,12 @@ describe("answerElsewhere", () => {
   it("says why when a gate.v2's approvals were withheld", () => {
     const gate = { gateId: "gate_1", options: [opt("reject")], approvalsWithheld: "Open the card to approve it." };
     expect(answerElsewhere({ ...base, options: [opt("reject")], gateV2: gate })).toBe("Open the card to approve it.");
+  });
+
+  it("says where to choose when a gate offers versions", () => {
+    const options = ["approve_manual", "approve_automatic", "request_changes", "reject"].map((id) => opt(id));
+    const gate = { gateId: "gate_5d72", options, approvalsWithheld: null, variants: [{ id: "short" }] };
+    const legacy = [opt("request_changes"), opt("reject")];
+    expect(answerElsewhere({ ...base, options: legacy, gateV2: gate })).toBe(CHOOSE_ELSEWHERE);
   });
 });

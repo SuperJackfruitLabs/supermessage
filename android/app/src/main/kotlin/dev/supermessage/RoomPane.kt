@@ -318,6 +318,7 @@ internal fun RoomPane(
                                     optionId = answer.optionId,
                                     comment = answer.comment,
                                     roomId = currentRoomId,
+                                    chosenVariant = answer.chosenVariant,
                                 )
                             } else if (questionV2 != null) {
                                 // An empty option id is a free-text answer.

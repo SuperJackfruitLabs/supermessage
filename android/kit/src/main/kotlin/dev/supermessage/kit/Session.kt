@@ -570,7 +570,9 @@ class Session(
      * Answer a gate.v2 from its card. [gate] is the card's
      * `CustomEventDecision.gateV2`, handed back as the core drew it: the core
      * checks the answer against what the reader was shown and binds it to the
-     * subject they saw. Otherwise as [answerGate].
+     * subject they saw. Otherwise as [answerGate]. [chosenVariant] is the
+     * version picked on a gate that offers a choice of them; an approval of
+     * such a gate is refused without one.
      */
     suspend fun answerGateV2(
         eventId: String?,
@@ -578,6 +580,7 @@ class Session(
         optionId: String,
         comment: String?,
         roomId: String,
+        chosenVariant: String? = null,
     ): Boolean {
         if (eventId == null) return false
         return try {
@@ -585,6 +588,7 @@ class Session(
                 roomId = roomId,
                 gate = gate,
                 optionId = optionId,
+                chosenVariant = chosenVariant,
                 comment = comment,
                 inReplyTo = eventId,
             )

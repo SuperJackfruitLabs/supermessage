@@ -359,16 +359,19 @@ class CoreClient(
     /**
      * Answer a gate.v2. [gate] is the card's own `CustomEventDecision.gateV2`,
      * handed back unchanged: the core checks the answer against it and copies
-     * its subject binding into the decision it sends.
+     * its subject binding into the decision it sends. [chosenVariant] is the
+     * version picked on a gate that offers a choice of them (`gate.variants`):
+     * an approval must name one the core marked approvable; null otherwise.
      */
     suspend fun sendGateDecisionV2(
         roomId: String,
         gate: GateV2Decision,
         optionId: String,
+        chosenVariant: String?,
         comment: String?,
         inReplyTo: String,
     ) {
-        run { it.sendGateDecisionV2(roomId, gate, optionId, comment, inReplyTo) }
+        run { it.sendGateDecisionV2(roomId, gate, optionId, chosenVariant, comment, inReplyTo) }
     }
 
     /**

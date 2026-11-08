@@ -867,6 +867,11 @@ export interface EnvelopeDecision {
   gateId: string;
   options: EnvelopeOption[];
   approvalsWithheld: string | null;
+  /**
+   * A choice of versions (`core::gate_v2::GateVariantV2`), absent on any other gate. The desktop
+   * draws none of them and only says where to choose.
+   */
+  variants?: unknown[];
 }
 
 /**

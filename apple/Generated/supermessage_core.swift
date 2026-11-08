@@ -2776,6 +2776,15 @@ public struct GateV2Decision {
      * Present on a subject-bound gate; copied into the answer.
      */
     public var subject: GateSubjectBinding?
+    /**
+     * A choice of versions (charter →
+     * `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md`), in
+     * the gate's order; empty for any other gate. On a variant gate
+     * `subject` and `preview` are empty — each version carries its own —
+     * and an approving option is answered with the chosen version
+     * ([`decision_request`]), which must be [`GateVariantV2::approvable`].
+     */
+    public var variants: [GateVariantV2]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -2792,12 +2801,21 @@ public struct GateV2Decision {
          */approvalsWithheld: String?, 
         /**
          * Present on a subject-bound gate; copied into the answer.
-         */subject: GateSubjectBinding?) {
+         */subject: GateSubjectBinding?, 
+        /**
+         * A choice of versions (charter →
+         * `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md`), in
+         * the gate's order; empty for any other gate. On a variant gate
+         * `subject` and `preview` are empty — each version carries its own —
+         * and an approving option is answered with the chosen version
+         * ([`decision_request`]), which must be [`GateVariantV2::approvable`].
+         */variants: [GateVariantV2] = []) {
         self.gateId = gateId
         self.options = options
         self.preview = preview
         self.approvalsWithheld = approvalsWithheld
         self.subject = subject
+        self.variants = variants
     }
 }
 
@@ -2820,6 +2838,9 @@ extension GateV2Decision: Equatable, Hashable {
         if lhs.subject != rhs.subject {
             return false
         }
+        if lhs.variants != rhs.variants {
+            return false
+        }
         return true
     }
 
@@ -2829,6 +2850,7 @@ extension GateV2Decision: Equatable, Hashable {
         hasher.combine(preview)
         hasher.combine(approvalsWithheld)
         hasher.combine(subject)
+        hasher.combine(variants)
     }
 }
 
@@ -2844,7 +2866,8 @@ public struct FfiConverterTypeGateV2Decision: FfiConverterRustBuffer {
                 options: FfiConverterSequenceTypeGateOptionV2.read(from: &buf), 
                 preview: FfiConverterSequenceTypeGatePreviewBlock.read(from: &buf), 
                 approvalsWithheld: FfiConverterOptionString.read(from: &buf), 
-                subject: FfiConverterOptionTypeGateSubjectBinding.read(from: &buf)
+                subject: FfiConverterOptionTypeGateSubjectBinding.read(from: &buf), 
+                variants: FfiConverterSequenceTypeGateVariantV2.read(from: &buf)
         )
     }
 
@@ -2854,6 +2877,7 @@ public struct FfiConverterTypeGateV2Decision: FfiConverterRustBuffer {
         FfiConverterSequenceTypeGatePreviewBlock.write(value.preview, into: &buf)
         FfiConverterOptionString.write(value.approvalsWithheld, into: &buf)
         FfiConverterOptionTypeGateSubjectBinding.write(value.subject, into: &buf)
+        FfiConverterSequenceTypeGateVariantV2.write(value.variants, into: &buf)
     }
 }
 
@@ -2870,6 +2894,134 @@ public func FfiConverterTypeGateV2Decision_lift(_ buf: RustBuffer) throws -> Gat
 #endif
 public func FfiConverterTypeGateV2Decision_lower(_ value: GateV2Decision) -> RustBuffer {
     return FfiConverterTypeGateV2Decision.lower(value)
+}
+
+
+/**
+ * One version a variant gate offers: its label, its own subject and
+ * preview, and whether this client may approve it.
+ */
+public struct GateVariantV2 {
+    /**
+     * Handed back verbatim as the chosen version; never drawn.
+     */
+    public var id: String
+    /**
+     * One line, bounded. Display only.
+     */
+    public var label: String
+    /**
+     * Its preview drawn verbatim, and the binding an approval copies.
+     */
+    public var subject: SubjectV2
+    /**
+     * Its whole preview was drawable and the board said it was complete.
+     * Only such a version may be chosen here; the rest are chosen on the
+     * board. Request changes and reject never depend on it.
+     */
+    public var approvable: Bool
+    /**
+     * [`VARIANT_WITHHELD_NOTE`] exactly when not `approvable`.
+     */
+    public var withheld: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Handed back verbatim as the chosen version; never drawn.
+         */id: String, 
+        /**
+         * One line, bounded. Display only.
+         */label: String, 
+        /**
+         * Its preview drawn verbatim, and the binding an approval copies.
+         */subject: SubjectV2, 
+        /**
+         * Its whole preview was drawable and the board said it was complete.
+         * Only such a version may be chosen here; the rest are chosen on the
+         * board. Request changes and reject never depend on it.
+         */approvable: Bool, 
+        /**
+         * [`VARIANT_WITHHELD_NOTE`] exactly when not `approvable`.
+         */withheld: String?) {
+        self.id = id
+        self.label = label
+        self.subject = subject
+        self.approvable = approvable
+        self.withheld = withheld
+    }
+}
+
+
+
+extension GateVariantV2: Equatable, Hashable {
+    public static func ==(lhs: GateVariantV2, rhs: GateVariantV2) -> Bool {
+        if lhs.id != rhs.id {
+            return false
+        }
+        if lhs.label != rhs.label {
+            return false
+        }
+        if lhs.subject != rhs.subject {
+            return false
+        }
+        if lhs.approvable != rhs.approvable {
+            return false
+        }
+        if lhs.withheld != rhs.withheld {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+        hasher.combine(label)
+        hasher.combine(subject)
+        hasher.combine(approvable)
+        hasher.combine(withheld)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateVariantV2: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateVariantV2 {
+        return
+            try GateVariantV2(
+                id: FfiConverterString.read(from: &buf), 
+                label: FfiConverterString.read(from: &buf), 
+                subject: FfiConverterTypeSubjectV2.read(from: &buf), 
+                approvable: FfiConverterBool.read(from: &buf), 
+                withheld: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GateVariantV2, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterTypeSubjectV2.write(value.subject, into: &buf)
+        FfiConverterBool.write(value.approvable, into: &buf)
+        FfiConverterOptionString.write(value.withheld, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateVariantV2_lift(_ buf: RustBuffer) throws -> GateVariantV2 {
+    return try FfiConverterTypeGateVariantV2.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateVariantV2_lower(_ value: GateVariantV2) -> RustBuffer {
+    return FfiConverterTypeGateVariantV2.lower(value)
 }
 
 
@@ -17428,6 +17580,31 @@ fileprivate struct FfiConverterSequenceTypeGateOptionV2: FfiConverterRustBuffer 
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeGateOptionV2.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGateVariantV2: FfiConverterRustBuffer {
+    typealias SwiftType = [GateVariantV2]
+
+    public static func write(_ value: [GateVariantV2], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGateVariantV2.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GateVariantV2] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GateVariantV2]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGateVariantV2.read(from: &buf))
         }
         return seq
     }

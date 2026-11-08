@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,6 +59,8 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -78,6 +81,7 @@ import uniffi.supermessage_core.CustomEventView
 import uniffi.supermessage_core.GateOptionV2
 import uniffi.supermessage_core.GatePreviewBlock
 import uniffi.supermessage_core.GateV2Decision
+import uniffi.supermessage_core.GateVariantV2
 import uniffi.supermessage_core.OptionInput
 import uniffi.supermessage_core.OptionInputKind
 import uniffi.supermessage_core.OptionRequires
@@ -701,6 +705,93 @@ private fun GatePreviewBlocks(blocks: List<GatePreviewBlock>) {
 }
 
 /**
+ * Whether an approving option may be sent with [chosen] picked: always on a
+ * gate without versions; on a choice of them, only when [chosen] is a version
+ * the core marked approvable. Request changes and reject never wait on it. The
+ * core refuses anything else (`gate_v2::decision_request`); this only keeps a
+ * button that would be refused from looking pressable.
+ */
+internal fun variantApprovalReady(gate: GateV2Decision?, chosen: String?): Boolean {
+    val variants = gate?.variants.orEmpty()
+    if (variants.isEmpty()) return true
+    return variants.any { it.id == chosen && it.approvable }
+}
+
+/**
+ * The version an answer carries: [chosen] on an approval of a gate that offers
+ * versions, `null` otherwise — the set is sent back or rejected whole, and a
+ * gate without versions refuses one.
+ */
+internal fun chosenVariantFor(gate: GateV2Decision?, role: DecisionOptionRole, chosen: String?): String? =
+    if (role == DecisionOptionRole.APPROVE && !gate?.variants.isNullOrEmpty()) chosen else null
+
+/**
+ * A gate's choice of versions (charter →
+ * `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md`): one section
+ * per version — a radio mark, its label and its preview, drawn verbatim as any
+ * subject's — and at most one picked. A version the core could not show whole
+ * is still shown as far as it goes, says it is chosen on the board, and never
+ * enables an approval here. Mirrors `VariantPicker` in `DecisionCard.swift`.
+ */
+@Composable
+private fun VariantPicker(
+    variants: List<GateVariantV2>,
+    chosen: String?,
+    enabled: Boolean,
+    onChoose: (String) -> Unit,
+) {
+    val colors = SupermessageTheme.colors
+    val shape = RoundedCornerShape(6.dp)
+    Column(
+        modifier = Modifier.fillMaxWidth().testTag("gate-variants"),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        variants.forEach { variant ->
+            val picked = chosen == variant.id
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(shape)
+                    .border(1.dp, if (picked) colors.content else colors.border, shape)
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .semantics {
+                            role = Role.RadioButton
+                            selected = picked
+                        }
+                        .clickable(enabled = enabled) { onChoose(variant.id) }
+                        .testTag("gate-variant-${variant.id}"),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    // Drawn, not tapped: the whole row is the target.
+                    RadioButton(selected = picked, onClick = null, enabled = enabled)
+                    Text(
+                        variant.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+                GatePreviewBlocks(variant.subject.preview)
+                variant.withheld?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("gate-variant-withheld"),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * One answer as the card draws it.
  *
  * From a gate.v2 option it is drawn by **meaning**, never by id; from a legacy
@@ -877,6 +968,11 @@ private fun DecisionButtons(
     var inputText by remember { mutableStateOf("") }
     // A free-text question's answer, typed in the card.
     var freeText by remember { mutableStateOf("") }
+    // The version picked on a gate that offers a choice of them (charter
+    // 2026-11-09). None until the reader picks one: an approval names exactly
+    // what they chose, never a default.
+    var chosenVariant by remember(decision.gateV2?.gateId) { mutableStateOf<String?>(null) }
+    val variants = decision.gateV2?.variants.orEmpty()
 
     val interactive = onDecide != null
     val enabled = interactive && !answers.sending(answerKey)
@@ -899,6 +995,7 @@ private fun DecisionButtons(
                 text = if (input.isNullOrEmpty()) null else input,
                 permissionV2 = decision.permissionV2,
                 attentionV2 = decision.attentionV2,
+                chosenVariant = chosenVariantFor(decision.gateV2, choice.role, chosenVariant),
             ),
             handler = handler,
             haptics = haptics,
@@ -944,12 +1041,18 @@ private fun DecisionButtons(
                 modifier = Modifier.fillMaxWidth().testTag("question-free-text-send"),
             )
         }
+        if (variants.isNotEmpty()) {
+            // What each version is, exactly, before the buttons that approve
+            // one. No editing here: a change is "Request changes".
+            VariantPicker(variants, chosenVariant, enabled = enabled) { chosenVariant = it }
+        }
+        val approvalReady = variantApprovalReady(decision.gateV2, chosenVariant)
         primaries.forEach { primary ->
             DecisionButton(
                 text = primary.label,
                 kind = ButtonKind.Primary,
                 interactive = interactive,
-                enabled = enabled,
+                enabled = enabled && approvalReady,
                 onClick = { tapped(primary) },
                 modifier = Modifier.fillMaxWidth().testTag("decision-primary"),
                 caption = primary.qualifier,
@@ -1235,6 +1338,8 @@ data class GateAnswer(
     val permissionV2: PermissionV2Decision? = null,
     /** The card waiting on a person (attention.v2); answered with `Session.answerAttentionV2`. */
     val attentionV2: AttentionV2Decision? = null,
+    /** The version picked on a gate.v2 that offers a choice of them, sent with an approval of it. */
+    val chosenVariant: String? = null,
 ) {
     companion object {
         /** Superpipeline's only option id that expects a comment. */

@@ -354,6 +354,53 @@ unchanged and read by `core::gate_v2`'s tests.
   `option_id`, `comment` (`null` when none), `subject: {id, digest}` for a
   subject-bound gate, and the `m.reference` to the gate's event.
 
+#### A choice of versions
+
+charter `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md`,
+fixture version 8 (entries tagged `variant: "choice"`). An agent may draft up
+to three versions; the person approves one of them, or sends the set back.
+
+- **The wire.** `subject: { variants: [{ id, label, subject }] }` with **no**
+  top-level `id` or `digest`; each version's `subject` is the usual envelope
+  (`id`, `digest`, `schema`, `revision`, `expires_at`, `preview`,
+  `preview_complete`). The four options are the publishing gate's. A client
+  that predates variants finds no subject binding, refuses the gate.v2 and
+  draws the v1 card, which never approves.
+- **Which card.** `core::gate_v2` reads the versions when `subject` holds
+  `variants`. More than 3, none, an `id` or `digest` beside them, a version
+  without an id or label, a version whose subject has no id or digest, or two
+  versions sharing an id or a subject id: the whole gate.v2 is refused and the
+  v1 card is drawn.
+- **Each version judged alone.** `GateV2Decision.variants` holds a
+  `GateVariantV2 { id, label, subject: SubjectV2, approvable, withheld }` per
+  version, in the gate's order; the gate's own `subject` and `preview` are
+  empty. A version is `approvable` when its whole preview is drawable and the
+  board said `preview_complete: true` (the same rule as a single subject); one
+  that is not still shows its preview as far as it goes, with `withheld`
+  "Too long to show here — choose it on the board." The gate keeps its
+  approving options while any version is approvable; when none is, they are
+  withheld as usual, with "None of these versions can be shown in full here.
+  Open the card to choose one." Request changes and reject are always offered.
+- **The card.** iOS and Android draw a section per version (a radio mark, its
+  label, its preview) and nothing picked to begin with; the approve buttons
+  stay disabled until a version marked `approvable` is picked. No editing: a
+  change is Request changes. The desktop draws no versions; its card says
+  "Choose a version on your phone or the board." and offers request changes
+  and reject (the only legacy options a variant gate carries).
+- **The answer.** `send_gate_decision_v2` takes `chosen_variant`. An approval
+  must name a version the gate offers that is `approvable`, and carries that
+  version's `subject {id, digest}`; with none, an unknown id or a withheld
+  version it is refused. Request changes and reject carry no binding (a
+  picked version beside them is not sent), and leave out `comment` when there
+  is none, exactly as the fixture's accepts. A chosen version on a gate that
+  offers none is refused.
+- **Notifications.** A notification cannot show the versions (§7 of the
+  charter decision), so a variant gate never offers Approve: `GATE_REVIEW`,
+  with Request changes and Reject answered without a binding. The notification
+  path sends no chosen version, so the core refuses an approval whatever the
+  user info says.
+- **The receipt.** See §7: `chosen_variant` names the version approved.
+
 ### 5b. question.v2 and delivery.v2 — questions and follow-ups in the envelope
 
 charter `decisions/2026-11-07-the-envelope-covers-questions-and-follow-ups.md`.
@@ -664,6 +711,7 @@ rakesh — the board has it.") and a structured receipt beside it.
 | `board_id` | string | The gate's board |
 | `decision` | string | superpipeline's `GateDecision`: `approve`, `request_changes`, `reject` — or `expired`, when the board closed a subject-bound gate whose subject passed its `expires_at` (`decided_by` is then `null`) |
 | `decided_by` | string or null | Who answered, as the hub names them (a handle, not an mxid) |
+| `chosen_variant` | `{ id, label }`, optional | The version an approval of a choice chose (§5a, "A choice of versions"). Only its `label` is read: one line, bounded at 80 characters |
 | `m.relates_to` | `{ rel_type: "m.reference", event_id }` | The gate's event — whichever the hub recorded as the gate's (`matrix_gate_events.event_id`: the legacy `dev.superpipeline.gate.v1` companion while legacy events are on, otherwise the prose) |
 
 It arrives either as a **custom event** of type
@@ -706,10 +754,12 @@ it — must not close it on arrival.
 automatic delivery, Approved for manual delivery, Changes requested, Rejected,
 Live link recorded, Switched to automatic delivery, Settled on the board — "by
 <decided_by>" when named — and "Decided" for a decision this build does not
-know. An `expired` gate reads as the hub's whole sentence and names nobody:
-"Expired — what this gate approves passed its expiry before anyone approved
-it, so it can no longer be approved here." (`gate_outcome::EXPIRED_SUMMARY`,
-the hub's `OUTCOME_SENTENCES`). It closes the gate's card, never a follow-up's.
+know. An approval that carries `chosen_variant` names the version as the hub
+does: `Approved "With the thread" for automatic delivery by rakesh`; any other
+decision ignores it. An `expired` gate reads as the hub's whole sentence and
+names nobody: "Expired — what this gate approves passed its expiry before
+anyone approved it, so it can no longer be approved here."
+(`gate_outcome::EXPIRED_SUMMARY`, the hub's `OUTCOME_SENTENCES`). It closes the gate's card, never a follow-up's.
 
 **Order does not matter.** The pass runs over the whole materialised timeline
 after every batch, so a gate is a receipt whenever both events are loaded —

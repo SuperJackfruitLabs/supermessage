@@ -80,6 +80,12 @@ export const ALLOW_ELSEWHERE = "To allow this, answer on your phone or in the co
 export const RESUME_ELSEWHERE = "Resume or archive on your phone or the board.";
 
 /**
+ * A gate offering a choice of versions: the desktop draws no versions, so it
+ * never approves one; request changes and reject stay answerable here.
+ */
+export const CHOOSE_ELSEWHERE = "Choose a version on your phone or the board.";
+
+/**
  * A SuperToolkit approval request, which is on no board card: only a
  * workspace owner or admin may allow it, on a phone that shows the request.
  */
@@ -104,6 +110,7 @@ export function answerElsewhere(decision: CustomEventDecision): string | null {
     return question.approvalsWithheld ?? ANSWER_ELSEWHERE;
   }
   const gate = decision.gateV2;
+  if (gate?.variants?.length) return CHOOSE_ELSEWHERE;
   if (gate && (gate.approvalsWithheld !== null || gate.options.length > decision.options.length)) {
     return gate.approvalsWithheld ?? ANSWER_ELSEWHERE;
   }

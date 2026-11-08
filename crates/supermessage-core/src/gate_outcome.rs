@@ -16,7 +16,10 @@
 //! ```
 //!
 //! — as a custom event of type [`GATE_OUTCOME_EVENT_TYPE`], or as an
-//! `m.room.message` carrying the same keys. Both are read.
+//! `m.room.message` carrying the same keys. Both are read. An approval of a
+//! choice of versions may also carry `chosen_variant { id, label }` (charter
+//! → `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md`), and
+//! the receipt then names the label, as the hub's own line does.
 //!
 //! ## Why the card closes on this and not on the decision
 //!
@@ -75,7 +78,7 @@ use std::collections::HashMap;
 use serde_json::Value;
 
 use crate::custom_events::{
-    safe_string_field, CustomEventOutcome, CustomEventView, GATE_EVENT_TYPE,
+    bound_text, safe_string_field, CustomEventOutcome, CustomEventView, GATE_EVENT_TYPE,
 };
 use crate::dto::{TimelineItemDto, TimelineRow};
 use crate::item_view::ItemView;
@@ -117,6 +120,21 @@ struct Outcome {
     sender: String,
     decision: String,
     decided_by: Option<String>,
+    /// The label of the version an approval chose, on a variant gate.
+    chosen_label: Option<String>,
+}
+
+/// How long a chosen version's label may be in a receipt: the hub's bound
+/// on a version's label (`VARIANT_LABEL_MAX`, agentpod `gate-wire.ts`).
+const CHOSEN_LABEL_MAX_CHARS: usize = 80;
+
+/// `content.chosen_variant.label` (charter →
+/// `decisions/2026-11-09-a-gate-may-offer-a-choice-of-variants.md`): one
+/// line, bounded, or `None` when absent or blank.
+fn chosen_label(content: &Value) -> Option<String> {
+    let label = content.get("chosen_variant")?.get("label")?.as_str()?;
+    let line = label.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!line.is_empty()).then(|| bound_text(&line, CHOSEN_LABEL_MAX_CHARS))
 }
 
 /// A non-empty string at `content[key]`, unbounded — for identifiers, which
@@ -169,6 +187,7 @@ fn outcome_of(item: &TimelineItemDto) -> Option<Outcome> {
         decided_by: safe_string_field(content, "decided_by", DECIDED_BY_MAX_CHARS)
             .map(|who| who.trim().to_string())
             .filter(|who| !who.is_empty()),
+        chosen_label: chosen_label(content),
     })
 }
 
@@ -238,8 +257,19 @@ fn closes(outcome: &Outcome, gate: &Gate<'_>) -> bool {
 pub const EXPIRED_SUMMARY: &str = "Expired — what this gate approves passed its expiry before \
                                    anyone approved it, so it can no longer be approved here.";
 
-/// The sentence a receipt says. Past tense, because it is over.
+/// [`summary_choosing`] for a receipt that chose no version.
+#[cfg(test)]
 fn summary(decision: &str, decided_by: Option<&str>) -> String {
+    summary_choosing(decision, decided_by, None)
+}
+
+/// The sentence a receipt says. Past tense, because it is over.
+///
+/// An approval names the version it chose when the receipt says which
+/// (`chosen_variant`), as the hub words it (`outcomeVerb`, agentpod
+/// `gate-decision.ts`): `Approved "With the thread" for automatic delivery
+/// by rakesh`.
+fn summary_choosing(decision: &str, decided_by: Option<&str>, chosen: Option<&str>) -> String {
     if decision == "expired" {
         return EXPIRED_SUMMARY.to_string();
     }
@@ -259,9 +289,13 @@ fn summary(decision: &str, decided_by: Option<&str>) -> String {
         // past tense for a verb nothing here knows.
         _ => "Decided",
     };
+    let verb = match (chosen, verb.strip_prefix("Approved")) {
+        (Some(label), Some(rest)) => format!("Approved \"{label}\"{rest}"),
+        _ => verb.to_string(),
+    };
     match decided_by {
         Some(who) => format!("{verb} by {who}"),
-        None => verb.to_string(),
+        None => verb,
     }
 }
 
@@ -289,7 +323,11 @@ pub fn resolved_gates(rows: &[TimelineRow]) -> HashMap<String, CustomEventOutcom
                 CustomEventOutcome {
                     decision: outcome.decision.clone(),
                     decided_by: outcome.decided_by.clone(),
-                    summary: summary(&outcome.decision, outcome.decided_by.as_deref()),
+                    summary: summary_choosing(
+                        &outcome.decision,
+                        outcome.decided_by.as_deref(),
+                        outcome.chosen_label.as_deref(),
+                    ),
                     prompt: None,
                 },
             );
@@ -1076,5 +1114,92 @@ mod tests {
     fn an_expired_summary_ignores_who_the_hub_names() {
         assert_eq!(summary("expired", None), EXPIRED_SUMMARY);
         assert_eq!(summary("expired", Some("rakesh")), EXPIRED_SUMMARY);
+    }
+
+    /// The corpus's outcome of a choice (`variant: "choice"`).
+    fn corpus_choice() -> Value {
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+        ))
+        .unwrap();
+        corpus["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["variant"] == "choice")
+            .find(|e| e["suiteEventType"] == GATE_OUTCOME_EVENT_TYPE)
+            .expect("the corpus pins the outcome of a choice")["accept"][0]["content"]
+            .clone()
+    }
+
+    #[test]
+    fn an_approved_choice_names_the_version_in_the_hubs_words() {
+        let mut content = corpus_choice();
+        assert_eq!(content["chosen_variant"]["label"], "With the thread");
+        content["gate_id"] = json!("gate_1");
+        content["board_id"] = json!("brd_1");
+        let mut rows = vec![
+            row(
+                "g",
+                "message",
+                Some("m.text"),
+                HUB,
+                crate::gate_v2::GATE_V2_EVENT_TYPE,
+                v2_gate("gate_1"),
+            ),
+            outcome_event("o", HUB, content),
+        ];
+        reconcile(&mut rows);
+        let receipt = state(&rows[0]).1.expect("a receipt");
+        assert_eq!(receipt.decision, "approve_automatic");
+        // agentpod `gate-variants.test.ts`, without its "— the board has it."
+        assert_eq!(
+            receipt.summary,
+            "Approved \"With the thread\" for automatic delivery by rakesh"
+        );
+    }
+
+    #[test]
+    fn only_an_approval_names_the_chosen_version() {
+        let chosen = Some("Short");
+        assert_eq!(
+            summary_choosing("approve_manual", Some("rakesh"), chosen),
+            "Approved \"Short\" for manual delivery by rakesh"
+        );
+        assert_eq!(
+            summary_choosing("approve", None, chosen),
+            "Approved \"Short\""
+        );
+        assert_eq!(
+            summary_choosing("reject", Some("rakesh"), chosen),
+            "Rejected by rakesh"
+        );
+        assert_eq!(summary_choosing("expired", None, chosen), EXPIRED_SUMMARY);
+    }
+
+    #[test]
+    fn a_chosen_label_is_one_line_bounded_and_optional() {
+        let it = |chosen: Value| {
+            let mut content = corpus_choice();
+            content["chosen_variant"] = chosen;
+            outcome_of(&outcome_event("o", HUB, content).item)
+                .expect("still an outcome")
+                .chosen_label
+        };
+        assert_eq!(
+            it(json!({ "id": "t", "label": " With\n the   thread " })).as_deref(),
+            Some("With the thread")
+        );
+        let long = it(json!({ "id": "t", "label": "L".repeat(500) })).unwrap();
+        assert_eq!(long.chars().count(), CHOSEN_LABEL_MAX_CHARS + 1);
+        // Absent, blank or malformed: the receipt reads as before.
+        for chosen in [
+            Value::Null,
+            json!({ "id": "t", "label": "  " }),
+            json!({ "id": "t" }),
+            json!("With the thread"),
+        ] {
+            assert_eq!(it(chosen.clone()), None, "{chosen}");
+        }
     }
 }

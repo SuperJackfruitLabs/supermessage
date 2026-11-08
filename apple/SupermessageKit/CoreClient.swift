@@ -318,15 +318,18 @@ public actor CoreClient {
     /// Answer a gate.v2. `gate` is the card's own `CustomEventDecision.gateV2`,
     /// handed back unchanged: the core checks the answer against it (offered,
     /// not withheld, a comment where one is needed) and copies its subject
-    /// binding into the decision it sends.
+    /// binding into the decision it sends. `chosenVariant` is the version
+    /// picked on a gate that offers a choice of them (`gate.variants`): an
+    /// approval must name one the core marked approvable, and `nil` on any
+    /// other gate.
     public func sendGateDecisionV2(
-        roomId: String, gate: GateV2Decision, optionId: String, comment: String?,
-        inReplyTo: String
+        roomId: String, gate: GateV2Decision, optionId: String, chosenVariant: String?,
+        comment: String?, inReplyTo: String
     ) async throws {
         try await run {
             try $0.sendGateDecisionV2(
-                roomId: roomId, gate: gate, optionId: optionId, comment: comment,
-                inReplyTo: inReplyTo)
+                roomId: roomId, gate: gate, optionId: optionId, chosenVariant: chosenVariant,
+                comment: comment, inReplyTo: inReplyTo)
         }
     }
 

@@ -350,11 +350,18 @@ impl Core {
     /// binding into the `dev.superpipeline.gate.decision.v2` it sends. The
     /// sentence left in the room is the core's, as for
     /// [`Core::send_gate_decision`].
+    ///
+    /// `chosen_variant` is the id of the version picked on a variant gate
+    /// (`GateV2Decision::variants`): an approval must name one whose
+    /// `approvable` is true, and carries that version's binding; request
+    /// changes and reject send none. `None` on any other gate — a chosen
+    /// version there is refused.
     pub fn send_gate_decision_v2(
         &self,
         room_id: String,
         gate: supermessage_core::gate_v2::GateV2Decision,
         option_id: String,
+        chosen_variant: Option<String>,
         comment: Option<String>,
         in_reply_to: String,
     ) -> Result<(), FfiError> {
@@ -362,6 +369,7 @@ impl Core {
             &room_id,
             &gate,
             &option_id,
+            chosen_variant.as_deref(),
             comment.as_deref(),
             &in_reply_to,
         ))?;
