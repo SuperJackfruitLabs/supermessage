@@ -1105,17 +1105,6 @@ struct GateAnswer {
     }
 }
 
-// A harness permission.v2: what the agent would run, then the options by
-// meaning with their reach.
-#Preview("Permission v2") {
-    PreviewGround(width: 360) {
-        CustomEventCard(
-            view: DecisionRevampFixtures.permissionV2Pending, label: "Permission",
-            eventType: "dev.agentpod.permission.v2", senderName: "Atlas — Platform",
-            onDecide: { _ in true })
-    }
-}
-
 #Preview("With reasoning") {
     PreviewGround {
         CustomEventCard(
