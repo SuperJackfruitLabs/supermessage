@@ -93,7 +93,12 @@ open class WidgetRedraw(
     /**
      * Sets the frame alarm for the snapshot's next frame (or cancels it) and makes sure the
      * periodic backstop is queued; with no widget placed, cancels both.
+     *
+     * Arms and cancels run one at a time: placing a widget starts two arms (the callback's
+     * and the WorkManager job's redraw), and one that read "placed" before the last widget
+     * went must not write its alarm and backstop after that removal cancelled them.
      */
+    @Synchronized
     fun arm() {
         if (!placed()) return cancelAll()
         val frame = nextChangeMs(now())
@@ -110,6 +115,7 @@ open class WidgetRedraw(
     }
 
     /** No widget remains: nothing is left to wake the process for. */
+    @Synchronized
     fun cancelAll() {
         alarms.cancel(frameIntent())
         WorkManager.getInstance(context).cancelUniqueWork(BACKSTOP_WORK)
