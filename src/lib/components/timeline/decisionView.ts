@@ -72,7 +72,21 @@ export const ANSWER_ELSEWHERE = "Open the card, or answer on your phone, for the
  */
 export const ALLOW_ELSEWHERE = "To allow this, answer on your phone or in the console.";
 
+/**
+ * A card waiting on a person (attention.v2): every resume takes a typed
+ * instruction the desktop does not send, so the whole card is answered on a
+ * phone or on the board.
+ */
+export const RESUME_ELSEWHERE = "Resume or archive on your phone or the board.";
+
+/**
+ * A SuperToolkit approval request, which is on no board card: only a
+ * workspace owner or admin may allow it, on a phone that shows the request.
+ */
+export const APPROVAL_REQUEST_ELSEWHERE = "To allow this, a workspace owner or admin answers on their phone.";
+
 export function answerElsewhere(decision: CustomEventDecision): string | null {
+  if (decision.attentionV2) return RESUME_ELSEWHERE;
   if (decision.deliveryV2) return ANSWER_ELSEWHERE;
   const permission = decision.permissionV2;
   if (permission) {
@@ -85,6 +99,8 @@ export function answerElsewhere(decision: CustomEventDecision): string | null {
   }
   // A question bound to a subject: its approvals are never among `options`.
   if (question?.subject && (question.approvalsWithheld || question.options.length > decision.options.length)) {
+    // A SuperToolkit approval request has no card to open.
+    if (question.approvalRequestId) return question.approvalsWithheld ?? APPROVAL_REQUEST_ELSEWHERE;
     return question.approvalsWithheld ?? ANSWER_ELSEWHERE;
   }
   const gate = decision.gateV2;
