@@ -1639,7 +1639,16 @@ data class CustomEventDecision (
      * reply answers a waiting card. `None` otherwise, and absent from the
      * JSON.
      */
-    var `attentionV2`: AttentionV2Decision? = null
+    var `attentionV2`: AttentionV2Decision? = null, 
+    /**
+     * When this decision is reminded and escalated, on a gate.v2,
+     * question.v2, delivery.v2 or attention.v2 whose stage has a timeout
+     * (`crate::decision_timeout`). A host words it with
+     * `decision_timeout::deadline_line` and its own clock, in the card's
+     * existing text, while the card is pending. `None` otherwise, and absent
+     * from the JSON.
+     */
+    var `deadline`: DecisionDeadline? = null
 ) {
     
     companion object
@@ -1659,6 +1668,7 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeGateV2Decision.read(buf),
             FfiConverterOptionalTypePermissionV2Decision.read(buf),
             FfiConverterOptionalTypeAttentionV2Decision.read(buf),
+            FfiConverterOptionalTypeDecisionDeadline.read(buf),
         )
     }
 
@@ -1670,7 +1680,8 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeQuestionV2Decision.allocationSize(value.`questionV2`) +
             FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`deliveryV2`) +
             FfiConverterOptionalTypePermissionV2Decision.allocationSize(value.`permissionV2`) +
-            FfiConverterOptionalTypeAttentionV2Decision.allocationSize(value.`attentionV2`)
+            FfiConverterOptionalTypeAttentionV2Decision.allocationSize(value.`attentionV2`) +
+            FfiConverterOptionalTypeDecisionDeadline.allocationSize(value.`deadline`)
     )
 
     override fun write(value: CustomEventDecision, buf: ByteBuffer) {
@@ -1682,6 +1693,7 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeGateV2Decision.write(value.`deliveryV2`, buf)
             FfiConverterOptionalTypePermissionV2Decision.write(value.`permissionV2`, buf)
             FfiConverterOptionalTypeAttentionV2Decision.write(value.`attentionV2`, buf)
+            FfiConverterOptionalTypeDecisionDeadline.write(value.`deadline`, buf)
     }
 }
 
@@ -1832,6 +1844,44 @@ public object FfiConverterTypeCustomEventOutcome: FfiConverterRustBuffer<CustomE
             FfiConverterOptionalString.write(value.`decidedBy`, buf)
             FfiConverterString.write(value.`summary`, buf)
             FfiConverterOptionalString.write(value.`prompt`, buf)
+    }
+}
+
+
+
+/**
+ * When a waiting decision is reminded and escalated, as the board said it.
+ *
+ * Each half is an ISO 8601 time exactly as sent, and at least one is
+ * present. A host passes it to [`deadline_line`] with its own clock.
+ */
+data class DecisionDeadline (
+    var `remindAt`: kotlin.String?, 
+    var `escalateAt`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeDecisionDeadline: FfiConverterRustBuffer<DecisionDeadline> {
+    override fun read(buf: ByteBuffer): DecisionDeadline {
+        return DecisionDeadline(
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: DecisionDeadline) = (
+            FfiConverterOptionalString.allocationSize(value.`remindAt`) +
+            FfiConverterOptionalString.allocationSize(value.`escalateAt`)
+    )
+
+    override fun write(value: DecisionDeadline, buf: ByteBuffer) {
+            FfiConverterOptionalString.write(value.`remindAt`, buf)
+            FfiConverterOptionalString.write(value.`escalateAt`, buf)
     }
 }
 
@@ -10542,6 +10592,38 @@ public object FfiConverterOptionalTypeCustomEventOutcome: FfiConverterRustBuffer
         } else {
             buf.put(1)
             FfiConverterTypeCustomEventOutcome.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeDecisionDeadline: FfiConverterRustBuffer<DecisionDeadline?> {
+    override fun read(buf: ByteBuffer): DecisionDeadline? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeDecisionDeadline.read(buf)
+    }
+
+    override fun allocationSize(value: DecisionDeadline?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeDecisionDeadline.allocationSize(value)
+        }
+    }
+
+    override fun write(value: DecisionDeadline?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeDecisionDeadline.write(value, buf)
         }
     }
 }

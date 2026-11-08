@@ -5257,6 +5257,8 @@ fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
 
 
 
+
+
 /**
  * What the dock above the composer says after the reader wrote to an agent —
  * see `core::acknowledgement`. A free function for the same reason as
@@ -5327,6 +5329,20 @@ public func collectMentions(text: String, members: [Mentionable]) -> [String] {
     uniffi_supermessage_ffi_fn_func_collect_mentions(
         FfiConverterString.lower(text),
         FfiConverterSequenceTypeMentionable.lower(members),$0
+    )
+})
+}
+/**
+ * A pending decision's deadline in words at `now_ms` — "Escalates in 3 h",
+ * "Escalated", "Reminder in 45 min" — or `None` when there is nothing to say.
+ * See `core::decision_timeout::deadline_line`. Given the host's clock, so a
+ * card on screen stays current.
+ */
+public func decisionDeadlineLine(deadline: DecisionDeadline, nowMs: Int64) -> String? {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_decision_deadline_line(
+        FfiConverterTypeDecisionDeadline_lower(deadline),
+        FfiConverterInt64.lower(nowMs),$0
     )
 })
 }
@@ -6111,6 +6127,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_collect_mentions() != 57065) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_decision_deadline_line() != 57198) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_func_display_initial() != 43302) {

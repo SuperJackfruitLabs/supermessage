@@ -1387,6 +1387,18 @@ pub fn elapsed_label(elapsed_ms: i64) -> String {
     supermessage_core::turn_label::elapsed_label(elapsed_ms)
 }
 
+/// A pending decision's deadline in words at `now_ms` — "Escalates in 3 h",
+/// "Escalated", "Reminder in 45 min" — or `None` when there is nothing to say.
+/// See `core::decision_timeout::deadline_line`. Given the host's clock, so a
+/// card on screen stays current.
+#[uniffi::export]
+pub fn decision_deadline_line(
+    deadline: supermessage_core::decision_timeout::DecisionDeadline,
+    now_ms: i64,
+) -> Option<String> {
+    supermessage_core::decision_timeout::deadline_line(&deadline, now_ms)
+}
+
 /// A turn in the Live Activity's words, or `None` for a turn that timed out —
 /// see `core::turn_card::turn_card`.
 #[uniffi::export]

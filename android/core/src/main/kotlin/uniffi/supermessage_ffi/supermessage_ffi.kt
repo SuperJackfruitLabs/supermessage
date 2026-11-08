@@ -39,6 +39,7 @@ import uniffi.supermessage_core.AgentState
 import uniffi.supermessage_core.AttentionV2Decision
 import uniffi.supermessage_core.Counterpart
 import uniffi.supermessage_core.CustomEventDecision
+import uniffi.supermessage_core.DecisionDeadline
 import uniffi.supermessage_core.FfiConverterTypeAccountDto
 import uniffi.supermessage_core.FfiConverterTypeAcknowledgement
 import uniffi.supermessage_core.FfiConverterTypeAgentAvatar
@@ -47,6 +48,7 @@ import uniffi.supermessage_core.FfiConverterTypeAgentState
 import uniffi.supermessage_core.FfiConverterTypeAttentionV2Decision
 import uniffi.supermessage_core.FfiConverterTypeCounterpart
 import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
+import uniffi.supermessage_core.FfiConverterTypeDecisionDeadline
 import uniffi.supermessage_core.FfiConverterTypeFirstRunScript
 import uniffi.supermessage_core.FfiConverterTypeFirstRunStep
 import uniffi.supermessage_core.FfiConverterTypeGateAnswers
@@ -159,6 +161,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
 import uniffi.supermessage_core.RustBuffer as RustBufferAttentionV2Decision
 import uniffi.supermessage_core.RustBuffer as RustBufferCounterpart
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
+import uniffi.supermessage_core.RustBuffer as RustBufferDecisionDeadline
 import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunScript
 import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunStep
 import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
@@ -1244,6 +1247,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1442,6 +1447,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_func_audio_clock_label(`ms`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_collect_mentions(`text`: RustBuffer.ByValue,`members`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_decision_deadline_line(`deadline`: RustBufferDecisionDeadline.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_display_initial(`name`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -1690,6 +1697,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_audio_clock_label(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_collect_mentions(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_decision_deadline_line(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_display_initial(
     ): Short
@@ -2014,6 +2023,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_collect_mentions() != 57065.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_decision_deadline_line() != 57198.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_display_initial() != 43302.toShort()) {
@@ -8293,6 +8305,10 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
 
 
 
+
+
+
+
         /**
          * What the dock above the composer says after the reader wrote to an agent —
          * see `core::acknowledgement`. A free function for the same reason as
@@ -8368,6 +8384,21 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_collect_mentions(
         FfiConverterString.lower(`text`),FfiConverterSequenceTypeMentionable.lower(`members`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * A pending decision's deadline in words at `now_ms` — "Escalates in 3 h",
+         * "Escalated", "Reminder in 45 min" — or `None` when there is nothing to say.
+         * See `core::decision_timeout::deadline_line`. Given the host's clock, so a
+         * card on screen stays current.
+         */ fun `decisionDeadlineLine`(`deadline`: DecisionDeadline, `nowMs`: kotlin.Long): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_decision_deadline_line(
+        FfiConverterTypeDecisionDeadline.lower(`deadline`),FfiConverterLong.lower(`nowMs`),_status)
 }
     )
     }

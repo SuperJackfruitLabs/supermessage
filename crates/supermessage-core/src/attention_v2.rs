@@ -349,6 +349,7 @@ impl CustomEventRenderer for AttentionV2Renderer {
                 delivery_v2: None,
                 permission_v2: None,
                 attention_v2: Some(attention),
+                deadline: crate::decision_timeout::parse_deadline(content),
             }),
         }
     }

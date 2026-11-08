@@ -546,6 +546,66 @@ is no v1 card: a message whose fields do not validate stays prose.
   instruction a notification cannot check, and archiving a card unread is not
   a lock-screen choice.
 
+### 5e. When nobody answers — deadlines, reminders, escalations, re-posts
+
+charter `decisions/2026-11-08-unanswered-decisions-remind-then-escalate.md`,
+fixture version 7. superpipeline owns the clock; this client only shows it
+(`core::decision_timeout`).
+
+- **The deadline** (§5). gate.v2, question.v2, delivery.v2 and attention.v2
+  may carry `deadline: { remind_at?, escalate_at? }`, ISO 8601 times, the key
+  absent when the stage has no timeout. `parse_deadline` keeps a half only
+  when it is a real instant in the hub's `ISO_TIME` shape
+  (`YYYY-MM-DDTHH:MM[:SS[.fff]]` then `Z` or `±HH:MM`); a bad half is dropped
+  and the other kept, and an empty, camelCase (`remindAt`) or unusable
+  deadline is no deadline — the card itself still draws. It rides on
+  `CustomEventDecision.deadline` (`DecisionDeadline { remindAt, escalateAt }`,
+  absent from the JSON when `None`). It is separate from `subject.expires_at`
+  and nothing resolves on it.
+- **Its words.** `decision_timeout::deadline_line(deadline, now_ms)` (FFI
+  `decision_deadline_line`) says "Escalates in 3 h" until the escalation,
+  "Escalated" after it, and for a deadline that only reminds "Reminder in
+  45 min" until then and nothing after. Units are the hub's (`waitedFor`):
+  minutes under an hour (never "0 min"), hours under 48, then days, rounded
+  down. The host passes its own clock, because a row is projected once and a
+  relative time fixed then would go stale. iOS/macOS and Android append it to
+  the pending card's "Asked by …" line ("Asked by Hermes · Escalates in 3 h");
+  the desktop carries the field but does not draw it yet.
+- **The reminder and the escalation notices** (§2–3). An `m.text` reply
+  (`m.relates_to.m.in_reply_to` → the card's message) declaring
+  `suite_event_type` `dev.superpipeline.decision.reminded.v1` or
+  `dev.superpipeline.decision.escalated.v1`, with `schema_version`,
+  `board_id`, `card_id`, `decision_kind` (`gate | question | delivery |
+  attention`), `decision_id`, `waiting_since`, and `reminded_at` or
+  `escalated_at` (plus `deep_link?` on an escalation). A notice missing any of
+  those, with an unknown kind, or related by `m.reference` instead of a reply
+  stays the ordinary message it is. `timeline::row_from_parts` sets the
+  item's `detail` to the notice type, and it draws as a quiet system line —
+  `ItemView::System { kind: Notice }`, the hub's sentence without its trailing
+  `[Open the card](…)` markdown link (the card above has the link). It is not
+  a card of its own, but it keeps Needs you lit (§8). It is not attached to
+  the card: a system line has no slot for one.
+- **Notifications.** A reminder is not news: `NotNews`, with its own sentence
+  as the quiet line. An escalation notifies as a DECISION, titled with the
+  room and subtitled "Escalated", "Open" only — for an admin it just invited
+  it may be the first sight of the card, and nothing on it can be answered
+  from a notification.
+- **Re-posted cards.** An admin an escalation invited cannot read the card
+  posted before they joined, so when one joins the hub posts the whole card
+  again below (the same envelope), moves the decision's record to the new
+  event, replies "Moved below …" to the old card and refuses an answer to it
+  (agentpod `decision-repost.ts`). `embedded::reconcile` mirrors that by
+  identity: of the prose carriers of one board decision (`gate:`, `question:`,
+  `delivery:`, `attention:` identities) from one sender, the latest in the
+  timeline is the card, and every earlier one is drawn as a receipt with no
+  buttons saying "Moved below — answer the copy below." (`outcome.decision`
+  `moved`). A copy from any other sender retires nothing, a decision that is
+  resolved shows its outcome on every copy, and if the newer copy leaves the
+  timeline the older one is the card again. A permission is the station's
+  and never re-posted, so two carriers of one permission are left as they
+  were. The hub's "Moved below" reply is an ordinary message.
+- **The expired gate** (§7): §7 below.
+
 ## 6. Quiet events — what must never interrupt, at three layers
 
 Some events are not news: a reaction (an agent's 👀/✅/❌ on the reader's
@@ -602,7 +662,7 @@ rakesh — the board has it.") and a structured receipt beside it.
 | `suite_event_type` | `"dev.superpipeline.gate.outcome.v1"` | Declares the receipt. On an `m.room.message` it is **required** — it is how the prose form is told apart from prose that merely mentions the type |
 | `gate_id` | string | The gate resolved — superpipeline's id, the same one the gate carries |
 | `board_id` | string | The gate's board |
-| `decision` | string | superpipeline's `GateDecision`: `approve`, `request_changes`, `reject` |
+| `decision` | string | superpipeline's `GateDecision`: `approve`, `request_changes`, `reject` — or `expired`, when the board closed a subject-bound gate whose subject passed its `expires_at` (`decided_by` is then `null`) |
 | `decided_by` | string or null | Who answered, as the hub names them (a handle, not an mxid) |
 | `m.relates_to` | `{ rel_type: "m.reference", event_id }` | The gate's event — whichever the hub recorded as the gate's (`matrix_gate_events.event_id`: the legacy `dev.superpipeline.gate.v1` companion while legacy events are on, otherwise the prose) |
 
@@ -646,7 +706,10 @@ it — must not close it on arrival.
 automatic delivery, Approved for manual delivery, Changes requested, Rejected,
 Live link recorded, Switched to automatic delivery, Settled on the board — "by
 <decided_by>" when named — and "Decided" for a decision this build does not
-know.
+know. An `expired` gate reads as the hub's whole sentence and names nobody:
+"Expired — what this gate approves passed its expiry before anyone approved
+it, so it can no longer be approved here." (`gate_outcome::EXPIRED_SUMMARY`,
+the hub's `OUTCOME_SENTENCES`). It closes the gate's card, never a follow-up's.
 
 **Order does not matter.** The pass runs over the whole materialised timeline
 after every batch, so a gate is a receipt whenever both events are loaded —
@@ -737,6 +800,15 @@ stops counting without any per-device state. The rule errs one way only: a
 decision followed by unrelated chatter stops counting though its card still
 waits; amber never claims a decision that is not owed. The line still reads
 "Approval needed" for every kind.
+
+A decision's reminder or escalation notice (§5e) keeps the room pending:
+`pending_decision_type` reads an accepted notice as the card it names by
+`decision_kind` (gate → gate.v2, question → question.v2, delivery →
+delivery.v2, attention → attention.v2), so the roster line still reads
+"Approval needed". The hub posts a notice only while its decision is open, so
+a notice never claims a decision that is not owed — even when the card itself
+is not loaded. A notice the corpus refuses is ordinary prose and lights
+nothing. A re-posted card is a decision card, so the room stays pending.
 
 ## Adding a field
 

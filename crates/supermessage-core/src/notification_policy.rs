@@ -798,6 +798,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            deadline: None,
         }
     }
 

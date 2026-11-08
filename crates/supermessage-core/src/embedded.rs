@@ -178,6 +178,24 @@ pub fn decision_identity(event_type: &str, payload: &Value) -> Option<String> {
     }
 }
 
+/// What a card says once the hub has posted it again below
+/// (`decision-repost.ts`, agentpod): the copy below is the one that counts,
+/// and the hub refuses an answer to this one.
+pub const MOVED_BELOW_SUMMARY: &str = "Moved below — answer the copy below.";
+
+/// The `decision` of the receipt a moved card is drawn with. Not a board
+/// decision: nothing was decided, the card moved.
+pub const MOVED_DECISION: &str = "moved";
+
+/// Whether a decision identity is one a board decision has — the kinds the
+/// hub re-posts for an escalated admin (gate, question, follow-up, waiting
+/// card). A permission is the station's and is never re-posted.
+fn reposted_kind(identity: &str) -> bool {
+    ["gate:", "question:", "delivery:", "attention:"]
+        .iter()
+        .any(|prefix| identity.starts_with(prefix))
+}
+
 /// The decision a row carries, and whether it carries it embedded in prose.
 fn carrier(row: &TimelineRow) -> Option<(String, bool)> {
     let item = &row.item;
@@ -209,6 +227,19 @@ fn carrier(row: &TimelineRow) -> Option<(String, bool)> {
 ///   (`crate::permission_v2::resolved_permissions`) and a waiting card the
 ///   board says is settled (`crate::attention_v2::resolved_attention`).
 ///
+/// - **A re-posted card supersedes the one above it.** When a decision
+///   escalates, the hub invites the workspace's admins, and when one joins it
+///   posts the whole card again below — the same envelope, so the same
+///   identity — moves the decision's record to the new event, replies "Moved
+///   below …" to the old one and refuses any answer to it
+///   (`decision-repost.ts`, agentpod). So of the prose carriers of one board
+///   decision from one sender, **the latest in the timeline is the card**,
+///   and every earlier one is drawn as a receipt saying
+///   [`MOVED_BELOW_SUMMARY`], with no buttons. Only from the same sender: a
+///   message from anyone else naming the same gate must not retire the real
+///   card. A decision that is resolved stays a receipt of its outcome on
+///   every copy.
+///
 /// Every other row is untouched, so a timeline with no suite decision costs
 /// one pass and changes nothing.
 pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
@@ -217,6 +248,22 @@ pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
         .filter_map(carrier)
         .filter_map(|(identity, embedded)| embedded.then_some(identity))
         .collect();
+    // The latest prose carrier of each board decision from each sender.
+    let mut latest: std::collections::HashMap<(String, Option<String>), usize> =
+        std::collections::HashMap::new();
+    for (index, row) in rows.iter().enumerate() {
+        if let Some((identity, true)) = carrier(row) {
+            if reposted_kind(&identity) {
+                latest.insert((identity, row.item.sender.clone()), index);
+            }
+        }
+    }
+    let moved = crate::custom_events::CustomEventOutcome {
+        decision: MOVED_DECISION.to_string(),
+        decided_by: None,
+        summary: MOVED_BELOW_SUMMARY.to_string(),
+        prompt: None,
+    };
     let mut resolved = crate::gate_outcome::resolved_gates(rows);
     // Gate, permission and waiting-card identities never collide (`gate:` /
     // `permission:` / `attention:`).
@@ -239,12 +286,17 @@ pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
             // its raw event, which this pass does not have.
             continue;
         }
+        let superseded = is_embedded
+            && latest
+                .get(&(identity.clone(), row.item.sender.clone()))
+                .is_some_and(|newest| *newest != index);
         let wanted = if !is_embedded && embedded.contains(&identity) {
             ItemView::None
         } else {
             let own = crate::item_view::view_for(&row.item);
             match resolved.get(&identity) {
                 Some(outcome) => crate::gate_outcome::as_receipt(own, outcome),
+                None if superseded => crate::gate_outcome::as_receipt(own, &moved),
                 None => own,
             }
         };
@@ -575,5 +627,125 @@ mod tests {
             r#"{"content":{"dev.superpipeline.gate":{}}}"#
         ));
         assert!(!may_carry_embedded(r#"{"content":{"body":"hello"}}"#));
+    }
+
+    // ---- a re-posted card ----------------------------------------------------
+
+    const SPEAKER: &str = "@board_press:hs";
+
+    /// A gate's prose message from `sender`, carrying the v1 card.
+    fn gate_prose(id: &str, sender: &str) -> TimelineRow {
+        let mut it = item(id, "message", Some("m.text"));
+        it.sender = Some(sender.into());
+        it.detail = Some(GATE_EVENT_TYPE.into());
+        it.custom_payload = Some(CustomPayload(json!({
+            "schema_version": 2,
+            "board_id": "brd_1",
+            "gate_id": "gate_1",
+            "card_title": "Launch post",
+            "prompt": "Approve \"Launch post\"?",
+            "options": [
+                { "id": "approve", "label": "Approve" },
+                { "id": "reject", "label": "Reject" }
+            ]
+        })));
+        TimelineRow::new(it)
+    }
+
+    /// `(buttons, receipt summary)` for a card row.
+    fn card_state(row: &TimelineRow) -> (bool, Option<String>) {
+        match &row.view {
+            ItemView::CustomEvent {
+                view:
+                    crate::custom_events::CustomEventView::Rendered {
+                        decision, outcome, ..
+                    },
+                ..
+            } => {
+                let summary = outcome.as_ref().map(|o| o.summary.clone());
+                (decision.is_some(), summary)
+            }
+            other => panic!("expected a card, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_reposted_card_supersedes_the_one_above_it() {
+        let mut rows = vec![
+            gate_prose("old", SPEAKER),
+            TimelineRow::new(item("moved", "message", Some("m.text"))),
+            gate_prose("new", SPEAKER),
+        ];
+        let changed = reconcile(&mut rows);
+        assert_eq!(changed, vec![0], "only the old copy changes");
+        assert_eq!(
+            card_state(&rows[0]),
+            (false, Some(MOVED_BELOW_SUMMARY.to_string())),
+            "the old copy offers no buttons and says where it went"
+        );
+        assert_eq!(card_state(&rows[2]), (true, None), "the new copy counts");
+        // Settled.
+        assert!(reconcile(&mut rows).is_empty());
+        // The new copy gone (redacted, paginated out): the old one is the
+        // card again.
+        rows.remove(2);
+        assert_eq!(reconcile(&mut rows), vec![0]);
+        assert_eq!(card_state(&rows[0]), (true, None));
+    }
+
+    #[test]
+    fn a_copy_from_someone_else_retires_nothing() {
+        let mut rows = vec![
+            gate_prose("real", SPEAKER),
+            gate_prose("forged", "@mallory:hs"),
+        ];
+        assert!(reconcile(&mut rows).is_empty());
+        assert_eq!(card_state(&rows[0]), (true, None));
+        // And a forged copy after a real re-post does not bring the old
+        // real copy back.
+        let mut rows = vec![
+            gate_prose("old", SPEAKER),
+            gate_prose("new", SPEAKER),
+            gate_prose("forged", "@mallory:hs"),
+        ];
+        reconcile(&mut rows);
+        assert!(!card_state(&rows[0]).0);
+        assert_eq!(card_state(&rows[1]), (true, None));
+    }
+
+    #[test]
+    fn a_resolved_reposted_decision_is_its_outcome_on_every_copy() {
+        let mut outcome = item("o", "customMessage", None);
+        outcome.sender = Some(SPEAKER.into());
+        outcome.detail = Some(crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE.into());
+        outcome.custom_payload = Some(CustomPayload(json!({
+            "suite_event_type": crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE,
+            "gate_id": "gate_1",
+            "board_id": "brd_1",
+            "decision": "approve",
+            "decided_by": "rakesh",
+            "m.relates_to": { "rel_type": "m.reference", "event_id": "$new" }
+        })));
+        let mut rows = vec![
+            gate_prose("old", SPEAKER),
+            gate_prose("new", SPEAKER),
+            TimelineRow::new(outcome),
+        ];
+        reconcile(&mut rows);
+        for index in [0, 1] {
+            assert_eq!(
+                card_state(&rows[index]),
+                (false, Some("Approved by rakesh".to_string())),
+                "{index}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_repeated_permission_request_is_not_a_repost() {
+        // The station's, never re-posted by the board's hub: left as it was.
+        let mut rows = vec![prose("a", permission()), prose("b", permission())];
+        assert!(reconcile(&mut rows).is_empty());
+        assert!(is_card(&rows[0]) && is_card(&rows[1]));
     }
 }
