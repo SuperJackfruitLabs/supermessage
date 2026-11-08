@@ -1968,11 +1968,14 @@ fn embedded_from_raw(
     // (`crate::gate_v2::embedded_payload`).
     // A question and a follow-up were measured against the same bound when
     // they were chosen (`crate::question_v2`, `crate::delivery_v2`).
+    // A permission.v2 carries the request's preview, measured the same way
+    // (`crate::permission_v2`).
     let max_bytes = if matches!(
         event_type,
         crate::gate_v2::GATE_V2_EVENT_TYPE
             | crate::question_v2::QUESTION_V2_EVENT_TYPE
             | crate::delivery_v2::DELIVERY_V2_EVENT_TYPE
+            | crate::permission_v2::PERMISSION_V2_EVENT_TYPE
     ) {
         crate::gate_v2::GATE_V2_PAYLOAD_MAX_BYTES
     } else {

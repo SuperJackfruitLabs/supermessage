@@ -597,6 +597,11 @@ void uniffi_supermessage_ffi_fn_method_core_send_message(void*_Nonnull ptr, Rust
 void uniffi_supermessage_ffi_fn_method_core_send_permission_answer(void*_Nonnull ptr, RustBuffer room_id, RustBuffer option_id, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_PERMISSION_ANSWER_V2
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_PERMISSION_ANSWER_V2
+void uniffi_supermessage_ffi_fn_method_core_send_permission_answer_v2(void*_Nonnull ptr, RustBuffer room_id, RustBuffer permission, RustBuffer option_id, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_QUESTION_ANSWER_V2
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_QUESTION_ANSWER_V2
 void uniffi_supermessage_ffi_fn_method_core_send_question_answer_v2(void*_Nonnull ptr, RustBuffer room_id, RustBuffer question, RustBuffer option_id, RustBuffer text, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
@@ -2061,6 +2066,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_send_message(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_PERMISSION_ANSWER
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_PERMISSION_ANSWER
 uint16_t uniffi_supermessage_ffi_checksum_method_core_send_permission_answer(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_PERMISSION_ANSWER_V2
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_PERMISSION_ANSWER_V2
+uint16_t uniffi_supermessage_ffi_checksum_method_core_send_permission_answer_v2(void
     
 );
 #endif

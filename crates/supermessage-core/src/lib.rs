@@ -57,6 +57,7 @@ pub mod notification_policy;
 pub mod opus_container;
 pub mod peer_color;
 pub mod people;
+pub mod permission_v2;
 pub mod push;
 pub mod question_v2;
 pub mod recovery;

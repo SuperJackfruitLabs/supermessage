@@ -65,10 +65,20 @@ const PREVIEW_MAX_BLOCKS: usize = 20;
 
 /// How many options a v2 card draws. The publishing gate has four; a gate
 /// offering more than a person can weigh at a glance falls back to v1.
-const OPTIONS_MAX: usize = 8;
+pub(crate) const OPTIONS_MAX: usize = 8;
 
 /// An option's label is a button.
-const OPTION_LABEL_MAX_CHARS: usize = 60;
+pub(crate) const OPTION_LABEL_MAX_CHARS: usize = 60;
+
+/// How long a subject's `expires_at` may be. An ISO timestamp, not prose.
+const EXPIRES_AT_MAX_CHARS: usize = 60;
+
+/// A strict decision's subject: Salaam's frozen operation. charter →
+/// `decisions/2026-11-07-strict-decisions-and-permissions-bind-their-subject.md` §3.
+pub const SALAAM_OPERATION_SCHEMA: &str = "salaam-operation/v1";
+
+/// A harness permission's subject: the ACP request AgentPod recorded (§5).
+pub const HARNESS_PERMISSION_SCHEMA: &str = "harness-permission/v1";
 
 const FIELD_VALUE_MAX_CHARS: usize = 300;
 const FIELD_LABEL_MAX_CHARS: usize = 60;
@@ -110,6 +120,53 @@ impl GateOptionMeaning {
             "defer" => Self::Defer,
             _ => return None,
         })
+    }
+}
+
+/// How far an option reaches. charter →
+/// `decisions/2026-11-07-strict-decisions-and-permissions-bind-their-subject.md` §2.
+/// A host shows it; the producer judges it.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, uniffi::Enum,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum OptionScope {
+    /// This once.
+    Once,
+    /// For the rest of this run.
+    Run,
+    /// From now on.
+    Always,
+}
+
+impl OptionScope {
+    pub(crate) fn parse(raw: &str) -> Option<Self> {
+        Some(match raw {
+            "once" => Self::Once,
+            "run" => Self::Run,
+            "always" => Self::Always,
+            _ => return None,
+        })
+    }
+}
+
+/// Who may take an option (§2). A host shows it ("admins only") and may hide
+/// an option the viewer cannot take; the producer judges it.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, uniffi::Enum,
+)]
+#[serde(rename_all = "camelCase")]
+pub enum OptionRequires {
+    /// A workspace owner or admin.
+    WorkspaceAdmin,
+}
+
+impl OptionRequires {
+    pub(crate) fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "workspace-admin" => Some(Self::WorkspaceAdmin),
+            _ => None,
+        }
     }
 }
 
@@ -163,6 +220,15 @@ pub struct GateOptionV2 {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[uniffi(default = None)]
     pub input: Option<OptionInput>,
+    /// How far the option reaches, when it says — a strict decision's or a
+    /// harness permission's option. Display only: the producer judges it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub scope: Option<OptionScope>,
+    /// Who may take it, when it says. Display only, as `scope`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub requires: Option<OptionRequires>,
 }
 
 /// One block of a subject's preview — what the reader must see before
@@ -217,6 +283,26 @@ pub struct GateV2Decision {
     pub subject: Option<GateSubjectBinding>,
 }
 
+/// The subject a question.v2 or a permission.v2 is bound to, as a host draws
+/// it: the preview verbatim, and the binding the answer copies back.
+///
+/// A gate.v2 carries the same subject flattened onto [`GateV2Decision`]; this
+/// is its shape for the decisions that came after it. charter →
+/// `decisions/2026-11-07-strict-decisions-and-permissions-bind-their-subject.md`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct SubjectV2 {
+    /// Copied into the answer; never drawn.
+    pub binding: GateSubjectBinding,
+    /// [`SALAAM_OPERATION_SCHEMA`] or [`HARNESS_PERMISSION_SCHEMA`].
+    pub schema: String,
+    /// Drawn verbatim, as a gate's.
+    pub preview: Vec<GatePreviewBlock>,
+    /// When the producer stops accepting an answer, as it said it (an ISO
+    /// timestamp), or `None` when it set none. Display only.
+    pub expires_at: Option<String>,
+}
+
 /// A subject as read off the wire.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Subject {
@@ -224,6 +310,23 @@ pub(crate) struct Subject {
     pub(crate) preview: Vec<GatePreviewBlock>,
     /// Every block drawable, none dropped, and the board said it was whole.
     pub(crate) complete: bool,
+    /// `subject.schema`, when it is a string. Checked only by
+    /// [`parse_bound_subject`]; a gate.v2 never required it.
+    pub(crate) schema: Option<String>,
+    /// `subject.expires_at`, when it is a short string.
+    pub(crate) expires_at: Option<String>,
+}
+
+impl Subject {
+    /// The subject as a host draws it.
+    pub(crate) fn view(&self) -> SubjectV2 {
+        SubjectV2 {
+            binding: self.binding.clone(),
+            schema: self.schema.clone().unwrap_or_default(),
+            preview: self.preview.clone(),
+            expires_at: self.expires_at.clone(),
+        }
+    }
 }
 
 /// A gate.v2 that validated.
@@ -325,7 +428,79 @@ pub(crate) fn parse_subject(content: &Value) -> Result<Option<Subject>, ()> {
         binding: GateSubjectBinding { id, digest },
         preview,
         complete,
+        schema: raw
+            .get("schema")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        expires_at: safe_string_field(raw, "expires_at", EXPIRES_AT_MAX_CHARS),
     }))
+}
+
+/// `content.subject` as a question.v2 or a permission.v2 carries it — the
+/// gate's subject read by [`parse_subject`], held to the whole of its Matrix
+/// shape: a `schema` among `schemas`, a whole-number `revision`, and an
+/// explicit boolean `preview_complete`. A gate.v2 tolerates a missing flag
+/// (it reads as incomplete); these came later, from carriers that always
+/// send it, so a subject without it — `previewComplete`, the board's own
+/// spelling — is not the wire and is refused, as the corpus refuses it.
+///
+/// `Ok(None)` when absent; `Err(())` when present and not that.
+pub(crate) fn parse_bound_subject(
+    content: &Value,
+    schemas: &[&str],
+) -> Result<Option<Subject>, ()> {
+    let raw = match content.get("subject") {
+        None | Some(Value::Null) => return Ok(None),
+        Some(raw) => raw,
+    };
+    let schema_known = raw
+        .get("schema")
+        .and_then(Value::as_str)
+        .is_some_and(|schema| schemas.contains(&schema));
+    let revision = raw.get("revision").and_then(Value::as_u64).is_some();
+    let flag = raw.get("preview_complete").is_some_and(Value::is_boolean);
+    if !(schema_known && revision && flag) {
+        return Err(());
+    }
+    parse_subject(content)
+}
+
+/// An option's `scope` and `requires`: absent (or null) is `None`; a value
+/// this build does not know refuses the option, as the corpus refuses a
+/// scope outside `once | run | always` — a host must not draw "Approve" for
+/// an option whose reach it cannot say.
+pub(crate) fn parse_scope_requires(
+    entry: &Value,
+) -> Option<(Option<OptionScope>, Option<OptionRequires>)> {
+    let scope = match entry.get("scope") {
+        None | Some(Value::Null) => None,
+        Some(raw) => Some(OptionScope::parse(raw.as_str()?)?),
+    };
+    let requires = match entry.get("requires") {
+        None | Some(Value::Null) => None,
+        Some(raw) => Some(OptionRequires::parse(raw.as_str()?)?),
+    };
+    Some((scope, requires))
+}
+
+/// The options a host may offer, and the note to show in place of any it
+/// may not: every approve-meaning option is withheld unless `approvable`.
+/// One rule for a gate, a question and a permission.
+pub(crate) fn offerable(
+    options: &[GateOptionV2],
+    approvable: bool,
+    note: &str,
+) -> (Vec<GateOptionV2>, Option<String>) {
+    let offered: Vec<GateOptionV2> = options
+        .iter()
+        .filter(|o| approvable || o.meaning != GateOptionMeaning::Approve)
+        .cloned()
+        .collect();
+    let withheld = !approvable
+        && options
+            .iter()
+            .any(|o| o.meaning == GateOptionMeaning::Approve);
+    (offered, withheld.then(|| note.to_string()))
 }
 
 /// The gate's options, or `None` when they are not v2 options a client can
@@ -377,7 +552,8 @@ fn parse_input(entry: &Value) -> Result<Option<OptionInput>, ()> {
 /// A list of envelope options — gate.v2, question.v2 or delivery.v2 — or
 /// `None` when they are not options a client can honestly answer: too many,
 /// an option with no id, no meaning a client knows, `needs_comment` that is
-/// not a boolean, an input that does not validate, or two sharing an id.
+/// not a boolean, an input that does not validate, a `scope` or `requires`
+/// this build does not know (`parse_scope_requires`), or two sharing an id.
 /// An empty list is returned as empty; whether that is allowed is the
 /// caller's rule. `read_input` false ignores every `input`.
 pub(crate) fn parse_option_list(raw: &[Value], read_input: bool) -> Option<Vec<GateOptionV2>> {
@@ -398,6 +574,7 @@ pub(crate) fn parse_option_list(raw: &[Value], read_input: bool) -> Option<Vec<G
         } else {
             None
         };
+        let (scope, requires) = parse_scope_requires(entry)?;
         let label = safe_string_field(entry, "label", OPTION_LABEL_MAX_CHARS)
             .filter(|l| !l.trim().is_empty())
             .unwrap_or_else(|| bound_text(&id, OPTION_LABEL_MAX_CHARS));
@@ -407,6 +584,8 @@ pub(crate) fn parse_option_list(raw: &[Value], read_input: bool) -> Option<Vec<G
             meaning,
             needs_comment,
             input,
+            scope,
+            requires,
         });
     }
     Some(options)
@@ -513,18 +692,8 @@ impl ParsedGateV2 {
 
     /// The card a host draws.
     fn decision(&self) -> GateV2Decision {
-        let approvable = self.approvable();
-        let options: Vec<GateOptionV2> = self
-            .options
-            .iter()
-            .filter(|o| approvable || o.meaning != GateOptionMeaning::Approve)
-            .cloned()
-            .collect();
-        let withheld = !approvable
-            && self
-                .options
-                .iter()
-                .any(|o| o.meaning == GateOptionMeaning::Approve);
+        let (options, approvals_withheld) =
+            offerable(&self.options, self.approvable(), APPROVALS_WITHHELD_NOTE);
         GateV2Decision {
             gate_id: self.gate_id.clone(),
             options,
@@ -533,7 +702,7 @@ impl ParsedGateV2 {
                 .as_ref()
                 .map(|s| s.preview.clone())
                 .unwrap_or_default(),
-            approvals_withheld: withheld.then(|| APPROVALS_WITHHELD_NOTE.to_string()),
+            approvals_withheld,
             subject: self.subject.as_ref().map(|s| s.binding.clone()),
         }
     }
@@ -605,6 +774,7 @@ impl CustomEventRenderer for GateV2Renderer {
                 gate_v2: Some(gate.decision()),
                 question_v2: None,
                 delivery_v2: None,
+                permission_v2: None,
             }),
         }
     }
@@ -1129,6 +1299,8 @@ mod tests {
                 meaning: GateOptionMeaning::Approve,
                 needs_comment: false,
                 input: None,
+                scope: None,
+                requires: None,
             },
         );
         assert!(decision_request(&forged, "approve_automatic", None, GATE_EVENT).is_err());
@@ -1156,6 +1328,8 @@ mod tests {
             meaning,
             needs_comment: false,
             input: None,
+            scope: None,
+            requires: None,
         };
         use GateOptionMeaning::*;
         assert_eq!(

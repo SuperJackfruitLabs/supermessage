@@ -462,6 +462,31 @@ impl Session {
         Ok(())
     }
 
+    /// Answers a harness permission.v2 (`crate::permission_v2`) in `room_id`,
+    /// whether or not that room is open, and returns once the homeserver has
+    /// the event — from the card, which needs no focused timeline for a
+    /// permission, as [`Self::send_permission_answer`] does not.
+    ///
+    /// `permission` is the card's `CustomEventDecision::permission_v2`, handed
+    /// back unchanged. The `dev.agentpod.permission.answer.v2` is built and
+    /// checked by `crate::permission_v2::answer_request` before anything
+    /// else: an option the request did not offer, or an allowing option on a
+    /// preview the card could not show in full, is refused here.
+    pub async fn send_permission_answer_v2(
+        &self,
+        room_id: &str,
+        permission: &crate::permission_v2::PermissionV2Decision,
+        option_id: &str,
+        in_reply_to: &str,
+    ) -> CoreResult<()> {
+        let content = crate::permission_v2::answer_request(permission, option_id, in_reply_to)?;
+        let room = self.room_to_answer_in(room_id).await?;
+        room.send_raw("m.room.message", content)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
     /// Answers a superpipeline gate in `room_id`, whether or not that room is
     /// open, and returns once the homeserver has the event.
     ///

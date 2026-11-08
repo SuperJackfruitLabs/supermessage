@@ -387,8 +387,19 @@ pub fn notification_for_row(
             };
             // A question or a manual-delivery follow-up asks for a choice and
             // often for text a notification cannot check (a link, an answer
-            // with a limit): read in the app.
-            if decision.question_v2.is_some() || decision.delivery_v2.is_some() {
+            // with a limit): read in the app. A question bound to a subject
+            // approves what only its card can show, so it only opens too.
+            //
+            // A harness permission.v2 only opens as well. A notification
+            // shows no preview, so it never allows; and a lock-screen Reject
+            // would have to answer with the bound permission.answer.v2 — a
+            // new answer for every host's action handler — where the typed
+            // "Reject" a v1 action sends is unbound. Open is the honest
+            // offer until a bound reject is wired end to end.
+            if decision.question_v2.is_some()
+                || decision.delivery_v2.is_some()
+                || decision.permission_v2.is_some()
+            {
                 return Some(base);
             }
             if let Some(gate_id) = &decision.subject {
@@ -882,7 +893,9 @@ fn decide_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> NotificationDt
                 let event_type = other.event_type().to_string();
                 // A gate's structured receipt: its readable line, posted
                 // beside it, is the news. Never a second buzz, never actions.
-                if event_type == crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE {
+                if event_type == crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE
+                    || event_type == crate::permission_v2::PERMISSION_OUTCOME_EVENT_TYPE
+                {
                     return quiet(
                         NotificationSuppression::NotNews,
                         format!("{who} posted an update"),
@@ -959,6 +972,7 @@ mod tests {
             gate_v2: None,
             question_v2: None,
             delivery_v2: None,
+            permission_v2: None,
         }
     }
 
@@ -1635,6 +1649,63 @@ mod tests {
             assert_eq!(note.gate, None);
             assert_eq!(note.permission, None);
         }
+    }
+
+    /// The first corpus entry with this suite type and `variant`.
+    fn corpus_variant(suite_type: &str, variant: &str) -> serde_json::Value {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+        ))
+        .unwrap();
+        corpus["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["suiteEventType"] == suite_type && e["variant"] == variant)
+            .unwrap()["accept"][0]["content"]
+            .clone()
+    }
+
+    #[test]
+    fn a_subject_bound_question_only_opens() {
+        // Its preview is complete, so its card offers Approve; a
+        // notification shows no preview, so it offers nothing but Open.
+        let note = notify(message(corpus_variant(
+            crate::question_v2::QUESTION_V2_EVENT_TYPE,
+            "subject-bound",
+        )));
+        assert_eq!(note.category, NotificationCategory::Decision);
+        assert_eq!(note.gate, None);
+        assert_eq!(note.permission, None);
+    }
+
+    #[test]
+    fn a_permission_v2_never_allows_from_a_notification() {
+        let content = corpus_accept(crate::permission_v2::PERMISSION_V2_EVENT_TYPE, 0);
+        let note = notify(message(content.clone()));
+        assert_eq!(note.category, NotificationCategory::Decision);
+        assert_eq!(note.permission, None, "no Allow once / Reject pair");
+        // The same request from a hub that sends only the v1 card keeps its
+        // actions, exactly as before.
+        let mut v1 = content;
+        v1.as_object_mut().unwrap().remove("suite_event_type");
+        let note = notify(message(v1));
+        assert_eq!(note.category, NotificationCategory::Permission);
+        assert!(note.permission.is_some());
+    }
+
+    #[test]
+    fn a_permission_outcome_is_not_news() {
+        let outcome = corpus_accept(crate::permission_v2::PERMISSION_OUTCOME_EVENT_TYPE, 0);
+        let note = notify(json!({
+            "type": crate::permission_v2::PERMISSION_OUTCOME_EVENT_TYPE,
+            "event_id": "$e",
+            "sender": "@agent_hermes:hs",
+            "origin_server_ts": 1,
+            "content": outcome,
+        }));
+        assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
+        assert_eq!(note.category, NotificationCategory::Message);
     }
 
     #[test]

@@ -40,6 +40,7 @@ use crate::delivery_v2::DELIVERY_V2_EVENT_TYPE;
 use crate::dto::TimelineRow;
 use crate::gate_v2::GATE_V2_EVENT_TYPE;
 use crate::item_view::ItemView;
+use crate::permission_v2::PERMISSION_V2_EVENT_TYPE;
 use crate::question_v2::QUESTION_V2_EVENT_TYPE;
 
 /// The key an AgentPod permission request rides under on its prose message.
@@ -73,7 +74,15 @@ pub const EMBEDDED_SUITE_KEYS: [(&str, &str); 2] = [
 /// manual-delivery follow-up (`crate::delivery_v2`), which this client draws
 /// only from v2: without valid v2 fields they stay prose, as they always
 /// were here.
+///
+/// A permission request the message also declares as permission.v2
+/// (`crate::permission_v2`), with fields that validate, is read as v2 in
+/// place of the v1 card beside it; anything less reads the v1 card exactly
+/// as before.
 pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
+    if let Some(payload) = crate::permission_v2::embedded_payload(content) {
+        return Some((PERMISSION_V2_EVENT_TYPE, payload));
+    }
     let permission = content
         .get(EMBEDDED_PERMISSION_KEY)
         .is_some_and(Value::is_object);
@@ -101,7 +110,9 @@ pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
 ///
 /// The gate.v2 marker, `dev.superpipeline.gate.v2`, contains the gate key's
 /// text, so a v2 message that carries no v1 card is found too. The question
-/// and follow-up markers do not, so they are searched for by name.
+/// and follow-up markers do not, so they are searched for by name. The
+/// permission.v2 marker, `dev.agentpod.permission.v2`, contains the
+/// permission key's text, so it is found like the gate's.
 pub fn may_carry_embedded(raw_json: &str) -> bool {
     EMBEDDED_SUITE_KEYS
         .iter()
@@ -116,7 +127,9 @@ pub fn may_carry_embedded(raw_json: &str) -> bool {
 /// cannot be told apart from another, and guessing would hide a real card.
 pub fn decision_identity(event_type: &str, payload: &Value) -> Option<String> {
     match event_type {
-        PERMISSION_REQUEST_EVENT_TYPE => {
+        // One request, whichever version carries it: the v2 prose message and
+        // a legacy v1 event for it are the same decision.
+        PERMISSION_REQUEST_EVENT_TYPE | PERMISSION_V2_EVENT_TYPE => {
             let session = payload.get("session_id")?.as_str()?;
             let seq = payload.get("request_seq")?.as_u64()?;
             Some(format!("permission:{session}:{seq}"))
@@ -169,7 +182,9 @@ fn carrier(row: &TimelineRow) -> Option<(String, bool)> {
 /// - **A resolved gate is a receipt.** A gate the room says the board has
 ///   accepted (`crate::gate_outcome`) is drawn with its outcome in place of
 ///   its buttons, whichever carrier is on screen and in whichever order the
-///   two arrived — and drawn pending again if the outcome goes.
+///   two arrived — and drawn pending again if the outcome goes. The same for
+///   a permission the station says is closed
+///   (`crate::permission_v2::resolved_permissions`).
 ///
 /// Every other row is untouched, so a timeline with no suite decision costs
 /// one pass and changes nothing.
@@ -179,7 +194,9 @@ pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
         .filter_map(carrier)
         .filter_map(|(identity, embedded)| embedded.then_some(identity))
         .collect();
-    let resolved = crate::gate_outcome::resolved_gates(rows);
+    let mut resolved = crate::gate_outcome::resolved_gates(rows);
+    // Gate and permission identities never collide (`gate:` / `permission:`).
+    resolved.extend(crate::permission_v2::resolved_permissions(rows));
 
     let mut changed = Vec::new();
     for (index, row) in rows.iter_mut().enumerate() {

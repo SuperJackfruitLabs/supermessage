@@ -908,6 +908,15 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         {
             ItemView::None
         }
+        // The same for a harness permission's receipt: the station's line
+        // says it, and the permission's card becomes the receipt
+        // (`crate::permission_v2::resolved_permissions`).
+        "customMessage"
+            if item.detail.as_deref()
+                == Some(crate::permission_v2::PERMISSION_OUTCOME_EVENT_TYPE) =>
+        {
+            ItemView::None
+        }
 
         "customMessage" => ItemView::CustomEvent {
             label: custom_event_label(default_registry(), item.detail.as_deref()),

@@ -958,6 +958,29 @@ impl Core {
         Ok(())
     }
 
+    /// Answer a harness permission.v2 from its card
+    /// (`supermessage_core::permission_v2`). `permission` is the card's
+    /// `CustomEventDecision::permission_v2`, handed back unchanged; the core
+    /// refuses an option the request did not offer and an allowing option on
+    /// a preview the card could not show in full, then sends the
+    /// `dev.agentpod.permission.answer.v2` — the binding copied from the card
+    /// — referencing `in_reply_to`. The room need not be open.
+    pub fn send_permission_answer_v2(
+        &self,
+        room_id: String,
+        permission: supermessage_core::permission_v2::PermissionV2Decision,
+        option_id: String,
+        in_reply_to: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.send_permission_answer_v2(
+            &room_id,
+            &permission,
+            &option_id,
+            &in_reply_to,
+        ))?;
+        Ok(())
+    }
+
     /// What the notification for `event_id` in `room_id` should say, fetched
     /// and decrypted here — the Notification Service Extension's one call
     /// after [`Core::restore_session_quietly`]. An error means the event could
