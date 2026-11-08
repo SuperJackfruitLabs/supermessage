@@ -46,6 +46,8 @@ extension OptionInputKind: @retroactive @unchecked Sendable {}
 extension QuestionFreeText: @retroactive @unchecked Sendable {}
 extension QuestionV2Decision: @retroactive @unchecked Sendable {}
 extension PermissionV2Decision: @retroactive @unchecked Sendable {}
+extension AttentionV2Decision: @retroactive @unchecked Sendable {}
+extension AttentionReason: @retroactive @unchecked Sendable {}
 extension SubjectV2: @retroactive @unchecked Sendable {}
 extension OptionScope: @retroactive @unchecked Sendable {}
 extension OptionRequires: @retroactive @unchecked Sendable {}

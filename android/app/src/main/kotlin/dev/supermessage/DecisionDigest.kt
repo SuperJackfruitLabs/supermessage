@@ -114,6 +114,23 @@ internal fun permissionReceipt(meaning: GateOptionMeaning, scope: OptionScope?):
         GateOptionMeaning.REVISE, GateOptionMeaning.CHOOSE, GateOptionMeaning.DEFER -> null
     }
 
+/**
+ * The local receipt for a waiting card answered here — the words
+ * `core::attention_v2` gives the room's receipt ("Resumed", "Resumed at Plan",
+ * "Archived"), so this line and the board's agree. Null for an option a
+ * waiting card never offers.
+ */
+internal fun attentionReceipt(optionId: String, label: String): String? {
+    if (optionId == "resume_here") return "Resumed by you"
+    if (optionId == "archive") return "Archived by you"
+    if (!optionId.startsWith("resume_at:")) return null
+    // "Resume at Plan" names the stage; the core says it the same way.
+    val stage = label.trim().removePrefix("Resume at ").trim()
+        .takeIf { it.isNotEmpty() && it != label.trim() }
+        ?: optionId.removePrefix("resume_at:")
+    return "Resumed at $stage by you"
+}
+
 private val HUB_WORDS = mapOf(
     "approve_automatic" to "Approved for automatic delivery",
     "approve_manual" to "Approved for manual delivery",

@@ -17,6 +17,10 @@ struct DecisionAnswerRecord: Equatable {
     /// (`core::permission_v2::summary`), so this line and the room's agree.
     var permission = false
     var scope: OptionScope? = nil
+    /// Answered on a card waiting on a person (attention.v2), whose words are
+    /// "resumed" and "archived" — the core's receipt words
+    /// (`core::attention_v2::summary`), so this line and the room's agree.
+    var attention = false
 
     /// What happened, in a sentence the reader said.
     ///
@@ -35,6 +39,7 @@ struct DecisionAnswerRecord: Equatable {
         // summaries), so this line and the room's receipt agree.
         if let said = Self.hubWords[option.id] { return "\(said) by you" }
         if permission, let said = permissionWords { return "\(said) by you" }
+        if attention, let said = attentionWords { return "\(said) by you" }
         switch role ?? DecisionOptionRole(option) {
         case .approve: return "Approved by you"
         case .requestChanges: return "Changes requested by you"
@@ -63,6 +68,21 @@ struct DecisionAnswerRecord: Equatable {
         case .requestChanges, .other:
             return nil
         }
+    }
+
+    /// A waiting card's answer, or `nil` for an option it never offers.
+    private var attentionWords: String? {
+        if option.id == "resume_here" { return "Resumed" }
+        if option.id == "archive" { return "Archived" }
+        guard option.id.hasPrefix("resume_at:") else { return nil }
+        // "Resume at Plan" names the stage; the core says it the same way.
+        let label = option.label.trimmingCharacters(in: .whitespaces)
+        if label.hasPrefix("Resume at ") {
+            let stage = label.dropFirst("Resume at ".count)
+                .trimmingCharacters(in: .whitespaces)
+            if !stage.isEmpty { return "Resumed at \(stage)" }
+        }
+        return "Resumed at \(option.id.dropFirst("resume_at:".count))"
     }
 
     static let hubWords: [String: String] = [

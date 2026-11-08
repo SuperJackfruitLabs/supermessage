@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import uniffi.supermessage_core.AttentionReason
+import uniffi.supermessage_core.AttentionV2Decision
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.CustomEventDecisionOption
 import uniffi.supermessage_core.GateOptionMeaning
@@ -308,6 +310,112 @@ class DecisionChoiceTest {
         assertEquals(listOf("deny"), all.map { it.id })
         assertTrue(primaries.isEmpty())
         assertEquals("Once", all[0].qualifier)
+    }
+
+    // ---- attention.v2: a card waiting on a person (corpus v6)
+
+    private val instruction = OptionInput(OptionInputKind.TEXT, "What should the next attempt do?", true, 2730u)
+    private val resumeHere = GateOptionV2("resume_here", "Resume here", GateOptionMeaning.APPROVE, false, instruction)
+    private val resumeAtPlan = GateOptionV2("resume_at:plan", "Resume at Plan", GateOptionMeaning.CHOOSE, false, instruction)
+    private val archive = GateOptionV2("archive", "Archive", GateOptionMeaning.REJECT, false)
+
+    /** The blocked card as the core hands it over: no plain-reply options at all. */
+    private fun waiting(options: List<GateOptionV2> = listOf(resumeHere, resumeAtPlan, archive)) = CustomEventDecision(
+        prompt = "“Ship the release” is waiting on you",
+        options = emptyList(),
+        subject = null,
+        attentionV2 = AttentionV2Decision(
+            boardId = "brd_7c1f",
+            cardId = "crd_6b40",
+            waitId = "wait_0123456789abcdef",
+            cardTitle = "Ship the release",
+            stageName = "Build",
+            reason = AttentionReason.BLOCKED,
+            reasonText = "Blocked",
+            summary = "Staging DB down",
+            detail = "the staging database is down",
+            failureCount = null,
+            options = options,
+        ),
+    )
+
+    @Test
+    fun aWaitingCardLeadsWithResumeHereAndArchivesQuietly() {
+        val (all, primaries) = DecisionChoice.of(waiting())
+        assertEquals(listOf("resume_here", "resume_at:plan", "archive"), all.map { it.id })
+        assertEquals(listOf("resume_here"), primaries.map { it.id })
+        assertEquals(DecisionOptionRole.OTHER, all[1].role)
+        assertEquals(DecisionOptionRole.REJECT, all[2].role)
+    }
+
+    @Test
+    fun everyResumeAsksForItsRequiredInstruction() {
+        val (all, _) = DecisionChoice.of(waiting())
+        for (resume in all.take(2)) {
+            assertEquals(instruction, resume.input)
+            assertEquals("What should the next attempt do? is needed.", resume.inputProblem("  "))
+            assertEquals("At most 2730 characters.", resume.inputProblem("x".repeat(2731)))
+            assertEquals(null, resume.inputProblem("x".repeat(2730)))
+        }
+        // Archive asks for nothing and is sent as tapped.
+        assertEquals(null, all[2].input)
+        assertEquals(DecisionChoice.CommentAsk.NONE, all[2].comment)
+    }
+
+    @Test
+    fun aWaitingCardReceiptSaysWhatTheBoardWillDo() {
+        fun said(option: GateOptionV2): String {
+            val choice = DecisionChoice.attention(option)
+            return choice.receipt ?: receiptOutcome(choice.record, choice.role)
+        }
+        assertEquals("Resumed by you", said(resumeHere))
+        assertEquals("Resumed at Plan by you", said(resumeAtPlan))
+        assertEquals("Archived by you", said(archive))
+        assertEquals("Resumed at design by you", attentionReceipt("resume_at:design", "Go back"))
+        assertEquals(null, attentionReceipt("move_to:ship", "Move to Ship"))
+    }
+
+    @Test
+    fun aWaitingCardAtTheFirstStageOffersNoEarlierStage() {
+        val (all, primaries) = DecisionChoice.of(waiting(listOf(resumeHere, archive)))
+        assertEquals(listOf("resume_here", "archive"), all.map { it.id })
+        assertEquals(listOf("resume_here"), primaries.map { it.id })
+    }
+
+    @Test
+    fun aSuperToolkitApprovalSaysAdminsOnlyAndWithholdsAllowLikeAnySubject() {
+        val allow = GateOptionV2(
+            "allow_once", "Allow once", GateOptionMeaning.APPROVE, false, null,
+            OptionScope.ONCE, OptionRequires.WORKSPACE_ADMIN,
+        )
+        val deny = GateOptionV2("deny", "Deny", GateOptionMeaning.REJECT, false, null, OptionScope.ONCE, null)
+        fun request(options: List<GateOptionV2>, withheld: String?) = CustomEventDecision(
+            prompt = "Allow github issues.create on acme/site?",
+            options = listOf(CustomEventDecisionOption(label = "Deny", id = "Deny")),
+            subject = null,
+            questionV2 = QuestionV2Decision(
+                elicitationId = "apr_5d2e9c41",
+                question = "Allow github issues.create on acme/site?",
+                options = options,
+                freeText = null,
+                subject = SubjectV2(
+                    binding = GateSubjectBinding("stkreq_8f2c", "sha256:4be1c0de9a7f30b2"),
+                    schema = "stk-capability/v1",
+                    preview = emptyList(),
+                    expiresAt = "2026-11-08T10:30:00.000Z",
+                ),
+                approvalsWithheld = withheld,
+                approvalRequestId = "apr_5d2e9c41",
+            ),
+        )
+        val (all, primaries) = DecisionChoice.of(request(listOf(allow, deny), null))
+        assertEquals(listOf("allow_once"), primaries.map { it.id })
+        assertEquals("Once · Admins only", all[0].qualifier)
+        val (withheld, none) = DecisionChoice.of(
+            request(listOf(deny), "This card can't show everything this request would do, so it can't be allowed from here."),
+        )
+        assertEquals(listOf("deny"), withheld.map { it.id })
+        assertTrue(none.isEmpty())
     }
 
     @Test

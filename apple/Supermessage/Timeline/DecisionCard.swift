@@ -286,7 +286,8 @@ struct CustomEventCard: View {
                 withAnimation(reduceMotion ? .easeOut(duration: 0.2) : .spring(duration: 0.4, bounce: 0.15)) {
                     answer = DecisionAnswerRecord(
                         option: choice.record, at: .now, role: choice.role,
-                        permission: decision.permissionV2 != nil, scope: choice.scope)
+                        permission: decision.permissionV2 != nil, scope: choice.scope,
+                        attention: decision.attentionV2 != nil)
                 }
             }
             .padding(.top, 2)
@@ -557,12 +558,15 @@ private struct DecisionButtons: View {
         if let permission = decision.permissionV2 {
             return permission.options.map(DecisionChoice.init)
         }
+        if let attention = decision.attentionV2 {
+            return attention.options.map(DecisionChoice.init)
+        }
         return decision.options.map(DecisionChoice.init(legacy:))
     }
     /// Drawn from the decision envelope — by meaning, never by id.
     private var isEnvelope: Bool {
         decision.gateV2 != nil || decision.questionV2 != nil || decision.deliveryV2 != nil
-            || decision.permissionV2 != nil
+            || decision.permissionV2 != nil || decision.attentionV2 != nil
     }
     /// The main action. A gate.v2 can have more than one — a publishing gate
     /// approves automatically or manually — and each is a main action. A
@@ -765,6 +769,7 @@ private struct DecisionButtons: View {
             questionV2: decision.questionV2,
             deliveryV2: decision.deliveryV2,
             permissionV2: decision.permissionV2,
+            attentionV2: decision.attentionV2,
             text: (typed?.isEmpty ?? true) ? nil : typed)
         sending = true
         Task {
@@ -999,6 +1004,10 @@ struct GateAnswer {
     /// The harness permission.v2 the card was drawn from — answered with
     /// `Session.answerPermissionV2`, bound to the request the card showed.
     var permissionV2: PermissionV2Decision? = nil
+    /// The card waiting on a person (attention.v2) the card was drawn from —
+    /// answered with `Session.answerAttentionV2`; a resume's instruction is
+    /// `text`.
+    var attentionV2: AttentionV2Decision? = nil
     /// An option's input, or a free-text answer.
     var text: String? = nil
 }
