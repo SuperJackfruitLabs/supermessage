@@ -207,6 +207,16 @@ pub struct CustomEventDecision {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[uniffi(default = None)]
     pub attention_v2: Option<crate::attention_v2::AttentionV2Decision>,
+    /// A card's machine checks overdue and escalated, when the prose message
+    /// carries `dev.agentpod.checks.waiting.v2` (`crate::gate_checks`): the
+    /// card, the stage, and each check with its line and whether Override is
+    /// offered on it (pending or failed). Answered with
+    /// `send_check_override`, with a required comment. [`Self::options`] is
+    /// empty: no plain reply overrides a check. `None` otherwise, and absent
+    /// from the JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub checks_waiting: Option<crate::gate_checks::ChecksWaitingDecision>,
     /// When this decision is reminded and escalated, on a gate.v2,
     /// question.v2, delivery.v2 or attention.v2 whose stage has a timeout
     /// (`crate::decision_timeout`). A host words it with
@@ -458,13 +468,15 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
     // The same for a question.v2 (a free-text question offers no option at
     // all), a delivery.v2 follow-up, a permission.v2 whose every option
     // allows (a plain reply never allows what the card could not show) and
-    // an attention.v2, which no plain reply answers.
+    // an attention.v2, which no plain reply answers, nor a checks.waiting
+    // card.
     if options.is_empty()
         && decision.gate_v2.is_none()
         && decision.question_v2.is_none()
         && decision.delivery_v2.is_none()
         && decision.permission_v2.is_none()
         && decision.attention_v2.is_none()
+        && decision.checks_waiting.is_none()
     {
         return None;
     }
@@ -480,6 +492,7 @@ fn bound_decision(decision: Option<CustomEventDecision>) -> Option<CustomEventDe
         delivery_v2: decision.delivery_v2,
         permission_v2: decision.permission_v2,
         attention_v2: decision.attention_v2,
+        checks_waiting: decision.checks_waiting,
         deadline: decision.deadline,
     })
 }
@@ -916,6 +929,7 @@ impl CustomEventRenderer for PermissionRequestRenderer {
                 delivery_v2: None,
                 permission_v2: None,
                 attention_v2: None,
+                checks_waiting: None,
                 deadline: None,
             }),
         }
@@ -1044,6 +1058,7 @@ impl CustomEventRenderer for GateRenderer {
                 delivery_v2: None,
                 permission_v2: None,
                 attention_v2: None,
+                checks_waiting: None,
                 deadline: None,
             }),
         }
@@ -1066,6 +1081,7 @@ pub fn default_registry() -> &'static CustomEventRegistry {
         registry.register(Box::new(crate::delivery_v2::DeliveryV2Renderer));
         registry.register(Box::new(crate::permission_v2::PermissionV2Renderer));
         registry.register(Box::new(crate::attention_v2::AttentionV2Renderer));
+        registry.register(Box::new(crate::gate_checks::ChecksWaitingRenderer));
         registry
     })
 }
@@ -1512,6 +1528,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            checks_waiting: None,
             deadline: None,
         });
         assert_eq!(
@@ -1525,6 +1542,7 @@ mod tests {
                 delivery_v2: None,
                 permission_v2: None,
                 attention_v2: None,
+                checks_waiting: None,
                 deadline: None,
             })
         );
@@ -1541,6 +1559,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            checks_waiting: None,
             deadline: None,
         });
         let decision = decision_from(&registry).expect("a decision");
@@ -1565,6 +1584,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            checks_waiting: None,
             deadline: None,
         });
         let decision = decision_from(&registry).expect("a decision");
@@ -1584,6 +1604,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            checks_waiting: None,
             deadline: None,
         });
         assert_eq!(
@@ -1608,6 +1629,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            checks_waiting: None,
             deadline: None,
         });
         let decision = decision_from(&registry).expect("a decision");
@@ -1631,6 +1653,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            checks_waiting: None,
             deadline: None,
         });
         let decision = decision_from(&registry).expect("a decision");
@@ -1648,6 +1671,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            checks_waiting: None,
             deadline: None,
         });
         assert_eq!(decision_from(&registry), None);
@@ -1664,6 +1688,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            checks_waiting: None,
             deadline: None,
         });
         assert_eq!(decision_from(&registry), None);
@@ -2181,13 +2206,14 @@ mod tests {
             crate::delivery_v2::DELIVERY_V2_EVENT_TYPE,
             crate::permission_v2::PERMISSION_V2_EVENT_TYPE,
             crate::attention_v2::ATTENTION_V2_EVENT_TYPE,
+            crate::gate_checks::CHECKS_WAITING_TYPE,
         ] {
             assert!(
                 registry.get(event_type).is_some(),
                 "{event_type} is not registered"
             );
         }
-        assert_eq!(registry.len(), 9);
+        assert_eq!(registry.len(), 10);
     }
 }
 

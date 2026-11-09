@@ -44,6 +44,7 @@ pub mod embedded;
 pub mod error;
 pub mod event;
 pub mod first_run;
+pub mod gate_checks;
 pub mod gate_outcome;
 pub mod gate_quorum;
 pub mod gate_release;

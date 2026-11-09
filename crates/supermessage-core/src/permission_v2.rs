@@ -255,6 +255,7 @@ impl CustomEventRenderer for PermissionV2Renderer {
                 delivery_v2: None,
                 permission_v2: Some(permission.decision()),
                 attention_v2: None,
+                checks_waiting: None,
                 deadline: None,
             }),
         }

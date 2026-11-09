@@ -1993,6 +1993,7 @@ fn embedded_from_raw(
             | crate::delivery_v2::DELIVERY_V2_EVENT_TYPE
             | crate::permission_v2::PERMISSION_V2_EVENT_TYPE
             | crate::attention_v2::ATTENTION_V2_EVENT_TYPE
+            | crate::gate_checks::CHECKS_WAITING_TYPE
     ) {
         crate::gate_v2::GATE_V2_PAYLOAD_MAX_BYTES
     } else {
@@ -3003,6 +3004,30 @@ impl FocusedTimeline {
         in_reply_to: &str,
     ) -> CoreResult<()> {
         let content = crate::gate_release::pull_back_request(gate_id, comment, in_reply_to)?;
+        let timeline = self.active_timeline_for(room_id)?;
+        timeline
+            .room()
+            .send_raw("m.room.message", content)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Overrides a machine check (`crate::gate_checks`) from a card of
+    /// overdue checks, in the open room: a
+    /// `dev.superpipeline.check.override.v2` referencing the card's event,
+    /// with the reader's comment. superpipeline judges whether the reader
+    /// may, and the hub says so.
+    pub async fn send_check_override(
+        &self,
+        room_id: &str,
+        checks: &crate::gate_checks::ChecksWaitingDecision,
+        check_name: &str,
+        comment: &str,
+        in_reply_to: &str,
+    ) -> CoreResult<()> {
+        let content =
+            crate::gate_checks::override_request(checks, check_name, comment, in_reply_to)?;
         let timeline = self.active_timeline_for(room_id)?;
         timeline
             .room()
