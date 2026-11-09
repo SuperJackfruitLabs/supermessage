@@ -848,10 +848,25 @@ export interface CustomEventDecision {
    */
   attentionV2?: { boardId: string; cardId: string; waitId: string; options: EnvelopeOption[] };
   /**
+   * A card of overdue machine checks (`core::gate_checks::ChecksWaitingDecision`). Every override
+   * needs a comment, so the desktop draws the checks and sends none.
+   */
+  checksWaiting?: { boardId: string; cardId: string; stageKey: string; checks: GateCheck[]; overrideNote: string };
+  /**
    * When the decision is reminded and escalated (`core::decision_timeout`), ISO times as the board
    * sent them; absent when its stage has no timeout. Not drawn on the desktop yet.
    */
   deadline?: { remindAt: string | null; escalateAt: string | null };
+}
+
+/** One machine check (`core::gate_checks::GateCheck`), as far as the desktop reads it. */
+export interface GateCheck {
+  name: string;
+  status: "pending" | "passed" | "failed" | "overridden";
+  /** The core's plain line: "build (CI) — passed". */
+  line: string;
+  /** Whether the card offers Override on it: only a card of overdue checks, on a check pending or failed. */
+  overridable: boolean;
 }
 
 /** A decision-envelope option, as far as the desktop reads it. */
@@ -879,6 +894,8 @@ export interface EnvelopeDecision {
   quorum?: { required: number; progress: string; approvedByYou: boolean } | null;
   /** What would hold an approval before it acts (`core::gate_release::GateRelease`); absent when nothing would. */
   release?: { holdForMinutes: number | null; notBefore: string | null } | null;
+  /** The machine checks that ran before the gate opened (`core::gate_checks`); absent when its stage has none. */
+  checks?: GateCheck[];
 }
 
 /**

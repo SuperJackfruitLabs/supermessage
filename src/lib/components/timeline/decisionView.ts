@@ -91,8 +91,15 @@ export const CHOOSE_ELSEWHERE = "Choose a version on your phone or the board.";
  */
 export const APPROVAL_REQUEST_ELSEWHERE = "To allow this, a workspace owner or admin answers on their phone.";
 
+/**
+ * A card of overdue checks: an override needs a comment the desktop does not send, so a workspace
+ * owner or admin overrides on a phone or the board.
+ */
+export const OVERRIDE_ELSEWHERE = "A workspace owner or admin may override a check, with a comment, on their phone or the board.";
+
 export function answerElsewhere(decision: CustomEventDecision): string | null {
   if (decision.attentionV2) return RESUME_ELSEWHERE;
+  if (decision.checksWaiting) return decision.checksWaiting.checks.some((c) => c.overridable) ? OVERRIDE_ELSEWHERE : null;
   if (decision.deliveryV2) return ANSWER_ELSEWHERE;
   const permission = decision.permissionV2;
   if (permission) {
@@ -123,6 +130,14 @@ export function answerElsewhere(decision: CustomEventDecision): string | null {
  */
 export function quorumProgress(decision: CustomEventDecision): string | null {
   return decision.gateV2?.quorum?.progress ?? null;
+}
+
+/**
+ * A card's machine checks, one plain line each ("build (CI) — passed"), worded by the core
+ * (`core::gate_checks`): a card of overdue checks', or the checks a gate ran before it opened.
+ */
+export function checkLines(decision: CustomEventDecision): string[] {
+  return (decision.checksWaiting?.checks ?? decision.gateV2?.checks ?? []).map((c) => c.line);
 }
 
 /** "25 min", "3 h", "6 d" — the core's own words for a span (`core::gate_release`). */
