@@ -269,6 +269,8 @@ pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
     // `permission:` / `attention:`).
     resolved.extend(crate::permission_v2::resolved_permissions(rows));
     resolved.extend(crate::attention_v2::resolved_attention(rows));
+    // How far each open quorum gate has got (`crate::gate_quorum`).
+    let quorum = crate::gate_quorum::QuorumState::read(rows.iter().map(|row| &row.item));
 
     let mut changed = Vec::new();
     for (index, row) in rows.iter_mut().enumerate() {
@@ -297,7 +299,17 @@ pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
             match resolved.get(&identity) {
                 Some(outcome) => crate::gate_outcome::as_receipt(own, outcome),
                 None if superseded => crate::gate_outcome::as_receipt(own, &moved),
-                None => own,
+                None if quorum.is_empty() => own,
+                None => crate::gate_quorum::apply_to_view(
+                    &quorum,
+                    own,
+                    row.item.sender.as_deref(),
+                    row.item
+                        .custom_payload
+                        .as_ref()
+                        .and_then(|p| p.0.get("board_id"))
+                        .and_then(Value::as_str),
+                ),
             }
         };
         if row.view != wanted {

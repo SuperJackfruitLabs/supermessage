@@ -302,6 +302,13 @@ pub struct GateV2Decision {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[uniffi(default = [])]
     pub variants: Vec<GateVariantV2>,
+    /// A gate that needs more than one approval (charter →
+    /// `decisions/2026-11-09-a-gate-may-need-more-than-one-approver.md`),
+    /// with how far it has got (`crate::gate_quorum`); `None` for a gate
+    /// that passes on one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub quorum: Option<crate::gate_quorum::GateQuorum>,
 }
 
 /// One version a variant gate offers: its label, its own subject and
@@ -398,6 +405,12 @@ pub(crate) struct ParsedGateV2 {
     /// A variant gate's versions; empty otherwise, and then `subject` may be
     /// set. Never both.
     variants: Vec<Variant>,
+    /// `required`, `from` and the approvals recorded when it was posted.
+    quorum: Option<(
+        u32,
+        crate::gate_quorum::QuorumFrom,
+        Vec<crate::gate_quorum::GateQuorumApproval>,
+    )>,
 }
 
 /// One version of a variant gate as read off the wire.
@@ -788,6 +801,7 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedGateV2>
     } else {
         (parse_subject(content).ok()?, Vec::new())
     };
+    let quorum = crate::gate_quorum::parse_quorum(content).ok()?;
     Some(ParsedGateV2 {
         gate_id,
         card_title,
@@ -798,6 +812,7 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedGateV2>
         options,
         subject,
         variants,
+        quorum,
     })
 }
 
@@ -862,6 +877,20 @@ impl ParsedGateV2 {
             approvals_withheld,
             subject: self.subject.as_ref().map(|s| s.binding.clone()),
             variants: self.variants.iter().map(Variant::view).collect(),
+            quorum: self.quorum.as_ref().map(|(required, from, approvals)| {
+                let variants: Vec<(String, String)> = self
+                    .variants
+                    .iter()
+                    .map(|v| (v.id.clone(), v.label.clone()))
+                    .collect();
+                crate::gate_quorum::GateQuorum {
+                    required: *required,
+                    from: *from,
+                    approvals: approvals.clone(),
+                    progress: crate::gate_quorum::progress_line(*required, approvals, &variants),
+                    approved_by_you: false,
+                }
+            }),
         }
     }
 

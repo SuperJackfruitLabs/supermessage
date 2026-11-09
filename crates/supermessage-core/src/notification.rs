@@ -926,6 +926,7 @@ fn decide_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> NotificationDt
                 if event_type == crate::gate_outcome::GATE_OUTCOME_EVENT_TYPE
                     || event_type == crate::permission_v2::PERMISSION_OUTCOME_EVENT_TYPE
                     || event_type == crate::attention_v2::ATTENTION_OUTCOME_EVENT_TYPE
+                    || event_type == crate::gate_quorum::GATE_PROGRESS_TYPE
                 {
                     return quiet(
                         NotificationSuppression::NotNews,
@@ -1772,6 +1773,21 @@ mod tests {
             "sender": "@agent_hermes:hs",
             "origin_server_ts": 1,
             "content": outcome,
+        }));
+        assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
+        assert_eq!(note.category, NotificationCategory::Message);
+    }
+
+    #[test]
+    fn a_quorum_gates_progress_is_not_news() {
+        // Its readable reply ("Approved by rakesh — 1 of 2.") is the news.
+        let progress = corpus_accept(crate::gate_quorum::GATE_PROGRESS_TYPE, 0);
+        let note = notify(json!({
+            "type": crate::gate_quorum::GATE_PROGRESS_TYPE,
+            "event_id": "$e",
+            "sender": "@board_release:hs",
+            "origin_server_ts": 1,
+            "content": progress,
         }));
         assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
         assert_eq!(note.category, NotificationCategory::Message);

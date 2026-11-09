@@ -2186,6 +2186,115 @@ public object FfiConverterTypeGateOptionV2: FfiConverterRustBuffer<GateOptionV2>
 
 
 /**
+ * How far a quorum gate has got, as a host draws it.
+ */
+data class GateQuorum (
+    /**
+     * Approvals the gate needs, 2 to 5.
+     */
+    var `required`: kotlin.UInt, 
+    var `from`: QuorumFrom, 
+    /**
+     * Recorded so far, each person once.
+     */
+    var `approvals`: List<GateQuorumApproval>, 
+    /**
+     * The line a card draws under its question: "1 of 2 approvals. Waiting
+     * for 1 more." Worded here so no host words it differently.
+     */
+    var `progress`: kotlin.String, 
+    /**
+     * The reader has approved this gate already, so approving options are
+     * gone and `GateV2Decision::approvals_withheld` says why.
+     */
+    var `approvedByYou`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateQuorum: FfiConverterRustBuffer<GateQuorum> {
+    override fun read(buf: ByteBuffer): GateQuorum {
+        return GateQuorum(
+            FfiConverterUInt.read(buf),
+            FfiConverterTypeQuorumFrom.read(buf),
+            FfiConverterSequenceTypeGateQuorumApproval.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateQuorum) = (
+            FfiConverterUInt.allocationSize(value.`required`) +
+            FfiConverterTypeQuorumFrom.allocationSize(value.`from`) +
+            FfiConverterSequenceTypeGateQuorumApproval.allocationSize(value.`approvals`) +
+            FfiConverterString.allocationSize(value.`progress`) +
+            FfiConverterBoolean.allocationSize(value.`approvedByYou`)
+    )
+
+    override fun write(value: GateQuorum, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`required`, buf)
+            FfiConverterTypeQuorumFrom.write(value.`from`, buf)
+            FfiConverterSequenceTypeGateQuorumApproval.write(value.`approvals`, buf)
+            FfiConverterString.write(value.`progress`, buf)
+            FfiConverterBoolean.write(value.`approvedByYou`, buf)
+    }
+}
+
+
+
+/**
+ * One approval the board has recorded.
+ */
+data class GateQuorumApproval (
+    /**
+     * Compared, never drawn: an Accounts principal, not a name.
+     */
+    var `principalId`: kotlin.String, 
+    /**
+     * When, as the board said it (an ISO timestamp).
+     */
+    var `at`: kotlin.String, 
+    /**
+     * The version it approved, on a variant gate.
+     */
+    var `variantId`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateQuorumApproval: FfiConverterRustBuffer<GateQuorumApproval> {
+    override fun read(buf: ByteBuffer): GateQuorumApproval {
+        return GateQuorumApproval(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateQuorumApproval) = (
+            FfiConverterString.allocationSize(value.`principalId`) +
+            FfiConverterString.allocationSize(value.`at`) +
+            FfiConverterOptionalString.allocationSize(value.`variantId`)
+    )
+
+    override fun write(value: GateQuorumApproval, buf: ByteBuffer) {
+            FfiConverterString.write(value.`principalId`, buf)
+            FfiConverterString.write(value.`at`, buf)
+            FfiConverterOptionalString.write(value.`variantId`, buf)
+    }
+}
+
+
+
+/**
  * The subject a decision.v2 is bound to, copied back from the gate shown.
  */
 data class GateSubjectBinding (
@@ -2255,7 +2364,14 @@ data class GateV2Decision (
      * and an approving option is answered with the chosen version
      * ([`decision_request`]), which must be [`GateVariantV2::approvable`].
      */
-    var `variants`: List<GateVariantV2> = listOf()
+    var `variants`: List<GateVariantV2> = listOf(), 
+    /**
+     * A gate that needs more than one approval (charter →
+     * `decisions/2026-11-09-a-gate-may-need-more-than-one-approver.md`),
+     * with how far it has got (`crate::gate_quorum`); `None` for a gate
+     * that passes on one.
+     */
+    var `quorum`: GateQuorum? = null
 ) {
     
     companion object
@@ -2273,6 +2389,7 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterOptionalString.read(buf),
             FfiConverterOptionalTypeGateSubjectBinding.read(buf),
             FfiConverterSequenceTypeGateVariantV2.read(buf),
+            FfiConverterOptionalTypeGateQuorum.read(buf),
         )
     }
 
@@ -2282,7 +2399,8 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterSequenceTypeGatePreviewBlock.allocationSize(value.`preview`) +
             FfiConverterOptionalString.allocationSize(value.`approvalsWithheld`) +
             FfiConverterOptionalTypeGateSubjectBinding.allocationSize(value.`subject`) +
-            FfiConverterSequenceTypeGateVariantV2.allocationSize(value.`variants`)
+            FfiConverterSequenceTypeGateVariantV2.allocationSize(value.`variants`) +
+            FfiConverterOptionalTypeGateQuorum.allocationSize(value.`quorum`)
     )
 
     override fun write(value: GateV2Decision, buf: ByteBuffer) {
@@ -2292,6 +2410,7 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterOptionalString.write(value.`approvalsWithheld`, buf)
             FfiConverterOptionalTypeGateSubjectBinding.write(value.`subject`, buf)
             FfiConverterSequenceTypeGateVariantV2.write(value.`variants`, buf)
+            FfiConverterOptionalTypeGateQuorum.write(value.`quorum`, buf)
     }
 }
 
@@ -9093,6 +9212,45 @@ public object FfiConverterTypePlaceholderKind : FfiConverterRustBuffer<Placehold
 
 
 /**
+ * Who may approve a quorum gate (charter §1).
+ */
+
+enum class QuorumFrom {
+    
+    /**
+     * The stage's named deciders.
+     */
+    DECIDERS,
+    /**
+     * The workspace's owners and admins.
+     */
+    ADMINS;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeQuorumFrom: FfiConverterRustBuffer<QuorumFrom> {
+    override fun read(buf: ByteBuffer) = try {
+        QuorumFrom.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: QuorumFrom) = 4UL
+
+    override fun write(value: QuorumFrom, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
  * The quoted parent of a reply, as a host sees it.
  */
 sealed class ReplyQuoteView {
@@ -10775,6 +10933,38 @@ public object FfiConverterOptionalTypeGateAnswersV2: FfiConverterRustBuffer<Gate
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeGateQuorum: FfiConverterRustBuffer<GateQuorum?> {
+    override fun read(buf: ByteBuffer): GateQuorum? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeGateQuorum.read(buf)
+    }
+
+    override fun allocationSize(value: GateQuorum?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeGateQuorum.allocationSize(value)
+        }
+    }
+
+    override fun write(value: GateQuorum?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeGateQuorum.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeGateSubjectBinding: FfiConverterRustBuffer<GateSubjectBinding?> {
     override fun read(buf: ByteBuffer): GateSubjectBinding? {
         if (buf.get().toInt() == 0) {
@@ -11989,6 +12179,34 @@ public object FfiConverterSequenceTypeGateOptionV2: FfiConverterRustBuffer<List<
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeGateOptionV2.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeGateQuorumApproval: FfiConverterRustBuffer<List<GateQuorumApproval>> {
+    override fun read(buf: ByteBuffer): List<GateQuorumApproval> {
+        val len = buf.getInt()
+        return List<GateQuorumApproval>(len) {
+            FfiConverterTypeGateQuorumApproval.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<GateQuorumApproval>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeGateQuorumApproval.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<GateQuorumApproval>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeGateQuorumApproval.write(it, buf)
         }
     }
 }

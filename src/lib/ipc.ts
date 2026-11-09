@@ -872,6 +872,11 @@ export interface EnvelopeDecision {
    * draws none of them and only says where to choose.
    */
   variants?: unknown[];
+  /**
+   * A gate that needs more than one approval (`core::gate_quorum::GateQuorum`), absent on one that
+   * passes on one. The desktop draws only its progress line.
+   */
+  quorum?: { required: number; progress: string; approvedByYou: boolean } | null;
 }
 
 /**

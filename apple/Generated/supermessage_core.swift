@@ -2681,6 +2681,222 @@ public func FfiConverterTypeGateOptionV2_lower(_ value: GateOptionV2) -> RustBuf
 
 
 /**
+ * How far a quorum gate has got, as a host draws it.
+ */
+public struct GateQuorum {
+    /**
+     * Approvals the gate needs, 2 to 5.
+     */
+    public var required: UInt32
+    public var from: QuorumFrom
+    /**
+     * Recorded so far, each person once.
+     */
+    public var approvals: [GateQuorumApproval]
+    /**
+     * The line a card draws under its question: "1 of 2 approvals. Waiting
+     * for 1 more." Worded here so no host words it differently.
+     */
+    public var progress: String
+    /**
+     * The reader has approved this gate already, so approving options are
+     * gone and `GateV2Decision::approvals_withheld` says why.
+     */
+    public var approvedByYou: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Approvals the gate needs, 2 to 5.
+         */required: UInt32, from: QuorumFrom, 
+        /**
+         * Recorded so far, each person once.
+         */approvals: [GateQuorumApproval], 
+        /**
+         * The line a card draws under its question: "1 of 2 approvals. Waiting
+         * for 1 more." Worded here so no host words it differently.
+         */progress: String, 
+        /**
+         * The reader has approved this gate already, so approving options are
+         * gone and `GateV2Decision::approvals_withheld` says why.
+         */approvedByYou: Bool) {
+        self.required = required
+        self.from = from
+        self.approvals = approvals
+        self.progress = progress
+        self.approvedByYou = approvedByYou
+    }
+}
+
+
+
+extension GateQuorum: Equatable, Hashable {
+    public static func ==(lhs: GateQuorum, rhs: GateQuorum) -> Bool {
+        if lhs.required != rhs.required {
+            return false
+        }
+        if lhs.from != rhs.from {
+            return false
+        }
+        if lhs.approvals != rhs.approvals {
+            return false
+        }
+        if lhs.progress != rhs.progress {
+            return false
+        }
+        if lhs.approvedByYou != rhs.approvedByYou {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(required)
+        hasher.combine(from)
+        hasher.combine(approvals)
+        hasher.combine(progress)
+        hasher.combine(approvedByYou)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateQuorum: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateQuorum {
+        return
+            try GateQuorum(
+                required: FfiConverterUInt32.read(from: &buf), 
+                from: FfiConverterTypeQuorumFrom.read(from: &buf), 
+                approvals: FfiConverterSequenceTypeGateQuorumApproval.read(from: &buf), 
+                progress: FfiConverterString.read(from: &buf), 
+                approvedByYou: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GateQuorum, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.required, into: &buf)
+        FfiConverterTypeQuorumFrom.write(value.from, into: &buf)
+        FfiConverterSequenceTypeGateQuorumApproval.write(value.approvals, into: &buf)
+        FfiConverterString.write(value.progress, into: &buf)
+        FfiConverterBool.write(value.approvedByYou, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateQuorum_lift(_ buf: RustBuffer) throws -> GateQuorum {
+    return try FfiConverterTypeGateQuorum.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateQuorum_lower(_ value: GateQuorum) -> RustBuffer {
+    return FfiConverterTypeGateQuorum.lower(value)
+}
+
+
+/**
+ * One approval the board has recorded.
+ */
+public struct GateQuorumApproval {
+    /**
+     * Compared, never drawn: an Accounts principal, not a name.
+     */
+    public var principalId: String
+    /**
+     * When, as the board said it (an ISO timestamp).
+     */
+    public var at: String
+    /**
+     * The version it approved, on a variant gate.
+     */
+    public var variantId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Compared, never drawn: an Accounts principal, not a name.
+         */principalId: String, 
+        /**
+         * When, as the board said it (an ISO timestamp).
+         */at: String, 
+        /**
+         * The version it approved, on a variant gate.
+         */variantId: String?) {
+        self.principalId = principalId
+        self.at = at
+        self.variantId = variantId
+    }
+}
+
+
+
+extension GateQuorumApproval: Equatable, Hashable {
+    public static func ==(lhs: GateQuorumApproval, rhs: GateQuorumApproval) -> Bool {
+        if lhs.principalId != rhs.principalId {
+            return false
+        }
+        if lhs.at != rhs.at {
+            return false
+        }
+        if lhs.variantId != rhs.variantId {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(principalId)
+        hasher.combine(at)
+        hasher.combine(variantId)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateQuorumApproval: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateQuorumApproval {
+        return
+            try GateQuorumApproval(
+                principalId: FfiConverterString.read(from: &buf), 
+                at: FfiConverterString.read(from: &buf), 
+                variantId: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GateQuorumApproval, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.principalId, into: &buf)
+        FfiConverterString.write(value.at, into: &buf)
+        FfiConverterOptionString.write(value.variantId, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateQuorumApproval_lift(_ buf: RustBuffer) throws -> GateQuorumApproval {
+    return try FfiConverterTypeGateQuorumApproval.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateQuorumApproval_lower(_ value: GateQuorumApproval) -> RustBuffer {
+    return FfiConverterTypeGateQuorumApproval.lower(value)
+}
+
+
+/**
  * The subject a decision.v2 is bound to, copied back from the gate shown.
  */
 public struct GateSubjectBinding {
@@ -2785,6 +3001,13 @@ public struct GateV2Decision {
      * ([`decision_request`]), which must be [`GateVariantV2::approvable`].
      */
     public var variants: [GateVariantV2]
+    /**
+     * A gate that needs more than one approval (charter →
+     * `decisions/2026-11-09-a-gate-may-need-more-than-one-approver.md`),
+     * with how far it has got (`crate::gate_quorum`); `None` for a gate
+     * that passes on one.
+     */
+    public var quorum: GateQuorum?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -2809,13 +3032,20 @@ public struct GateV2Decision {
          * `subject` and `preview` are empty — each version carries its own —
          * and an approving option is answered with the chosen version
          * ([`decision_request`]), which must be [`GateVariantV2::approvable`].
-         */variants: [GateVariantV2] = []) {
+         */variants: [GateVariantV2] = [], 
+        /**
+         * A gate that needs more than one approval (charter →
+         * `decisions/2026-11-09-a-gate-may-need-more-than-one-approver.md`),
+         * with how far it has got (`crate::gate_quorum`); `None` for a gate
+         * that passes on one.
+         */quorum: GateQuorum? = nil) {
         self.gateId = gateId
         self.options = options
         self.preview = preview
         self.approvalsWithheld = approvalsWithheld
         self.subject = subject
         self.variants = variants
+        self.quorum = quorum
     }
 }
 
@@ -2841,6 +3071,9 @@ extension GateV2Decision: Equatable, Hashable {
         if lhs.variants != rhs.variants {
             return false
         }
+        if lhs.quorum != rhs.quorum {
+            return false
+        }
         return true
     }
 
@@ -2851,6 +3084,7 @@ extension GateV2Decision: Equatable, Hashable {
         hasher.combine(approvalsWithheld)
         hasher.combine(subject)
         hasher.combine(variants)
+        hasher.combine(quorum)
     }
 }
 
@@ -2867,7 +3101,8 @@ public struct FfiConverterTypeGateV2Decision: FfiConverterRustBuffer {
                 preview: FfiConverterSequenceTypeGatePreviewBlock.read(from: &buf), 
                 approvalsWithheld: FfiConverterOptionString.read(from: &buf), 
                 subject: FfiConverterOptionTypeGateSubjectBinding.read(from: &buf), 
-                variants: FfiConverterSequenceTypeGateVariantV2.read(from: &buf)
+                variants: FfiConverterSequenceTypeGateVariantV2.read(from: &buf), 
+                quorum: FfiConverterOptionTypeGateQuorum.read(from: &buf)
         )
     }
 
@@ -2878,6 +3113,7 @@ public struct FfiConverterTypeGateV2Decision: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.approvalsWithheld, into: &buf)
         FfiConverterOptionTypeGateSubjectBinding.write(value.subject, into: &buf)
         FfiConverterSequenceTypeGateVariantV2.write(value.variants, into: &buf)
+        FfiConverterOptionTypeGateQuorum.write(value.quorum, into: &buf)
     }
 }
 
@@ -14720,6 +14956,79 @@ extension PlaceholderKind: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * Who may approve a quorum gate (charter §1).
+ */
+
+public enum QuorumFrom {
+    
+    /**
+     * The stage's named deciders.
+     */
+    case deciders
+    /**
+     * The workspace's owners and admins.
+     */
+    case admins
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQuorumFrom: FfiConverterRustBuffer {
+    typealias SwiftType = QuorumFrom
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QuorumFrom {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .deciders
+        
+        case 2: return .admins
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: QuorumFrom, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .deciders:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .admins:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuorumFrom_lift(_ buf: RustBuffer) throws -> QuorumFrom {
+    return try FfiConverterTypeQuorumFrom.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQuorumFrom_lower(_ value: QuorumFrom) -> RustBuffer {
+    return FfiConverterTypeQuorumFrom.lower(value)
+}
+
+
+
+extension QuorumFrom: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * The quoted parent of a reply, as a host sees it.
  */
 
@@ -16646,6 +16955,30 @@ fileprivate struct FfiConverterOptionTypeGateAnswersV2: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeGateQuorum: FfiConverterRustBuffer {
+    typealias SwiftType = GateQuorum?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGateQuorum.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGateQuorum.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeGateSubjectBinding: FfiConverterRustBuffer {
     typealias SwiftType = GateSubjectBinding?
 
@@ -17580,6 +17913,31 @@ fileprivate struct FfiConverterSequenceTypeGateOptionV2: FfiConverterRustBuffer 
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeGateOptionV2.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGateQuorumApproval: FfiConverterRustBuffer {
+    typealias SwiftType = [GateQuorumApproval]
+
+    public static func write(_ value: [GateQuorumApproval], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGateQuorumApproval.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GateQuorumApproval] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GateQuorumApproval]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGateQuorumApproval.read(from: &buf))
         }
         return seq
     }
