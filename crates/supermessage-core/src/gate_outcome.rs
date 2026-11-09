@@ -122,6 +122,8 @@ struct Outcome {
     decided_by: Option<String>,
     /// The label of the version an approval chose, on a variant gate.
     chosen_label: Option<String>,
+    /// The release time of an approval held until then (`crate::gate_release`).
+    held_until: Option<String>,
 }
 
 /// How long a chosen version's label may be in a receipt: the hub's bound
@@ -188,6 +190,7 @@ fn outcome_of(item: &TimelineItemDto) -> Option<Outcome> {
             .map(|who| who.trim().to_string())
             .filter(|who| !who.is_empty()),
         chosen_label: chosen_label(content),
+        held_until: crate::gate_release::held_until(content),
     })
 }
 
@@ -329,8 +332,41 @@ pub fn resolved_gates(rows: &[TimelineRow]) -> HashMap<String, CustomEventOutcom
                         outcome.chosen_label.as_deref(),
                     ),
                     prompt: None,
+                    // Only an approval waits for a release time.
+                    held: outcome
+                        .held_until
+                        .clone()
+                        .filter(|_| outcome.decision.starts_with("approve"))
+                        .map(|held_until| crate::gate_release::GateHold {
+                            gate_id: gate.gate_id.to_string(),
+                            held_until,
+                        }),
                 },
             );
+        }
+    }
+    // A held approval that went ahead, was blocked at its release time, or was
+    // pulled back (`crate::gate_release`): settled by the hub's notice, from
+    // the identity that posted the gate, as the outcome itself is.
+    let notices: Vec<crate::gate_release::Notice> = rows
+        .iter()
+        .filter_map(|row| crate::gate_release::notice_of(&row.item))
+        .collect();
+    for notice in &notices {
+        for gate in gates.iter().filter(|gate| {
+            !gate.follow_up
+                && gate.gate_id == notice.gate_id
+                && gate.sender == Some(notice.sender.as_str())
+                && match (notice.board_id.as_deref(), gate.board_id) {
+                    (Some(ours), Some(theirs)) => ours == theirs,
+                    _ => true,
+                }
+        }) {
+            if let Some(outcome) = resolved.get_mut(&gate.identity) {
+                if outcome.held.is_some() {
+                    crate::gate_release::settle(outcome, &notice.settled);
+                }
+            }
         }
     }
     resolved

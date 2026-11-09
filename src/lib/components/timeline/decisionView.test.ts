@@ -11,8 +11,11 @@ import {
   answeredWhen,
   arrangeOptions,
   optionRole,
+  PULL_BACK_ELSEWHERE,
+  heldLine,
   quorumProgress,
   receiptOutcome,
+  releaseLine,
 } from "./decisionView";
 
 const opt = (id: string, label = id) => ({ id, label });
@@ -173,5 +176,33 @@ describe("quorumProgress", () => {
     const note = "You approved. It passes once enough others approve too.";
     const gate = { gateId: "gate_6e19", options: [opt("reject")], approvalsWithheld: note, quorum };
     expect(answerElsewhere({ ...base, options: [opt("reject")], gateV2: gate })).toBe(note);
+  });
+});
+
+describe("releaseLine and heldLine", () => {
+  const MONDAY_9 = Date.parse("2026-11-16T09:00:00.000Z");
+  const base: CustomEventDecision = { prompt: "Approve?", options: [opt("approve")], subject: "gate_6e19" };
+  const gate = (release: { holdForMinutes: number | null; notBefore: string | null }) => ({
+    ...base,
+    gateV2: { gateId: "gate_6e19", options: [opt("approve")], approvalsWithheld: null, release },
+  });
+
+  it("says what would hold an approval, in the core's words", () => {
+    expect(releaseLine(gate({ holdForMinutes: 30, notBefore: null }), 0)).toBe("If approved, it waits 30 min before it goes ahead.");
+    const embargo = gate({ holdForMinutes: null, notBefore: "2026-11-16T09:00:00.000Z" });
+    expect(releaseLine(embargo, MONDAY_9 - 3 * 86_400_000)).toBe("If approved, it goes ahead in 3 d at the earliest.");
+    expect(releaseLine(embargo, MONDAY_9 + 60_000)).toBeNull();
+    expect(releaseLine(gate({ holdForMinutes: 30, notBefore: "2026-11-16T09:00:00.000Z" }), MONDAY_9 - 5 * 3_600_000)).toBe(
+      "If approved, it goes ahead in 5 h at the earliest, and no sooner than 30 min after the approval.",
+    );
+    expect(releaseLine(base, 0)).toBeNull();
+  });
+
+  it("says until when a held approval waits, and where to pull it back", () => {
+    const outcome = { decision: "approve", decidedBy: "rakesh", summary: "Approved by rakesh", prompt: null };
+    expect(heldLine(outcome, 0)).toBeNull();
+    const held = { ...outcome, held: { gateId: "gate_6e19", heldUntil: "2026-11-16T09:00:00.000Z" } };
+    expect(heldLine(held, MONDAY_9 - 25 * 60_000)).toBe(`Goes ahead in 25 min unless pulled back. ${PULL_BACK_ELSEWHERE}`);
+    expect(heldLine(held, MONDAY_9 + 60_000)).toBe(`Going ahead now. ${PULL_BACK_ELSEWHERE}`);
   });
 });

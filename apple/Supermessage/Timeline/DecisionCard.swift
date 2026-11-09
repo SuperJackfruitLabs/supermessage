@@ -151,7 +151,8 @@ struct CustomEventCard: View {
             // remembers answering, the board has the answer.
             receiptCard(
                 outcome: outcome.summary, at: nil, headline: outcome.prompt, fields: fields,
-                reasoning: reasoning, newerVersion: newerVersion, link: link, awaitingBoard: false)
+                reasoning: reasoning, newerVersion: newerVersion, link: link, awaitingBoard: false,
+                held: outcome.held)
                 .transition(receiptTransition)
         } else if let decision {
             // Pending and its receipt share one slot, so the change between
@@ -268,6 +269,17 @@ struct CustomEventCard: View {
                 // this could not be drawn in full, and says so. A delivery
                 // follow-up shows the post it is about the same way.
                 GatePreviewBlocks(blocks: gate.preview)
+                if let release = gate.release,
+                   let line = SupermessageFFI.gateReleaseLine(
+                       release: release, nowMs: Int64(Date().timeIntervalSince1970 * 1000))
+                {
+                    // An approval here would wait before it acts (`core::gate_release`).
+                    Text(line)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.contentMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("decision-release")
+                }
                 if let quorum = gate.quorum {
                     // A gate that needs more than one approval: how far it
                     // has got, worded by the core (`core::gate_quorum`).
@@ -331,7 +343,8 @@ struct CustomEventCard: View {
     /// more than it knows.
     private func receiptCard(
         outcome: String, at: Date?, headline: String?, fields: [CustomEventField],
-        reasoning: String?, newerVersion: Bool, link: String?, awaitingBoard: Bool
+        reasoning: String?, newerVersion: Bool, link: String?, awaitingBoard: Bool,
+        held: GateHold? = nil
     ) -> some View {
         let digest = FieldDigest(fields: fields, prompt: headline ?? "")
         return VStack(alignment: .leading, spacing: 8) {
@@ -351,6 +364,10 @@ struct CustomEventCard: View {
                     .metaFace()
                     .foregroundStyle(Theme.contentMuted)
                     .accessibilityIdentifier("decision-awaiting-board")
+            }
+            if let held {
+                // Approved, and held until its release time (`core::gate_release`).
+                HeldApproval(held: held, onDecide: onDecide)
             }
             summary(digest)
             details(digest.rest)
@@ -1077,6 +1094,71 @@ private struct OptionLabel: View {
     }
 }
 
+/// A held approval on its receipt: until when, worded by the core against
+/// this device's clock, and a Pull back that sends the card back for changes
+/// with a comment saying why. superpipeline judges whether this reader may;
+/// the hub says so in the room either way.
+private struct HeldApproval: View {
+    let held: GateHold
+    var onDecide: ((GateAnswer) async -> Bool)?
+    @State private var asking = false
+    @State private var comment = ""
+    @State private var sending = false
+    @State private var sent = false
+    @State private var failed = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(SupermessageFFI.gateHeldLine(
+                heldUntil: held.heldUntil, nowMs: Int64(Date().timeIntervalSince1970 * 1000)))
+                .font(.footnote)
+                .foregroundStyle(Theme.contentMuted)
+                .accessibilityIdentifier("decision-held")
+            if onDecide != nil && !sent {
+                Button("Pull back") { asking = true }
+                    .disabled(sending)
+                    .accessibilityIdentifier("decision-pull-back")
+            }
+            if sent {
+                Text("Pull-back sent")
+                    .metaFace()
+                    .foregroundStyle(Theme.contentMuted)
+                    .accessibilityIdentifier("decision-pull-back-sent")
+            }
+            if failed {
+                Text("Not sent. Try again.")
+                    .metaFace()
+                    .foregroundStyle(Theme.danger)
+                    .accessibilityIdentifier("decision-pull-back-failed")
+            }
+        }
+        .alert("Pull back this approval?", isPresented: $asking) {
+            TextField("Why?", text: $comment)
+                .accessibilityIdentifier("decision-pull-back-comment")
+            Button("Pull back") { send() }
+                .disabled(comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It will not go ahead. The card goes back for changes, with your comment as the reason.")
+        }
+    }
+
+    private func send() {
+        guard let onDecide else { return }
+        let why = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !why.isEmpty else { return }
+        sending = true
+        failed = false
+        Task {
+            let ok = await onDecide(GateAnswer(
+                subject: held.gateId, optionId: "", comment: why, prompt: "", pullBack: held))
+            sending = false
+            sent = ok
+            failed = !ok
+        }
+    }
+}
+
 /// One answer to a decision, on its way out of the card.
 ///
 /// Carries `subject` — what the decision resolves, a superpipeline `gate_id` today —
@@ -1113,6 +1195,9 @@ struct GateAnswer {
     /// The version picked on a gate.v2 that offers a choice of them, sent with
     /// an approval of it. `nil` on every other answer.
     var chosenVariant: String? = nil
+    /// A held approval being pulled back, with `comment` as the reason; sent
+    /// with `Session.pullBackGate`.
+    var pullBack: GateHold? = nil
 }
 
 #if DEBUG

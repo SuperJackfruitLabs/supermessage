@@ -592,6 +592,11 @@ void uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2(void*_Nonnull 
 void uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2_to(void*_Nonnull ptr, RustBuffer room_id, RustBuffer gate, RustBuffer option_id, RustBuffer comment, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_GATE_PULL_BACK
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_GATE_PULL_BACK
+void uniffi_supermessage_ffi_fn_method_core_send_gate_pull_back(void*_Nonnull ptr, RustBuffer room_id, RustBuffer gate_id, RustBuffer comment, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_MESSAGE
 void uniffi_supermessage_ffi_fn_method_core_send_message(void*_Nonnull ptr, RustBuffer room_id, RustBuffer body, RustBuffer mentions, RustCallStatus *_Nonnull out_status
@@ -777,6 +782,16 @@ RustBuffer uniffi_supermessage_ffi_fn_func_first_run_script(RustCallStatus *_Non
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FOLD_TURN
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_FOLD_TURN
 RustBuffer uniffi_supermessage_ffi_fn_func_fold_turn(RustBuffer room_id, RustBuffer inputs, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GATE_HELD_LINE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GATE_HELD_LINE
+RustBuffer uniffi_supermessage_ffi_fn_func_gate_held_line(RustBuffer held_until, int64_t now_ms, RustCallStatus *_Nonnull out_status
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GATE_RELEASE_LINE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GATE_RELEASE_LINE
+RustBuffer uniffi_supermessage_ffi_fn_func_gate_release_line(RustBuffer release, int64_t now_ms, RustCallStatus *_Nonnull out_status
 );
 #endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_FUNC_GENERIC_NOTIFICATION
@@ -1416,6 +1431,18 @@ uint16_t uniffi_supermessage_ffi_checksum_func_first_run_script(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FOLD_TURN
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_FOLD_TURN
 uint16_t uniffi_supermessage_ffi_checksum_func_fold_turn(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GATE_HELD_LINE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GATE_HELD_LINE
+uint16_t uniffi_supermessage_ffi_checksum_func_gate_held_line(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GATE_RELEASE_LINE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_FUNC_GATE_RELEASE_LINE
+uint16_t uniffi_supermessage_ffi_checksum_func_gate_release_line(void
     
 );
 #endif
@@ -2076,6 +2103,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_DECISION_V2_TO
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_DECISION_V2_TO
 uint16_t uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2_to(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_PULL_BACK
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_GATE_PULL_BACK
+uint16_t uniffi_supermessage_ffi_checksum_method_core_send_gate_pull_back(void
     
 );
 #endif

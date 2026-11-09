@@ -1924,6 +1924,12 @@ public struct CustomEventOutcome {
      * had one to answer.
      */
     public var prompt: String?
+    /**
+     * An approval recorded but held until its release time
+     * (`crate::gate_release`): the receipt says until when and offers Pull
+     * back. `None` once it went ahead, was pulled back, or never waited.
+     */
+    public var held: GateHold?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -1948,11 +1954,17 @@ public struct CustomEventOutcome {
          * The question the gate asked, kept so a receipt says what was decided —
          * the prompt of the decision it replaces. `None` when the card never
          * had one to answer.
-         */prompt: String?) {
+         */prompt: String?, 
+        /**
+         * An approval recorded but held until its release time
+         * (`crate::gate_release`): the receipt says until when and offers Pull
+         * back. `None` once it went ahead, was pulled back, or never waited.
+         */held: GateHold? = nil) {
         self.decision = decision
         self.decidedBy = decidedBy
         self.summary = summary
         self.prompt = prompt
+        self.held = held
     }
 }
 
@@ -1972,6 +1984,9 @@ extension CustomEventOutcome: Equatable, Hashable {
         if lhs.prompt != rhs.prompt {
             return false
         }
+        if lhs.held != rhs.held {
+            return false
+        }
         return true
     }
 
@@ -1980,6 +1995,7 @@ extension CustomEventOutcome: Equatable, Hashable {
         hasher.combine(decidedBy)
         hasher.combine(summary)
         hasher.combine(prompt)
+        hasher.combine(held)
     }
 }
 
@@ -1994,7 +2010,8 @@ public struct FfiConverterTypeCustomEventOutcome: FfiConverterRustBuffer {
                 decision: FfiConverterString.read(from: &buf), 
                 decidedBy: FfiConverterOptionString.read(from: &buf), 
                 summary: FfiConverterString.read(from: &buf), 
-                prompt: FfiConverterOptionString.read(from: &buf)
+                prompt: FfiConverterOptionString.read(from: &buf), 
+                held: FfiConverterOptionTypeGateHold.read(from: &buf)
         )
     }
 
@@ -2003,6 +2020,7 @@ public struct FfiConverterTypeCustomEventOutcome: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.decidedBy, into: &buf)
         FfiConverterString.write(value.summary, into: &buf)
         FfiConverterOptionString.write(value.prompt, into: &buf)
+        FfiConverterOptionTypeGateHold.write(value.held, into: &buf)
     }
 }
 
@@ -2528,6 +2546,88 @@ public func FfiConverterTypeGateAnswersV2_lower(_ value: GateAnswersV2) -> RustB
 
 
 /**
+ * A held approval on a receipt: what a host needs to say until when, and to
+ * offer Pull back.
+ */
+public struct GateHold {
+    /**
+     * Handed back verbatim in a pull-back; never drawn.
+     */
+    public var gateId: String
+    /**
+     * The release time, an ISO timestamp ([`held_line`]).
+     */
+    public var heldUntil: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Handed back verbatim in a pull-back; never drawn.
+         */gateId: String, 
+        /**
+         * The release time, an ISO timestamp ([`held_line`]).
+         */heldUntil: String) {
+        self.gateId = gateId
+        self.heldUntil = heldUntil
+    }
+}
+
+
+
+extension GateHold: Equatable, Hashable {
+    public static func ==(lhs: GateHold, rhs: GateHold) -> Bool {
+        if lhs.gateId != rhs.gateId {
+            return false
+        }
+        if lhs.heldUntil != rhs.heldUntil {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(gateId)
+        hasher.combine(heldUntil)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateHold: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateHold {
+        return
+            try GateHold(
+                gateId: FfiConverterString.read(from: &buf), 
+                heldUntil: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GateHold, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.gateId, into: &buf)
+        FfiConverterString.write(value.heldUntil, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateHold_lift(_ buf: RustBuffer) throws -> GateHold {
+    return try FfiConverterTypeGateHold.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateHold_lower(_ value: GateHold) -> RustBuffer {
+    return FfiConverterTypeGateHold.lower(value)
+}
+
+
+/**
  * One answer a gate.v2 offers.
  */
 public struct GateOptionV2 {
@@ -2897,6 +2997,87 @@ public func FfiConverterTypeGateQuorumApproval_lower(_ value: GateQuorumApproval
 
 
 /**
+ * What would hold an approval of this gate, as the gate said it.
+ */
+public struct GateRelease {
+    /**
+     * The stage's cooling-off period, 5 minutes to 7 days.
+     */
+    public var holdForMinutes: UInt32?
+    /**
+     * The subject's own not-before time, an ISO timestamp.
+     */
+    public var notBefore: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The stage's cooling-off period, 5 minutes to 7 days.
+         */holdForMinutes: UInt32?, 
+        /**
+         * The subject's own not-before time, an ISO timestamp.
+         */notBefore: String?) {
+        self.holdForMinutes = holdForMinutes
+        self.notBefore = notBefore
+    }
+}
+
+
+
+extension GateRelease: Equatable, Hashable {
+    public static func ==(lhs: GateRelease, rhs: GateRelease) -> Bool {
+        if lhs.holdForMinutes != rhs.holdForMinutes {
+            return false
+        }
+        if lhs.notBefore != rhs.notBefore {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(holdForMinutes)
+        hasher.combine(notBefore)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateRelease: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateRelease {
+        return
+            try GateRelease(
+                holdForMinutes: FfiConverterOptionUInt32.read(from: &buf), 
+                notBefore: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GateRelease, into buf: inout [UInt8]) {
+        FfiConverterOptionUInt32.write(value.holdForMinutes, into: &buf)
+        FfiConverterOptionString.write(value.notBefore, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateRelease_lift(_ buf: RustBuffer) throws -> GateRelease {
+    return try FfiConverterTypeGateRelease.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateRelease_lower(_ value: GateRelease) -> RustBuffer {
+    return FfiConverterTypeGateRelease.lower(value)
+}
+
+
+/**
  * The subject a decision.v2 is bound to, copied back from the gate shown.
  */
 public struct GateSubjectBinding {
@@ -3008,6 +3189,13 @@ public struct GateV2Decision {
      * that passes on one.
      */
     public var quorum: GateQuorum?
+    /**
+     * What would hold an approval before it acts (charter →
+     * `decisions/2026-11-09-an-approval-may-wait-for-its-release-time.md`);
+     * worded at the host's clock by `crate::gate_release::release_line`.
+     * `None` for a gate whose approval acts at once.
+     */
+    public var release: GateRelease?
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -3038,7 +3226,13 @@ public struct GateV2Decision {
          * `decisions/2026-11-09-a-gate-may-need-more-than-one-approver.md`),
          * with how far it has got (`crate::gate_quorum`); `None` for a gate
          * that passes on one.
-         */quorum: GateQuorum? = nil) {
+         */quorum: GateQuorum? = nil, 
+        /**
+         * What would hold an approval before it acts (charter →
+         * `decisions/2026-11-09-an-approval-may-wait-for-its-release-time.md`);
+         * worded at the host's clock by `crate::gate_release::release_line`.
+         * `None` for a gate whose approval acts at once.
+         */release: GateRelease? = nil) {
         self.gateId = gateId
         self.options = options
         self.preview = preview
@@ -3046,6 +3240,7 @@ public struct GateV2Decision {
         self.subject = subject
         self.variants = variants
         self.quorum = quorum
+        self.release = release
     }
 }
 
@@ -3074,6 +3269,9 @@ extension GateV2Decision: Equatable, Hashable {
         if lhs.quorum != rhs.quorum {
             return false
         }
+        if lhs.release != rhs.release {
+            return false
+        }
         return true
     }
 
@@ -3085,6 +3283,7 @@ extension GateV2Decision: Equatable, Hashable {
         hasher.combine(subject)
         hasher.combine(variants)
         hasher.combine(quorum)
+        hasher.combine(release)
     }
 }
 
@@ -3102,7 +3301,8 @@ public struct FfiConverterTypeGateV2Decision: FfiConverterRustBuffer {
                 approvalsWithheld: FfiConverterOptionString.read(from: &buf), 
                 subject: FfiConverterOptionTypeGateSubjectBinding.read(from: &buf), 
                 variants: FfiConverterSequenceTypeGateVariantV2.read(from: &buf), 
-                quorum: FfiConverterOptionTypeGateQuorum.read(from: &buf)
+                quorum: FfiConverterOptionTypeGateQuorum.read(from: &buf), 
+                release: FfiConverterOptionTypeGateRelease.read(from: &buf)
         )
     }
 
@@ -3114,6 +3314,7 @@ public struct FfiConverterTypeGateV2Decision: FfiConverterRustBuffer {
         FfiConverterOptionTypeGateSubjectBinding.write(value.subject, into: &buf)
         FfiConverterSequenceTypeGateVariantV2.write(value.variants, into: &buf)
         FfiConverterOptionTypeGateQuorum.write(value.quorum, into: &buf)
+        FfiConverterOptionTypeGateRelease.write(value.release, into: &buf)
     }
 }
 
@@ -16955,6 +17156,30 @@ fileprivate struct FfiConverterOptionTypeGateAnswersV2: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeGateHold: FfiConverterRustBuffer {
+    typealias SwiftType = GateHold?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGateHold.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGateHold.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeGateQuorum: FfiConverterRustBuffer {
     typealias SwiftType = GateQuorum?
 
@@ -16971,6 +17196,30 @@ fileprivate struct FfiConverterOptionTypeGateQuorum: FfiConverterRustBuffer {
         switch try readInt(&buf) as Int8 {
         case 0: return nil
         case 1: return try FfiConverterTypeGateQuorum.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterOptionTypeGateRelease: FfiConverterRustBuffer {
+    typealias SwiftType = GateRelease?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeGateRelease.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeGateRelease.read(from: &buf)
         default: throw UniffiInternalError.unexpectedOptionalTag
         }
     }

@@ -927,6 +927,7 @@ fn decide_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> NotificationDt
                     || event_type == crate::permission_v2::PERMISSION_OUTCOME_EVENT_TYPE
                     || event_type == crate::attention_v2::ATTENTION_OUTCOME_EVENT_TYPE
                     || event_type == crate::gate_quorum::GATE_PROGRESS_TYPE
+                    || crate::gate_release::is_notice_type(Some(&event_type))
                 {
                     return quiet(
                         NotificationSuppression::NotNews,
@@ -1776,6 +1777,30 @@ mod tests {
         }));
         assert_eq!(note.suppress, Some(NotificationSuppression::NotNews));
         assert_eq!(note.category, NotificationCategory::Message);
+    }
+
+    #[test]
+    fn a_held_approvals_release_and_pull_back_are_not_news() {
+        // The hub's readable reply beside each is the news.
+        for event_type in [
+            crate::gate_release::RELEASED_TYPE,
+            crate::gate_release::PULLED_BACK_TYPE,
+        ] {
+            let content = corpus_accept(event_type, 0);
+            let note = notify(json!({
+                "type": event_type,
+                "event_id": "$e",
+                "sender": "@board_release:hs",
+                "origin_server_ts": 1,
+                "content": content,
+            }));
+            assert_eq!(
+                note.suppress,
+                Some(NotificationSuppression::NotNews),
+                "{event_type}"
+            );
+            assert_eq!(note.category, NotificationCategory::Message, "{event_type}");
+        }
     }
 
     #[test]

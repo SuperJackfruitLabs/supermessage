@@ -263,6 +263,7 @@ pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
         decided_by: None,
         summary: MOVED_BELOW_SUMMARY.to_string(),
         prompt: None,
+        held: None,
     };
     let mut resolved = crate::gate_outcome::resolved_gates(rows);
     // Gate, permission and waiting-card identities never collide (`gate:` /

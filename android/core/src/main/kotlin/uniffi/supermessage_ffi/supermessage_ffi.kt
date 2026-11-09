@@ -52,6 +52,7 @@ import uniffi.supermessage_core.FfiConverterTypeDecisionDeadline
 import uniffi.supermessage_core.FfiConverterTypeFirstRunScript
 import uniffi.supermessage_core.FfiConverterTypeFirstRunStep
 import uniffi.supermessage_core.FfiConverterTypeGateAnswers
+import uniffi.supermessage_core.FfiConverterTypeGateRelease
 import uniffi.supermessage_core.FfiConverterTypeGateV2Decision
 import uniffi.supermessage_core.FfiConverterTypeLiveActivityToken
 import uniffi.supermessage_core.FfiConverterTypeLiveActivityTokenKind
@@ -104,6 +105,7 @@ import uniffi.supermessage_core.FfiConverterTypeWidgetWrite
 import uniffi.supermessage_core.FirstRunScript
 import uniffi.supermessage_core.FirstRunStep
 import uniffi.supermessage_core.GateAnswers
+import uniffi.supermessage_core.GateRelease
 import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.LiveActivityToken
 import uniffi.supermessage_core.LiveActivityTokenKind
@@ -165,6 +167,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferDecisionDeadline
 import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunScript
 import uniffi.supermessage_core.RustBuffer as RustBufferFirstRunStep
 import uniffi.supermessage_core.RustBuffer as RustBufferGateAnswers
+import uniffi.supermessage_core.RustBuffer as RustBufferGateRelease
 import uniffi.supermessage_core.RustBuffer as RustBufferGateV2Decision
 import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityToken
 import uniffi.supermessage_core.RustBuffer as RustBufferLiveActivityTokenKind
@@ -1249,6 +1252,12 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1388,6 +1397,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2_to(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gate`: RustBufferGateV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_send_gate_pull_back(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`gateId`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_message(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`body`: RustBuffer.ByValue,`mentions`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_permission_answer(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`optionId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1461,6 +1472,10 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_func_first_run_script(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferFirstRunScript.ByValue
     fun uniffi_supermessage_ffi_fn_func_fold_turn(`roomId`: RustBuffer.ByValue,`inputs`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_gate_held_line(`heldUntil`: RustBuffer.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_func_gate_release_line(`release`: RustBufferGateRelease.ByValue,`nowMs`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_generic_notification(`roomId`: RustBuffer.ByValue,`eventId`: RustBuffer.ByValue,`title`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferPlannedNotification.ByValue
@@ -1712,6 +1727,10 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_fold_turn(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_func_gate_held_line(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_func_gate_release_line(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_generic_notification(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_group_timeline_rows(
@@ -1932,6 +1951,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2_to(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_gate_pull_back(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_message(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_permission_answer(
@@ -2044,6 +2065,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_fold_turn() != 3050.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_gate_held_line() != 7820.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_func_gate_release_line() != 34434.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_func_generic_notification() != 32098.toShort()) {
@@ -2374,6 +2401,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2_to() != 24924.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_gate_pull_back() != 41271.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384.toShort()) {
@@ -3317,6 +3347,12 @@ public interface CoreInterface {
      * as the card's answer is.
      */
     fun `sendGateDecisionV2To`(`roomId`: kotlin.String, `gate`: GateV2Decision, `optionId`: kotlin.String, `comment`: kotlin.String?, `inReplyTo`: kotlin.String)
+    
+    /**
+     * Pull a held approval back (`supermessage_core::gate_release`) with the
+     * reader's comment saying why. `in_reply_to` is the gate card's event.
+     */
+    fun `sendGatePullBack`(`roomId`: kotlin.String, `gateId`: kotlin.String, `comment`: kotlin.String, `inReplyTo`: kotlin.String)
     
     /**
      * Send a plain-text message to the focused room.
@@ -4559,6 +4595,22 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_gate_decision_v2_to(
         it, FfiConverterString.lower(`roomId`),FfiConverterTypeGateV2Decision.lower(`gate`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Pull a held approval back (`supermessage_core::gate_release`) with the
+     * reader's comment saying why. `in_reply_to` is the gate card's event.
+     */
+    @Throws(FfiException::class)override fun `sendGatePullBack`(`roomId`: kotlin.String, `gateId`: kotlin.String, `comment`: kotlin.String, `inReplyTo`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_gate_pull_back(
+        it, FfiConverterString.lower(`roomId`),FfiConverterString.lower(`gateId`),FfiConverterString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),_status)
 }
     }
     
@@ -8321,6 +8373,10 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
 
 
 
+
+
+
+
         /**
          * What the dock above the composer says after the reader wrote to an agent —
          * see `core::acknowledgement`. A free function for the same reason as
@@ -8497,6 +8553,32 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
     uniffiRustCall() { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_fold_turn(
         FfiConverterString.lower(`roomId`),FfiConverterSequenceTypeTurnInput.lower(`inputs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "Goes ahead in 25 min unless pulled back." — see
+         * `core::gate_release::held_line`.
+         */ fun `gateHeldLine`(`heldUntil`: kotlin.String, `nowMs`: kotlin.Long): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_gate_held_line(
+        FfiConverterString.lower(`heldUntil`),FfiConverterLong.lower(`nowMs`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * "If approved, it waits 30 min before it goes ahead." — see
+         * `core::gate_release::release_line`. Given the host's clock, as a deadline is.
+         */ fun `gateReleaseLine`(`release`: GateRelease, `nowMs`: kotlin.Long): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_gate_release_line(
+        FfiConverterTypeGateRelease.lower(`release`),FfiConverterLong.lower(`nowMs`),_status)
 }
     )
     }

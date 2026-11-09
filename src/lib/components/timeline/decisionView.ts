@@ -1,4 +1,4 @@
-import type { CustomEventDecision, CustomEventDecisionOption } from "$lib/ipc";
+import type { CustomEventDecision, CustomEventDecisionOption, CustomEventOutcome } from "$lib/ipc";
 
 /**
  * How a decision's answers are laid out and acknowledged — iOS's
@@ -123,4 +123,43 @@ export function answerElsewhere(decision: CustomEventDecision): string | null {
  */
 export function quorumProgress(decision: CustomEventDecision): string | null {
   return decision.gateV2?.quorum?.progress ?? null;
+}
+
+/** "25 min", "3 h", "6 d" — the core's own words for a span (`core::gate_release`). */
+function span(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 60) return `${Math.max(1, minutes)} min`;
+  const hours = Math.floor(minutes / 60);
+  return hours < 48 ? `${hours} h` : `${Math.floor(hours / 24)} d`;
+}
+
+/**
+ * The line an open gate shows when an approval would wait, at `nowMs`, or null when nothing would
+ * hold it any more. The same words as `core::gate_release::release_line`, which the phones call.
+ */
+export function releaseLine(decision: CustomEventDecision, nowMs: number): string | null {
+  const release = decision.gateV2?.release;
+  if (!release) return null;
+  const hold = release.holdForMinutes ? span(release.holdForMinutes * 60_000) : null;
+  const at = release.notBefore ? Date.parse(release.notBefore) : Number.NaN;
+  const notBefore = Number.isFinite(at) && at > nowMs ? span(at - nowMs) : null;
+  if (notBefore && hold) return `If approved, it goes ahead in ${notBefore} at the earliest, and no sooner than ${hold} after the approval.`;
+  if (notBefore) return `If approved, it goes ahead in ${notBefore} at the earliest.`;
+  if (hold) return `If approved, it waits ${hold} before it goes ahead.`;
+  return null;
+}
+
+/** Where a held approval is pulled back from: the desktop sends no pull-back. */
+export const PULL_BACK_ELSEWHERE = "To pull it back, use your phone or the board.";
+
+/**
+ * The line a held receipt shows at `nowMs` (`core::gate_release::held_line`), with where to pull
+ * it back; null for a receipt that is not held.
+ */
+export function heldLine(outcome: CustomEventOutcome, nowMs: number): string | null {
+  const held = outcome.held;
+  if (!held) return null;
+  const at = Date.parse(held.heldUntil);
+  const when = Number.isFinite(at) && at > nowMs ? `Goes ahead in ${span(at - nowMs)} unless pulled back.` : "Going ahead now.";
+  return `${when} ${PULL_BACK_ELSEWHERE}`;
 }

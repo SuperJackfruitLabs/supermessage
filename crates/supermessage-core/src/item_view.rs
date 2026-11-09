@@ -929,6 +929,12 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         {
             ItemView::None
         }
+        // A held approval's release or pull-back: the hub's readable reply
+        // beside it says it, and the gate's receipt is settled by it
+        // (`crate::gate_release`).
+        "customMessage" if crate::gate_release::is_notice_type(item.detail.as_deref()) => {
+            ItemView::None
+        }
         // And for a waiting card's receipt (`crate::attention_v2`).
         "customMessage"
             if item.detail.as_deref()

@@ -311,7 +311,15 @@ internal fun RoomPane(
                             val deliveryV2 = answer.deliveryV2
                             val permissionV2 = answer.permissionV2
                             val attentionV2 = answer.attentionV2
-                            if (gateV2 != null) {
+                            val pullBack = answer.pullBack
+                            if (pullBack != null) {
+                                session.pullBackGate(
+                                    eventId = row.item.eventId,
+                                    gateId = pullBack.gateId,
+                                    comment = answer.comment.orEmpty(),
+                                    roomId = currentRoomId,
+                                )
+                            } else if (gateV2 != null) {
                                 session.answerGateV2(
                                     eventId = row.item.eventId,
                                     gate = gateV2,

@@ -575,6 +575,7 @@ pub fn resolved_attention(rows: &[TimelineRow]) -> HashMap<String, CustomEventOu
                 decided_by: outcome.decided_by.clone(),
                 summary: summary(outcome, carrier.payload),
                 prompt: None,
+                held: None,
             },
         );
     }

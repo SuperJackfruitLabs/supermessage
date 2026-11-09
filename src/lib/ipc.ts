@@ -877,6 +877,8 @@ export interface EnvelopeDecision {
    * passes on one. The desktop draws only its progress line.
    */
   quorum?: { required: number; progress: string; approvedByYou: boolean } | null;
+  /** What would hold an approval before it acts (`core::gate_release::GateRelease`); absent when nothing would. */
+  release?: { holdForMinutes: number | null; notBefore: string | null } | null;
 }
 
 /**
@@ -893,6 +895,12 @@ export interface CustomEventOutcome {
   summary: string;
   /** The question the gate asked, kept so the receipt says what was decided. */
   prompt: string | null;
+  /**
+   * An approval held until its release time (`core::gate_release::GateHold`), absent once it went
+   * ahead, was pulled back, or never waited. The desktop says until when; pulling back is on the
+   * phone or the board.
+   */
+  held?: { gateId: string; heldUntil: string };
 }
 
 /**

@@ -551,6 +551,7 @@ pub fn resolved_permissions(rows: &[TimelineRow]) -> HashMap<String, CustomEvent
                 decided_by: outcome.decided_by.clone(),
                 summary: summary(outcome, words),
                 prompt: None,
+                held: None,
             },
         );
     }

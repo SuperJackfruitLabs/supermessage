@@ -309,6 +309,13 @@ pub struct GateV2Decision {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[uniffi(default = None)]
     pub quorum: Option<crate::gate_quorum::GateQuorum>,
+    /// What would hold an approval before it acts (charter →
+    /// `decisions/2026-11-09-an-approval-may-wait-for-its-release-time.md`);
+    /// worded at the host's clock by `crate::gate_release::release_line`.
+    /// `None` for a gate whose approval acts at once.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub release: Option<crate::gate_release::GateRelease>,
 }
 
 /// One version a variant gate offers: its label, its own subject and
@@ -411,6 +418,7 @@ pub(crate) struct ParsedGateV2 {
         crate::gate_quorum::QuorumFrom,
         Vec<crate::gate_quorum::GateQuorumApproval>,
     )>,
+    release: Option<crate::gate_release::GateRelease>,
 }
 
 /// One version of a variant gate as read off the wire.
@@ -802,6 +810,7 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedGateV2>
         (parse_subject(content).ok()?, Vec::new())
     };
     let quorum = crate::gate_quorum::parse_quorum(content).ok()?;
+    let release = crate::gate_release::parse_release(content).ok()?;
     Some(ParsedGateV2 {
         gate_id,
         card_title,
@@ -813,6 +822,7 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedGateV2>
         subject,
         variants,
         quorum,
+        release,
     })
 }
 
@@ -859,6 +869,12 @@ impl ParsedGateV2 {
     }
 
     /// The card a host draws.
+    /// [`Self::decision`], for a test elsewhere in the crate.
+    #[cfg(test)]
+    pub(crate) fn decision_for_test(&self) -> GateV2Decision {
+        self.decision()
+    }
+
     fn decision(&self) -> GateV2Decision {
         let note = if self.variants.is_empty() {
             APPROVALS_WITHHELD_NOTE
@@ -891,6 +907,7 @@ impl ParsedGateV2 {
                     approved_by_you: false,
                 }
             }),
+            release: self.release.clone(),
         }
     }
 
