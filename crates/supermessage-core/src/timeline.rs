@@ -1919,6 +1919,13 @@ pub(crate) fn row_from_parts(
         // the two apart.
         dto.detail = Some(notice_type.to_string());
         dto.custom_payload = Some(crate::dto::CustomPayload(payload));
+    } else if let Some(payload) = own_gate_decision_from_raw(raw, &dto, own_user) {
+        // The reader's own answer to a gate: `crate::gate_quorum` reads it
+        // to stop offering approval of a quorum gate the reader approved.
+        // No renderer is registered for the type, so it still draws as the
+        // sentence it is.
+        dto.detail = Some(crate::gate_v2::GATE_DECISION_V2_SUITE_TYPE.to_string());
+        dto.custom_payload = Some(crate::dto::CustomPayload(payload));
     }
     // An agent's answer, spoken: the voice message names the text it speaks,
     // and `crate::voice_reply::reconcile` folds the two into one row once
@@ -2006,6 +2013,34 @@ fn gate_outcome_from_raw(raw: Option<&Raw<AnySyncTimelineEvent>>) -> Option<serd
     }
     let content: serde_json::Value = raw.get_field("content").ok()??;
     if !crate::gate_outcome::is_outcome_message(&content) {
+        return None;
+    }
+    bound_custom_payload(content, CUSTOM_PAYLOAD_MAX_BYTES)
+}
+
+/// A message's `content`, when it is a gate decision.v2 the reader sent,
+/// bounded like a custom event's payload. Only the reader's own: anyone else's
+/// answer says nothing about what this reader may do.
+fn own_gate_decision_from_raw(
+    raw: Option<&Raw<AnySyncTimelineEvent>>,
+    dto: &crate::dto::TimelineItemDto,
+    own_user: &UserId,
+) -> Option<serde_json::Value> {
+    let raw = raw?;
+    if dto.sender.as_deref() != Some(own_user.as_str())
+        || !raw
+            .json()
+            .get()
+            .contains(crate::gate_v2::GATE_DECISION_V2_SUITE_TYPE)
+    {
+        return None;
+    }
+    let content: serde_json::Value = raw.get_field("content").ok()??;
+    if content
+        .get("suite_event_type")
+        .and_then(serde_json::Value::as_str)
+        != Some(crate::gate_v2::GATE_DECISION_V2_SUITE_TYPE)
+    {
         return None;
     }
     bound_custom_payload(content, CUSTOM_PAYLOAD_MAX_BYTES)
@@ -4365,6 +4400,76 @@ mod tests {
             Some(raw),
             matrix_sdk::ruma::user_id!("@me:id.agentpod.dev"),
         )
+    }
+
+    /// A gate decision.v2 from `sender`, projected as the timeline does.
+    fn gate_decision_row(sender: &str) -> crate::dto::TimelineRow {
+        let content = serde_json::json!({
+            "msgtype": "m.text",
+            "body": "Approved",
+            "schema_version": 1,
+            "suite_event_type": crate::gate_v2::GATE_DECISION_V2_SUITE_TYPE,
+            "gate_id": "gate_6e19",
+            "option_id": "approve",
+            "m.relates_to": { "rel_type": "m.reference", "event_id": "$gate" }
+        });
+        let raw: Raw<AnySyncTimelineEvent> = Raw::new(&serde_json::json!({
+            "type": "m.room.message",
+            "event_id": "$answer",
+            "sender": sender,
+            "origin_server_ts": 1_700_000_000_000_u64,
+            "content": content,
+        }))
+        .unwrap()
+        .cast_unchecked();
+        let dto = project_item_parts(
+            "id",
+            Some("$answer"),
+            "message",
+            Some("m.text"),
+            None,
+            Some(sender),
+            None,
+            None,
+            false,
+            Some("Approved"),
+            None,
+            None,
+            None,
+            Some(1),
+            false,
+            None,
+            None,
+            false,
+            Vec::new(),
+            Vec::new(),
+        );
+        row_from_parts(
+            dto,
+            Some(&raw),
+            matrix_sdk::ruma::user_id!("@me:id.agentpod.dev"),
+        )
+    }
+
+    #[test]
+    fn the_readers_own_gate_decision_rides_on_its_row_and_nobody_elses_does() {
+        let mine = gate_decision_row("@me:id.agentpod.dev");
+        assert_eq!(
+            mine.item.detail.as_deref(),
+            Some(crate::gate_v2::GATE_DECISION_V2_SUITE_TYPE)
+        );
+        let payload = &mine.item.custom_payload.as_ref().expect("carried").0;
+        assert_eq!(payload["gate_id"], "gate_6e19");
+        assert_eq!(payload["option_id"], "approve");
+        // Still drawn as the sentence it is.
+        assert!(matches!(
+            mine.view,
+            crate::item_view::ItemView::Bubble { .. }
+        ));
+
+        let theirs = gate_decision_row("@other:id.agentpod.dev");
+        assert_eq!(theirs.item.detail, None);
+        assert!(theirs.item.custom_payload.is_none());
     }
 
     #[test]

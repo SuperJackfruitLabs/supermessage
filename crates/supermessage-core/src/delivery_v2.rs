@@ -164,6 +164,8 @@ impl ParsedDeliveryV2 {
             approvals_withheld: withheld.then(|| SWITCH_WITHHELD_NOTE.to_string()),
             subject: self.subject.as_ref().map(|s| s.binding.clone()),
             variants: Vec::new(),
+            // A follow-up settles delivery after the gate passed: no count.
+            quorum: None,
         }
     }
 }

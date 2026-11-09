@@ -922,6 +922,13 @@ pub fn view_for(item: &TimelineItemDto) -> ItemView {
         {
             ItemView::None
         }
+        // A quorum gate's progress: the hub's readable reply beside it says
+        // it, and the gate's card shows the count (`crate::gate_quorum`).
+        "customMessage"
+            if item.detail.as_deref() == Some(crate::gate_quorum::GATE_PROGRESS_TYPE) =>
+        {
+            ItemView::None
+        }
         // And for a waiting card's receipt (`crate::attention_v2`).
         "customMessage"
             if item.detail.as_deref()

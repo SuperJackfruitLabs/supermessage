@@ -6,7 +6,7 @@
     TimelineItem,
   } from "$lib/ipc";
   import type { AnsweredDecision } from "$lib/stores/answeredDecisions.svelte";
-  import { answerElsewhere, answeredWhen, arrangeOptions, optionRole, receiptOutcome } from "./decisionView";
+  import { answerElsewhere, answeredWhen, arrangeOptions, optionRole, quorumProgress, receiptOutcome } from "./decisionView";
   import { cubicOut } from "svelte/easing";
   import InlineFailure from "./InlineFailure.svelte";
   import RequestChangesDialog from "./RequestChangesDialog.svelte";
@@ -376,6 +376,11 @@
       send (text, a link, an approval it cannot show). Said, so a missing
       button does not read as a bug.
     -->
+    {#if quorumProgress(decision)}
+      <p class="mt-2 font-sans text-meta font-semibold text-content" data-testid="decision-quorum-progress">
+        {quorumProgress(decision)}
+      </p>
+    {/if}
     {#if answerElsewhere(decision)}
       <p class="mt-2 font-sans text-meta text-content-muted" data-testid="decision-answer-elsewhere">
         {answerElsewhere(decision)}

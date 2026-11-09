@@ -643,6 +643,15 @@ private fun PendingBody(
             ?: decision.permissionV2?.approvalsWithheld
             ?: decision.questionV2?.approvalsWithheld
         GatePreviewBlocks(preview)
+        // A gate that needs more than one approval: how far it has got,
+        // worded by the core (`core::gate_quorum`).
+        decision.gateV2?.quorum?.let {
+            Text(
+                it.progress,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                modifier = Modifier.testTag("decision-quorum-progress"),
+            )
+        }
         withheld?.let {
             Text(
                 it,

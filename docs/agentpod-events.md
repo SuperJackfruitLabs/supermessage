@@ -401,6 +401,52 @@ to three versions; the person approves one of them, or sends the set back.
   user info says.
 - **The receipt.** See §7: `chosen_variant` names the version approved.
 
+#### More than one approver — a quorum
+
+charter `decisions/2026-11-09-a-gate-may-need-more-than-one-approver.md`,
+fixture version 9 (entries tagged `variant: "quorum"`). A stage may need two
+to five approvals before its gate passes. superpipeline counts them; this
+client shows the count (`core::gate_quorum`).
+
+- **The wire.** A gate.v2 may carry `quorum: { required, from, approvals:
+  [{ principal_id, at, variant_id? }] }`: `required` 2–5, `from` `deciders`
+  or `admins`, each person once, at most 32. A quorum that is not that
+  (required out of range, an unknown `from`, an approval with no time, one
+  person twice) refuses the whole gate.v2 and the v1 card is drawn: a card
+  that dropped the quorum would say one approval closes it.
+- **The count.** `GateV2Decision.quorum` is a `GateQuorum { required, from,
+  approvals, progress, approved_by_you }`. `progress` is the line a card
+  draws under its preview, worded in the core: "1 of 2 approvals. Waiting
+  for 1 more.", "Needs 2 approvals." with none yet, and on a variant gate,
+  where approvals count per version, each version that has any:
+  "“Short”: 1 of 2 approvals. Waiting for 1 more."
+- **Progress events.** For each approval short of the quorum the hub replies
+  to the gate ("Approved by rakesh — 1 of 2. Waiting for 1 more.") and sends
+  `dev.agentpod.gate.progress.v2` beside it: `gate_id`, `board_id`,
+  `card_id`, `approved_by`, `approval`, `quorum`, and an `m.reference` to
+  the gate's event. The structured event is never a row
+  (`ItemView::None`) and never a notification (`NotNews`); the reply is the
+  readable line. `embedded::reconcile` folds every progress event into the
+  gate's card: only one from the gate's own sender, with the same
+  `required`, and only when it has more approvals than the card already
+  shows. A redelivered or reordered event carries fewer and never walks the
+  count back.
+- **You approved.** The approvals name Accounts principals, which this
+  client does not know its reader by. Instead, the reader's own decision.v2
+  (`is_own`, an approving option of this gate) rides on its row
+  (`timeline::own_gate_decision_from_raw`, which also stores nobody else's).
+  On a quorum gate still open, that reader is offered no approving option
+  (and the legacy options the desktop answers with lose theirs too), with
+  `approvals_withheld` "You approved. It passes once enough others approve
+  too." Request changes and reject stay: one of either still closes the
+  gate. A gate without a quorum is never changed by the reader's answer, as
+  §7 says (answered is not resolved). The one wrong case is an approval the
+  board refused for another reason. The hub says so in the room, and the
+  card points to the board.
+- **The card.** iOS, Android and the desktop draw `progress` under the
+  preview (`decision-quorum-progress`). The approval that reaches the quorum
+  resolves the gate, and its outcome (§7) closes the card as usual.
+
 ### 5b. question.v2 and delivery.v2 — questions and follow-ups in the envelope
 
 charter `decisions/2026-11-07-the-envelope-covers-questions-and-follow-ups.md`.

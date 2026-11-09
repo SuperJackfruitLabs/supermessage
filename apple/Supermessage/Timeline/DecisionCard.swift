@@ -268,6 +268,15 @@ struct CustomEventCard: View {
                 // this could not be drawn in full, and says so. A delivery
                 // follow-up shows the post it is about the same way.
                 GatePreviewBlocks(blocks: gate.preview)
+                if let quorum = gate.quorum {
+                    // A gate that needs more than one approval: how far it
+                    // has got, worded by the core (`core::gate_quorum`).
+                    Text(quorum.progress)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.content)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("decision-quorum-progress")
+                }
                 if let withheld = gate.approvalsWithheld {
                     Text(withheld)
                         .font(.footnote)

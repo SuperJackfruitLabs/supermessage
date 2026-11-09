@@ -116,3 +116,11 @@ export function answerElsewhere(decision: CustomEventDecision): string | null {
   }
   return null;
 }
+
+/**
+ * How far a gate that needs more than one approval has got ("1 of 2 approvals. Waiting for 1
+ * more."), worded by the core (`core::gate_quorum`); null for any other decision.
+ */
+export function quorumProgress(decision: CustomEventDecision): string | null {
+  return decision.gateV2?.quorum?.progress ?? null;
+}

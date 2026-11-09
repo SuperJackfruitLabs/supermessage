@@ -639,6 +639,8 @@ fn gate_v2_response(
                 // 2026-11-09 §7): an approval of a variant gate is never
                 // carried, and request changes and reject need none.
                 variants: Vec::new(),
+                // The answer only; a quorum is the board's to count.
+                quorum: None,
             },
             option_id: option_id.clone(),
             comment,

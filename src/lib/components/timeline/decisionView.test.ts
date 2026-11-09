@@ -11,6 +11,7 @@ import {
   answeredWhen,
   arrangeOptions,
   optionRole,
+  quorumProgress,
   receiptOutcome,
 } from "./decisionView";
 
@@ -149,5 +150,28 @@ describe("answerElsewhere", () => {
     const gate = { gateId: "gate_5d72", options, approvalsWithheld: null, variants: [{ id: "short" }] };
     const legacy = [opt("request_changes"), opt("reject")];
     expect(answerElsewhere({ ...base, options: legacy, gateV2: gate })).toBe(CHOOSE_ELSEWHERE);
+  });
+});
+
+describe("quorumProgress", () => {
+  const base: CustomEventDecision = { prompt: "Approve?", options: [opt("approve"), opt("reject")], subject: "gate_6e19" };
+
+  it("is the core's line on a gate that needs more than one approval", () => {
+    const quorum = { required: 2, progress: "1 of 2 approvals. Waiting for 1 more.", approvedByYou: false };
+    const gate = { gateId: "gate_6e19", options: [opt("approve"), opt("reject")], approvalsWithheld: null, quorum };
+    expect(quorumProgress({ ...base, gateV2: gate })).toBe("1 of 2 approvals. Waiting for 1 more.");
+  });
+
+  it("is nothing on any other decision", () => {
+    expect(quorumProgress(base)).toBeNull();
+    const gate = { gateId: "gate_1", options: [opt("approve")], approvalsWithheld: null };
+    expect(quorumProgress({ ...base, gateV2: gate })).toBeNull();
+  });
+
+  it("leaves a reader who approved told why approve is gone", () => {
+    const quorum = { required: 2, progress: "1 of 2 approvals. Waiting for 1 more.", approvedByYou: true };
+    const note = "You approved. It passes once enough others approve too.";
+    const gate = { gateId: "gate_6e19", options: [opt("reject")], approvalsWithheld: note, quorum };
+    expect(answerElsewhere({ ...base, options: [opt("reject")], gateV2: gate })).toBe(note);
   });
 });
