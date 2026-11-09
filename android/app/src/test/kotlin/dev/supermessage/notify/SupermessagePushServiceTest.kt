@@ -214,6 +214,34 @@ class SupermessagePushServiceTest {
         assertEquals(null, shown("\$long"))
     }
 
+    /**
+     * A push that came while no account had a pusher is not queued. Queued, it
+     * held its event's one-job name (KEEP) until it ran and dropped itself, and
+     * the same event pushed again once an account was stamped was thrown away
+     * behind it: `FakeDistributorTest` lost its push that way, one test's late
+     * message landing after its tearDown had cleared the owner.
+     */
+    @Test
+    fun aPushForNoOneIsNotQueuedSoItCannotHoldTheEventsJob() {
+        val held = java.util.ArrayDeque<Runnable>()
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            app, Configuration.Builder().setExecutor { held.add(it) }.setTaskExecutor(SynchronousExecutor()).build(),
+        )
+        AppCore.installForTest(Recording(decided()))
+        val service = Robolectric.buildService(SupermessagePushService::class.java).create().get()
+        val work = WorkManager.getInstance(app)
+
+        owner.account = null
+        service.onMessage(PushMessage(push(), false), INSTANCE_DEFAULT)
+        assertEquals("no one's push is not queued", 0, work.getWorkInfosForUniqueWork("push:!r:x:\$e1").get().size)
+
+        owner.account = ME
+        service.onMessage(PushMessage(push(), false), INSTANCE_DEFAULT)
+        val infos = work.getWorkInfosForUniqueWork("push:!r:x:\$e1").get()
+        assertEquals("the stamped push is the event's one job", 1, infos.size)
+        assertTrue(infos.single().state in setOf(androidx.work.WorkInfo.State.ENQUEUED, androidx.work.WorkInfo.State.RUNNING))
+    }
+
     @Test
     fun theWorkerDoesTheFetchAndThePost() {
         val core = Recording(decided())
