@@ -922,6 +922,18 @@ public protocol CoreProtocol : AnyObject {
     func sendAttentionAnswerV2(roomId: String, attention: AttentionV2Decision, optionId: String, text: String?, inReplyTo: String) throws 
     
     /**
+     * Override a machine check from a card of overdue checks
+     * (`supermessage_core::gate_checks`), with the reader's comment saying
+     * why. `checks` is the card's `CustomEventDecision::checks_waiting`,
+     * handed back unchanged; `check_name` one of its checks offered
+     * Override. The core refuses a check not offered, no comment and one
+     * over the board's limit, then sends the
+     * `dev.superpipeline.check.override.v2` referencing `in_reply_to`, the
+     * card's event. superpipeline judges whether the reader may.
+     */
+    func sendCheckOverride(roomId: String, checks: ChecksWaitingDecision, checkName: String, comment: String, inReplyTo: String) throws 
+    
+    /**
      * Answer a manual-delivery follow-up from its card
      * (`supermessage_core::delivery_v2`): `record_live_url` with the live
      * link as `text`, or `switch_to_automatic`. `delivery` is the card's
@@ -1897,6 +1909,27 @@ open func sendAttentionAnswerV2(roomId: String, attention: AttentionV2Decision, 
         FfiConverterTypeAttentionV2Decision_lower(attention),
         FfiConverterString.lower(optionId),
         FfiConverterOptionString.lower(text),
+        FfiConverterString.lower(inReplyTo),$0
+    )
+}
+}
+    
+    /**
+     * Override a machine check from a card of overdue checks
+     * (`supermessage_core::gate_checks`), with the reader's comment saying
+     * why. `checks` is the card's `CustomEventDecision::checks_waiting`,
+     * handed back unchanged; `check_name` one of its checks offered
+     * Override. The core refuses a check not offered, no comment and one
+     * over the board's limit, then sends the
+     * `dev.superpipeline.check.override.v2` referencing `in_reply_to`, the
+     * card's event. superpipeline judges whether the reader may.
+     */
+open func sendCheckOverride(roomId: String, checks: ChecksWaitingDecision, checkName: String, comment: String, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_check_override(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterTypeChecksWaitingDecision_lower(checks),
+        FfiConverterString.lower(checkName),
+        FfiConverterString.lower(comment),
         FfiConverterString.lower(inReplyTo),$0
     )
 }
@@ -5294,6 +5327,8 @@ fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
 
 
 
+
+
 /**
  * What the dock above the composer says after the reader wrote to an agent —
  * see `core::acknowledgement`. A free function for the same reason as
@@ -6528,6 +6563,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_attention_answer_v2() != 36441) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_check_override() != 19044) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_delivery_answer_v2() != 25249) {

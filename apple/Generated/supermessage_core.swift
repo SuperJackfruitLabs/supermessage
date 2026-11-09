@@ -1389,6 +1389,148 @@ public func FfiConverterTypeAudioView_lower(_ value: AudioView) -> RustBuffer {
 
 
 /**
+ * A checks.waiting card as a host draws and answers it. Rides on
+ * `CustomEventDecision::checks_waiting`.
+ */
+public struct ChecksWaitingDecision {
+    /**
+     * Handed back verbatim in an override.
+     */
+    public var boardId: String
+    /**
+     * Handed back verbatim in an override.
+     */
+    public var cardId: String
+    /**
+     * Display text, bounded.
+     */
+    public var cardTitle: String
+    /**
+     * The stage the checks wait at, as the board keys it. Display text,
+     * bounded.
+     */
+    public var stageKey: String
+    /**
+     * In the board's order. Override is offered on each one
+     * [`GateCheck::overridable`].
+     */
+    public var checks: [GateCheck]
+    /**
+     * [`OVERRIDE_NOTE`]: who the board lets override.
+     */
+    public var overrideNote: String
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * Handed back verbatim in an override.
+         */boardId: String, 
+        /**
+         * Handed back verbatim in an override.
+         */cardId: String, 
+        /**
+         * Display text, bounded.
+         */cardTitle: String, 
+        /**
+         * The stage the checks wait at, as the board keys it. Display text,
+         * bounded.
+         */stageKey: String, 
+        /**
+         * In the board's order. Override is offered on each one
+         * [`GateCheck::overridable`].
+         */checks: [GateCheck], 
+        /**
+         * [`OVERRIDE_NOTE`]: who the board lets override.
+         */overrideNote: String) {
+        self.boardId = boardId
+        self.cardId = cardId
+        self.cardTitle = cardTitle
+        self.stageKey = stageKey
+        self.checks = checks
+        self.overrideNote = overrideNote
+    }
+}
+
+
+
+extension ChecksWaitingDecision: Equatable, Hashable {
+    public static func ==(lhs: ChecksWaitingDecision, rhs: ChecksWaitingDecision) -> Bool {
+        if lhs.boardId != rhs.boardId {
+            return false
+        }
+        if lhs.cardId != rhs.cardId {
+            return false
+        }
+        if lhs.cardTitle != rhs.cardTitle {
+            return false
+        }
+        if lhs.stageKey != rhs.stageKey {
+            return false
+        }
+        if lhs.checks != rhs.checks {
+            return false
+        }
+        if lhs.overrideNote != rhs.overrideNote {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(boardId)
+        hasher.combine(cardId)
+        hasher.combine(cardTitle)
+        hasher.combine(stageKey)
+        hasher.combine(checks)
+        hasher.combine(overrideNote)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeChecksWaitingDecision: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ChecksWaitingDecision {
+        return
+            try ChecksWaitingDecision(
+                boardId: FfiConverterString.read(from: &buf), 
+                cardId: FfiConverterString.read(from: &buf), 
+                cardTitle: FfiConverterString.read(from: &buf), 
+                stageKey: FfiConverterString.read(from: &buf), 
+                checks: FfiConverterSequenceTypeGateCheck.read(from: &buf), 
+                overrideNote: FfiConverterString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: ChecksWaitingDecision, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.boardId, into: &buf)
+        FfiConverterString.write(value.cardId, into: &buf)
+        FfiConverterString.write(value.cardTitle, into: &buf)
+        FfiConverterString.write(value.stageKey, into: &buf)
+        FfiConverterSequenceTypeGateCheck.write(value.checks, into: &buf)
+        FfiConverterString.write(value.overrideNote, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeChecksWaitingDecision_lift(_ buf: RustBuffer) throws -> ChecksWaitingDecision {
+    return try FfiConverterTypeChecksWaitingDecision.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeChecksWaitingDecision_lower(_ value: ChecksWaitingDecision) -> RustBuffer {
+    return FfiConverterTypeChecksWaitingDecision.lower(value)
+}
+
+
+/**
  * The single agent a room's messages go to, as the header names it.
  *
  * The typing line and the acknowledgement dock say "Atlas", not the bridge's
@@ -1540,6 +1682,16 @@ public struct CustomEventDecision {
      */
     public var attentionV2: AttentionV2Decision?
     /**
+     * A card's machine checks overdue and escalated, when the prose message
+     * carries `dev.agentpod.checks.waiting.v2` (`crate::gate_checks`): the
+     * card, the stage, and each check with its line and whether Override is
+     * offered on it (pending or failed). Answered with
+     * `send_check_override`, with a required comment. [`Self::options`] is
+     * empty: no plain reply overrides a check. `None` otherwise, and absent
+     * from the JSON.
+     */
+    public var checksWaiting: ChecksWaitingDecision?
+    /**
      * When this decision is reminded and escalated, on a gate.v2,
      * question.v2, delivery.v2 or attention.v2 whose stage has a timeout
      * (`crate::decision_timeout`). A host words it with
@@ -1615,6 +1767,15 @@ public struct CustomEventDecision {
          * JSON.
          */attentionV2: AttentionV2Decision? = nil, 
         /**
+         * A card's machine checks overdue and escalated, when the prose message
+         * carries `dev.agentpod.checks.waiting.v2` (`crate::gate_checks`): the
+         * card, the stage, and each check with its line and whether Override is
+         * offered on it (pending or failed). Answered with
+         * `send_check_override`, with a required comment. [`Self::options`] is
+         * empty: no plain reply overrides a check. `None` otherwise, and absent
+         * from the JSON.
+         */checksWaiting: ChecksWaitingDecision? = nil, 
+        /**
          * When this decision is reminded and escalated, on a gate.v2,
          * question.v2, delivery.v2 or attention.v2 whose stage has a timeout
          * (`crate::decision_timeout`). A host words it with
@@ -1630,6 +1791,7 @@ public struct CustomEventDecision {
         self.deliveryV2 = deliveryV2
         self.permissionV2 = permissionV2
         self.attentionV2 = attentionV2
+        self.checksWaiting = checksWaiting
         self.deadline = deadline
     }
 }
@@ -1662,6 +1824,9 @@ extension CustomEventDecision: Equatable, Hashable {
         if lhs.attentionV2 != rhs.attentionV2 {
             return false
         }
+        if lhs.checksWaiting != rhs.checksWaiting {
+            return false
+        }
         if lhs.deadline != rhs.deadline {
             return false
         }
@@ -1677,6 +1842,7 @@ extension CustomEventDecision: Equatable, Hashable {
         hasher.combine(deliveryV2)
         hasher.combine(permissionV2)
         hasher.combine(attentionV2)
+        hasher.combine(checksWaiting)
         hasher.combine(deadline)
     }
 }
@@ -1697,6 +1863,7 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
                 deliveryV2: FfiConverterOptionTypeGateV2Decision.read(from: &buf), 
                 permissionV2: FfiConverterOptionTypePermissionV2Decision.read(from: &buf), 
                 attentionV2: FfiConverterOptionTypeAttentionV2Decision.read(from: &buf), 
+                checksWaiting: FfiConverterOptionTypeChecksWaitingDecision.read(from: &buf), 
                 deadline: FfiConverterOptionTypeDecisionDeadline.read(from: &buf)
         )
     }
@@ -1710,6 +1877,7 @@ public struct FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer {
         FfiConverterOptionTypeGateV2Decision.write(value.deliveryV2, into: &buf)
         FfiConverterOptionTypePermissionV2Decision.write(value.permissionV2, into: &buf)
         FfiConverterOptionTypeAttentionV2Decision.write(value.attentionV2, into: &buf)
+        FfiConverterOptionTypeChecksWaitingDecision.write(value.checksWaiting, into: &buf)
         FfiConverterOptionTypeDecisionDeadline.write(value.deadline, into: &buf)
     }
 }
@@ -2546,6 +2714,143 @@ public func FfiConverterTypeGateAnswersV2_lower(_ value: GateAnswersV2) -> RustB
 
 
 /**
+ * One check, as a host draws it.
+ */
+public struct GateCheck {
+    /**
+     * The check's name, as the board knows it; handed back verbatim in an
+     * override. 1–40 characters, so drawn whole.
+     */
+    public var name: String
+    public var provider: CheckProvider
+    public var status: CheckStatus
+    /**
+     * A link to the result, when it is an `https://` address
+     * (`crate::custom_events::safe_url`); any other is dropped and the check
+     * kept, since a link decorates a check rather than deciding it.
+     */
+    public var url: String?
+    /**
+     * The plain line a host draws: "build (CI) — passed".
+     */
+    public var line: String
+    /**
+     * Whether this card offers Override on it: only a checks.waiting card,
+     * and only for a check pending or failed. Never on a gate.v2, whose
+     * checks are over by the time it opens, and which an override could not
+     * reference.
+     */
+    public var overridable: Bool
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(
+        /**
+         * The check's name, as the board knows it; handed back verbatim in an
+         * override. 1–40 characters, so drawn whole.
+         */name: String, provider: CheckProvider, status: CheckStatus, 
+        /**
+         * A link to the result, when it is an `https://` address
+         * (`crate::custom_events::safe_url`); any other is dropped and the check
+         * kept, since a link decorates a check rather than deciding it.
+         */url: String?, 
+        /**
+         * The plain line a host draws: "build (CI) — passed".
+         */line: String, 
+        /**
+         * Whether this card offers Override on it: only a checks.waiting card,
+         * and only for a check pending or failed. Never on a gate.v2, whose
+         * checks are over by the time it opens, and which an override could not
+         * reference.
+         */overridable: Bool) {
+        self.name = name
+        self.provider = provider
+        self.status = status
+        self.url = url
+        self.line = line
+        self.overridable = overridable
+    }
+}
+
+
+
+extension GateCheck: Equatable, Hashable {
+    public static func ==(lhs: GateCheck, rhs: GateCheck) -> Bool {
+        if lhs.name != rhs.name {
+            return false
+        }
+        if lhs.provider != rhs.provider {
+            return false
+        }
+        if lhs.status != rhs.status {
+            return false
+        }
+        if lhs.url != rhs.url {
+            return false
+        }
+        if lhs.line != rhs.line {
+            return false
+        }
+        if lhs.overridable != rhs.overridable {
+            return false
+        }
+        return true
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(provider)
+        hasher.combine(status)
+        hasher.combine(url)
+        hasher.combine(line)
+        hasher.combine(overridable)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeGateCheck: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> GateCheck {
+        return
+            try GateCheck(
+                name: FfiConverterString.read(from: &buf), 
+                provider: FfiConverterTypeCheckProvider.read(from: &buf), 
+                status: FfiConverterTypeCheckStatus.read(from: &buf), 
+                url: FfiConverterOptionString.read(from: &buf), 
+                line: FfiConverterString.read(from: &buf), 
+                overridable: FfiConverterBool.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: GateCheck, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.name, into: &buf)
+        FfiConverterTypeCheckProvider.write(value.provider, into: &buf)
+        FfiConverterTypeCheckStatus.write(value.status, into: &buf)
+        FfiConverterOptionString.write(value.url, into: &buf)
+        FfiConverterString.write(value.line, into: &buf)
+        FfiConverterBool.write(value.overridable, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateCheck_lift(_ buf: RustBuffer) throws -> GateCheck {
+    return try FfiConverterTypeGateCheck.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeGateCheck_lower(_ value: GateCheck) -> RustBuffer {
+    return FfiConverterTypeGateCheck.lower(value)
+}
+
+
+/**
  * A held approval on a receipt: what a host needs to say until when, and to
  * offer Pull back.
  */
@@ -3196,6 +3501,14 @@ public struct GateV2Decision {
      * `None` for a gate whose approval acts at once.
      */
     public var release: GateRelease?
+    /**
+     * The machine checks that ran before the gate opened for people (charter
+     * → `decisions/2026-11-09-a-gate-may-be-decided-by-checks.md`), in the
+     * board's order, each with its plain line ("build (CI) — passed")
+     * (`crate::gate_checks`). Empty for a gate whose stage has none. Never
+     * overridable here: by the time a gate opens every check is over.
+     */
+    public var checks: [GateCheck]
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
@@ -3232,7 +3545,14 @@ public struct GateV2Decision {
          * `decisions/2026-11-09-an-approval-may-wait-for-its-release-time.md`);
          * worded at the host's clock by `crate::gate_release::release_line`.
          * `None` for a gate whose approval acts at once.
-         */release: GateRelease? = nil) {
+         */release: GateRelease? = nil, 
+        /**
+         * The machine checks that ran before the gate opened for people (charter
+         * → `decisions/2026-11-09-a-gate-may-be-decided-by-checks.md`), in the
+         * board's order, each with its plain line ("build (CI) — passed")
+         * (`crate::gate_checks`). Empty for a gate whose stage has none. Never
+         * overridable here: by the time a gate opens every check is over.
+         */checks: [GateCheck] = []) {
         self.gateId = gateId
         self.options = options
         self.preview = preview
@@ -3241,6 +3561,7 @@ public struct GateV2Decision {
         self.variants = variants
         self.quorum = quorum
         self.release = release
+        self.checks = checks
     }
 }
 
@@ -3272,6 +3593,9 @@ extension GateV2Decision: Equatable, Hashable {
         if lhs.release != rhs.release {
             return false
         }
+        if lhs.checks != rhs.checks {
+            return false
+        }
         return true
     }
 
@@ -3284,6 +3608,7 @@ extension GateV2Decision: Equatable, Hashable {
         hasher.combine(variants)
         hasher.combine(quorum)
         hasher.combine(release)
+        hasher.combine(checks)
     }
 }
 
@@ -3302,7 +3627,8 @@ public struct FfiConverterTypeGateV2Decision: FfiConverterRustBuffer {
                 subject: FfiConverterOptionTypeGateSubjectBinding.read(from: &buf), 
                 variants: FfiConverterSequenceTypeGateVariantV2.read(from: &buf), 
                 quorum: FfiConverterOptionTypeGateQuorum.read(from: &buf), 
-                release: FfiConverterOptionTypeGateRelease.read(from: &buf)
+                release: FfiConverterOptionTypeGateRelease.read(from: &buf), 
+                checks: FfiConverterSequenceTypeGateCheck.read(from: &buf)
         )
     }
 
@@ -3315,6 +3641,7 @@ public struct FfiConverterTypeGateV2Decision: FfiConverterRustBuffer {
         FfiConverterSequenceTypeGateVariantV2.write(value.variants, into: &buf)
         FfiConverterOptionTypeGateQuorum.write(value.quorum, into: &buf)
         FfiConverterOptionTypeGateRelease.write(value.release, into: &buf)
+        FfiConverterSequenceTypeGateCheck.write(value.checks, into: &buf)
     }
 }
 
@@ -13083,6 +13410,163 @@ extension AvatarRole: Equatable, Hashable {}
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 /**
+ * Which kind of decider a check is.
+ */
+
+public enum CheckProvider {
+    
+    /**
+     * Every required CI status on the linked pull request's head commit.
+     */
+    case ci
+    /**
+     * A SuperWitness verdict on the card's latest run.
+     */
+    case verdict
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCheckProvider: FfiConverterRustBuffer {
+    typealias SwiftType = CheckProvider
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CheckProvider {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .ci
+        
+        case 2: return .verdict
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CheckProvider, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .ci:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .verdict:
+            writeInt(&buf, Int32(2))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckProvider_lift(_ buf: RustBuffer) throws -> CheckProvider {
+    return try FfiConverterTypeCheckProvider.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckProvider_lower(_ value: CheckProvider) -> RustBuffer {
+    return FfiConverterTypeCheckProvider.lower(value)
+}
+
+
+
+extension CheckProvider: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
+ * Where a check stands.
+ */
+
+public enum CheckStatus {
+    
+    case pending
+    case passed
+    case failed
+    /**
+     * Passed by hand by a workspace owner or admin.
+     */
+    case overridden
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCheckStatus: FfiConverterRustBuffer {
+    typealias SwiftType = CheckStatus
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CheckStatus {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+        
+        case 1: return .pending
+        
+        case 2: return .passed
+        
+        case 3: return .failed
+        
+        case 4: return .overridden
+        
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CheckStatus, into buf: inout [UInt8]) {
+        switch value {
+        
+        
+        case .pending:
+            writeInt(&buf, Int32(1))
+        
+        
+        case .passed:
+            writeInt(&buf, Int32(2))
+        
+        
+        case .failed:
+            writeInt(&buf, Int32(3))
+        
+        
+        case .overridden:
+            writeInt(&buf, Int32(4))
+        
+        }
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckStatus_lift(_ buf: RustBuffer) throws -> CheckStatus {
+    return try FfiConverterTypeCheckStatus.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCheckStatus_lower(_ value: CheckStatus) -> RustBuffer {
+    return FfiConverterTypeCheckStatus.lower(value)
+}
+
+
+
+extension CheckStatus: Equatable, Hashable {}
+
+
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+/**
  * The outcome of the whole fallback chain — what a host switches on.
  *
  * `Rendered` is much larger than the two fallbacks, and stays unboxed on
@@ -17012,6 +17496,30 @@ fileprivate struct FfiConverterOptionTypeAudioMetaDto: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeChecksWaitingDecision: FfiConverterRustBuffer {
+    typealias SwiftType = ChecksWaitingDecision?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeChecksWaitingDecision.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeChecksWaitingDecision.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionTypeCounterpart: FfiConverterRustBuffer {
     typealias SwiftType = Counterpart?
 
@@ -18137,6 +18645,31 @@ fileprivate struct FfiConverterSequenceTypeCustomEventField: FfiConverterRustBuf
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeCustomEventField.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeGateCheck: FfiConverterRustBuffer {
+    typealias SwiftType = [GateCheck]
+
+    public static func write(_ value: [GateCheck], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeGateCheck.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [GateCheck] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [GateCheck]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeGateCheck.read(from: &buf))
         }
         return seq
     }

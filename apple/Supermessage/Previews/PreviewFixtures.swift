@@ -175,6 +175,10 @@ struct PreviewClient: SessionClient {
         inReplyTo: String
     ) async throws {}
     func sendGatePullBack(roomId: String, gateId: String, comment: String, inReplyTo: String) async throws {}
+    func sendCheckOverride(
+        roomId: String, checks: ChecksWaitingDecision, checkName: String, comment: String,
+        inReplyTo: String
+    ) async throws {}
     func setTyping(roomId: String, typing: Bool) async throws {}
 
     // MARK: NotificationAnswering

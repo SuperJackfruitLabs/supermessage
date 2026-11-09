@@ -990,6 +990,11 @@ struct TimelineList: UIViewRepresentable {
         @discardableResult
         fileprivate func decide(_ row: TimelineRow, _ answer: GateAnswer) async -> Bool {
             guard let roomId = timeline.roomId else { return false }
+            if let checks = answer.checksWaiting {
+                return await session.overrideCheck(
+                    row.item.eventId, checks: checks, checkName: answer.optionId,
+                    comment: answer.comment ?? "", in: roomId)
+            }
             if let held = answer.pullBack {
                 return await session.pullBackGate(
                     row.item.eventId, gateId: held.gateId, comment: answer.comment ?? "", in: roomId)
