@@ -989,6 +989,12 @@ public protocol CoreProtocol : AnyObject {
     func sendGateDecisionV2To(roomId: String, gate: GateV2Decision, optionId: String, comment: String?, inReplyTo: String) throws 
     
     /**
+     * Pull a held approval back (`supermessage_core::gate_release`) with the
+     * reader's comment saying why. `in_reply_to` is the gate card's event.
+     */
+    func sendGatePullBack(roomId: String, gateId: String, comment: String, inReplyTo: String) throws 
+    
+    /**
      * Send a plain-text message to the focused room.
      *
      * `room_id` is checked against whichever room is actually focused before
@@ -2006,6 +2012,20 @@ open func sendGateDecisionV2To(roomId: String, gate: GateV2Decision, optionId: S
         FfiConverterTypeGateV2Decision_lower(gate),
         FfiConverterString.lower(optionId),
         FfiConverterOptionString.lower(comment),
+        FfiConverterString.lower(inReplyTo),$0
+    )
+}
+}
+    
+    /**
+     * Pull a held approval back (`supermessage_core::gate_release`) with the
+     * reader's comment saying why. `in_reply_to` is the gate card's event.
+     */
+open func sendGatePullBack(roomId: String, gateId: String, comment: String, inReplyTo: String)throws  {try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_send_gate_pull_back(self.uniffiClonePointer(),
+        FfiConverterString.lower(roomId),
+        FfiConverterString.lower(gateId),
+        FfiConverterString.lower(comment),
         FfiConverterString.lower(inReplyTo),$0
     )
 }
@@ -5272,6 +5292,8 @@ fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
 
 
 
+
+
 /**
  * What the dock above the composer says after the reader wrote to an agent —
  * see `core::acknowledgement`. A free function for the same reason as
@@ -5430,6 +5452,30 @@ public func foldTurn(roomId: String, inputs: [TurnInput]) -> TurnSnapshot? {
     uniffi_supermessage_ffi_fn_func_fold_turn(
         FfiConverterString.lower(roomId),
         FfiConverterSequenceTypeTurnInput.lower(inputs),$0
+    )
+})
+}
+/**
+ * "Goes ahead in 25 min unless pulled back." — see
+ * `core::gate_release::held_line`.
+ */
+public func gateHeldLine(heldUntil: String, nowMs: Int64) -> String {
+    return try!  FfiConverterString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_gate_held_line(
+        FfiConverterString.lower(heldUntil),
+        FfiConverterInt64.lower(nowMs),$0
+    )
+})
+}
+/**
+ * "If approved, it waits 30 min before it goes ahead." — see
+ * `core::gate_release::release_line`. Given the host's clock, as a deadline is.
+ */
+public func gateReleaseLine(release: GateRelease, nowMs: Int64) -> String? {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_gate_release_line(
+        FfiConverterTypeGateRelease_lower(release),
+        FfiConverterInt64.lower(nowMs),$0
     )
 })
 }
@@ -6163,6 +6209,12 @@ private var initializationResult: InitializationResult = {
     if (uniffi_supermessage_ffi_checksum_func_fold_turn() != 3050) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_gate_held_line() != 7820) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_func_gate_release_line() != 34434) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_generic_notification() != 32098) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6491,6 +6543,9 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_gate_decision_v2_to() != 24924) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_send_gate_pull_back() != 41271) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_send_message() != 2384) {

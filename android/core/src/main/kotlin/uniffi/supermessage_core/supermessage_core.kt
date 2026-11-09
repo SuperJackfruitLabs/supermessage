@@ -1813,7 +1813,13 @@ data class CustomEventOutcome (
      * the prompt of the decision it replaces. `None` when the card never
      * had one to answer.
      */
-    var `prompt`: kotlin.String?
+    var `prompt`: kotlin.String?, 
+    /**
+     * An approval recorded but held until its release time
+     * (`crate::gate_release`): the receipt says until when and offers Pull
+     * back. `None` once it went ahead, was pulled back, or never waited.
+     */
+    var `held`: GateHold? = null
 ) {
     
     companion object
@@ -1829,6 +1835,7 @@ public object FfiConverterTypeCustomEventOutcome: FfiConverterRustBuffer<CustomE
             FfiConverterOptionalString.read(buf),
             FfiConverterString.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalTypeGateHold.read(buf),
         )
     }
 
@@ -1836,7 +1843,8 @@ public object FfiConverterTypeCustomEventOutcome: FfiConverterRustBuffer<CustomE
             FfiConverterString.allocationSize(value.`decision`) +
             FfiConverterOptionalString.allocationSize(value.`decidedBy`) +
             FfiConverterString.allocationSize(value.`summary`) +
-            FfiConverterOptionalString.allocationSize(value.`prompt`)
+            FfiConverterOptionalString.allocationSize(value.`prompt`) +
+            FfiConverterOptionalTypeGateHold.allocationSize(value.`held`)
     )
 
     override fun write(value: CustomEventOutcome, buf: ByteBuffer) {
@@ -1844,6 +1852,7 @@ public object FfiConverterTypeCustomEventOutcome: FfiConverterRustBuffer<CustomE
             FfiConverterOptionalString.write(value.`decidedBy`, buf)
             FfiConverterString.write(value.`summary`, buf)
             FfiConverterOptionalString.write(value.`prompt`, buf)
+            FfiConverterOptionalTypeGateHold.write(value.`held`, buf)
     }
 }
 
@@ -2109,6 +2118,48 @@ public object FfiConverterTypeGateAnswersV2: FfiConverterRustBuffer<GateAnswersV
 
 
 /**
+ * A held approval on a receipt: what a host needs to say until when, and to
+ * offer Pull back.
+ */
+data class GateHold (
+    /**
+     * Handed back verbatim in a pull-back; never drawn.
+     */
+    var `gateId`: kotlin.String, 
+    /**
+     * The release time, an ISO timestamp ([`held_line`]).
+     */
+    var `heldUntil`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateHold: FfiConverterRustBuffer<GateHold> {
+    override fun read(buf: ByteBuffer): GateHold {
+        return GateHold(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateHold) = (
+            FfiConverterString.allocationSize(value.`gateId`) +
+            FfiConverterString.allocationSize(value.`heldUntil`)
+    )
+
+    override fun write(value: GateHold, buf: ByteBuffer) {
+            FfiConverterString.write(value.`gateId`, buf)
+            FfiConverterString.write(value.`heldUntil`, buf)
+    }
+}
+
+
+
+/**
  * One answer a gate.v2 offers.
  */
 data class GateOptionV2 (
@@ -2295,6 +2346,47 @@ public object FfiConverterTypeGateQuorumApproval: FfiConverterRustBuffer<GateQuo
 
 
 /**
+ * What would hold an approval of this gate, as the gate said it.
+ */
+data class GateRelease (
+    /**
+     * The stage's cooling-off period, 5 minutes to 7 days.
+     */
+    var `holdForMinutes`: kotlin.UInt?, 
+    /**
+     * The subject's own not-before time, an ISO timestamp.
+     */
+    var `notBefore`: kotlin.String?
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateRelease: FfiConverterRustBuffer<GateRelease> {
+    override fun read(buf: ByteBuffer): GateRelease {
+        return GateRelease(
+            FfiConverterOptionalUInt.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateRelease) = (
+            FfiConverterOptionalUInt.allocationSize(value.`holdForMinutes`) +
+            FfiConverterOptionalString.allocationSize(value.`notBefore`)
+    )
+
+    override fun write(value: GateRelease, buf: ByteBuffer) {
+            FfiConverterOptionalUInt.write(value.`holdForMinutes`, buf)
+            FfiConverterOptionalString.write(value.`notBefore`, buf)
+    }
+}
+
+
+
+/**
  * The subject a decision.v2 is bound to, copied back from the gate shown.
  */
 data class GateSubjectBinding (
@@ -2371,7 +2463,14 @@ data class GateV2Decision (
      * with how far it has got (`crate::gate_quorum`); `None` for a gate
      * that passes on one.
      */
-    var `quorum`: GateQuorum? = null
+    var `quorum`: GateQuorum? = null, 
+    /**
+     * What would hold an approval before it acts (charter →
+     * `decisions/2026-11-09-an-approval-may-wait-for-its-release-time.md`);
+     * worded at the host's clock by `crate::gate_release::release_line`.
+     * `None` for a gate whose approval acts at once.
+     */
+    var `release`: GateRelease? = null
 ) {
     
     companion object
@@ -2390,6 +2489,7 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterOptionalTypeGateSubjectBinding.read(buf),
             FfiConverterSequenceTypeGateVariantV2.read(buf),
             FfiConverterOptionalTypeGateQuorum.read(buf),
+            FfiConverterOptionalTypeGateRelease.read(buf),
         )
     }
 
@@ -2400,7 +2500,8 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterOptionalString.allocationSize(value.`approvalsWithheld`) +
             FfiConverterOptionalTypeGateSubjectBinding.allocationSize(value.`subject`) +
             FfiConverterSequenceTypeGateVariantV2.allocationSize(value.`variants`) +
-            FfiConverterOptionalTypeGateQuorum.allocationSize(value.`quorum`)
+            FfiConverterOptionalTypeGateQuorum.allocationSize(value.`quorum`) +
+            FfiConverterOptionalTypeGateRelease.allocationSize(value.`release`)
     )
 
     override fun write(value: GateV2Decision, buf: ByteBuffer) {
@@ -2411,6 +2512,7 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterOptionalTypeGateSubjectBinding.write(value.`subject`, buf)
             FfiConverterSequenceTypeGateVariantV2.write(value.`variants`, buf)
             FfiConverterOptionalTypeGateQuorum.write(value.`quorum`, buf)
+            FfiConverterOptionalTypeGateRelease.write(value.`release`, buf)
     }
 }
 
@@ -10933,6 +11035,38 @@ public object FfiConverterOptionalTypeGateAnswersV2: FfiConverterRustBuffer<Gate
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeGateHold: FfiConverterRustBuffer<GateHold?> {
+    override fun read(buf: ByteBuffer): GateHold? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeGateHold.read(buf)
+    }
+
+    override fun allocationSize(value: GateHold?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeGateHold.allocationSize(value)
+        }
+    }
+
+    override fun write(value: GateHold?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeGateHold.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeGateQuorum: FfiConverterRustBuffer<GateQuorum?> {
     override fun read(buf: ByteBuffer): GateQuorum? {
         if (buf.get().toInt() == 0) {
@@ -10955,6 +11089,38 @@ public object FfiConverterOptionalTypeGateQuorum: FfiConverterRustBuffer<GateQuo
         } else {
             buf.put(1)
             FfiConverterTypeGateQuorum.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterOptionalTypeGateRelease: FfiConverterRustBuffer<GateRelease?> {
+    override fun read(buf: ByteBuffer): GateRelease? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeGateRelease.read(buf)
+    }
+
+    override fun allocationSize(value: GateRelease?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeGateRelease.allocationSize(value)
+        }
+    }
+
+    override fun write(value: GateRelease?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeGateRelease.write(value, buf)
         }
     }
 }

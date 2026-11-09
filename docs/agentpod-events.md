@@ -447,6 +447,45 @@ client shows the count (`core::gate_quorum`).
   preview (`decision-quorum-progress`). The approval that reaches the quorum
   resolves the gate, and its outcome (§7) closes the card as usual.
 
+#### An approval that waits for its release time
+
+charter `decisions/2026-11-09-an-approval-may-wait-for-its-release-time.md`,
+fixture version 10 (entries tagged `variant: "release"`). An approved gate
+acts at its release time: the later of its subject's own not-before time and
+the approval's time plus the stage's `holdFor`. Until then the approval is
+held and may be pulled back (`core::gate_release`).
+
+- **Before approval.** A gate.v2 may carry `release: { hold_for_minutes?,
+  not_before? }`: the hold 5–10080 whole minutes, the time ISO, and at least
+  one of them. Anything else refuses the whole gate.v2 and the v1 card is
+  drawn, as for a malformed quorum. `GateV2Decision.release` carries it, and
+  `gate_release_line(release, now_ms)` words it at the device's clock, as a
+  deadline is: "If approved, it waits 30 min before it goes ahead.", "If
+  approved, it goes ahead in 3 d at the earliest." (nothing once that time
+  has passed and no hold is left), or both joined.
+- **Held.** The outcome receipt may carry `held_until`. For an approval
+  (`decision` starting `approve`) the receipt's `CustomEventOutcome.held` is
+  then `GateHold { gate_id, held_until }`. The card stays a receipt with no
+  buttons, says `gate_held_line(held_until, now_ms)` ("Goes ahead in 25 min
+  unless pulled back.", then "Going ahead now."), and iOS and Android offer
+  **Pull back**.
+- **Pull back.** `send_gate_pull_back(room_id, gate_id, comment,
+  in_reply_to)` sends `dev.superpipeline.gate.pull_back.v2`, an `m.text`
+  with `m.reference` to the gate's event and a required comment of at most
+  8192 bytes. superpipeline judges who may (a decider of the gate, or an
+  owner or admin). The hub replies either way, so the card only says
+  "Pull-back sent". The desktop sends no pull-back. It says "To pull it
+  back, use your phone or the board."
+- **Settled.** The hub's `dev.agentpod.decision.released.v2` (outcome
+  `released` or `blocked`, with a reason) and
+  `dev.agentpod.decision.pulled_back.v2` settle the held receipt, but only
+  from the identity that posted the gate, with the same gate and board. The
+  receipt then says "Approved by rakesh — it went ahead", "… — it did not go
+  ahead: <reason>", or "Pulled back by rakesh — returned for changes:
+  <comment>" (decision `request_changes`), and Pull back is gone. Neither
+  notice is a row (`ItemView::None`) or a notification (`NotNews`): the
+  readable reply beside each says it.
+
 ### 5b. question.v2 and delivery.v2 — questions and follow-ups in the envelope
 
 charter `decisions/2026-11-07-the-envelope-covers-questions-and-follow-ups.md`.

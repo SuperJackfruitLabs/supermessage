@@ -244,6 +244,12 @@ pub struct CustomEventOutcome {
     /// the prompt of the decision it replaces. `None` when the card never
     /// had one to answer.
     pub prompt: Option<String>,
+    /// An approval recorded but held until its release time
+    /// (`crate::gate_release`): the receipt says until when and offers Pull
+    /// back. `None` once it went ahead, was pulled back, or never waited.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[uniffi(default = None)]
+    pub held: Option<crate::gate_release::GateHold>,
 }
 
 /// What a renderer returns.

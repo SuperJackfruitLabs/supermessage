@@ -492,6 +492,23 @@ public final class Session {
         }
     }
 
+    /// Pull a held approval back (`core::gate_release`) with the reader's
+    /// `comment`. superpipeline judges whether the reader may, and the hub
+    /// says so in the room. False when it could not be sent.
+    @discardableResult
+    public func pullBackGate(
+        _ eventId: String?, gateId: String, comment: String, in roomId: String
+    ) async -> Bool {
+        guard let eventId else { return false }
+        do {
+            try await client.sendGatePullBack(
+                roomId: roomId, gateId: gateId, comment: comment, inReplyTo: eventId)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Answer a question.v2 from its card. `optionId` `nil` answers a
     /// free-text question with `text`; otherwise `text` is the chosen
     /// option's input, when it asks for one. Same contract as `answerGateV2`.

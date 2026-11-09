@@ -2992,6 +2992,26 @@ impl FocusedTimeline {
         Ok(())
     }
 
+    /// Pulls a held approval back (`crate::gate_release`), in the open room:
+    /// a `dev.superpipeline.gate.pull_back.v2` referencing the gate's event.
+    /// superpipeline judges whether the reader may, and the hub says so.
+    pub async fn send_gate_pull_back(
+        &self,
+        room_id: &str,
+        gate_id: &str,
+        comment: &str,
+        in_reply_to: &str,
+    ) -> CoreResult<()> {
+        let content = crate::gate_release::pull_back_request(gate_id, comment, in_reply_to)?;
+        let timeline = self.active_timeline_for(room_id)?;
+        timeline
+            .room()
+            .send_raw("m.room.message", content)
+            .await
+            .map_err(|e| CoreError::Protocol(e.to_string()))?;
+        Ok(())
+    }
+
     /// Answers a question.v2 (`crate::question_v2`) from its card, in the
     /// open room.
     ///

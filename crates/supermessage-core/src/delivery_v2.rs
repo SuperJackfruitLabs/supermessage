@@ -166,6 +166,7 @@ impl ParsedDeliveryV2 {
             variants: Vec::new(),
             // A follow-up settles delivery after the gate passed: no count.
             quorum: None,
+            release: None,
         }
     }
 }

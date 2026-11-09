@@ -89,6 +89,9 @@ import uniffi.supermessage_core.OptionScope
 import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.QuestionV2Decision
 import uniffi.supermessage_ffi.decisionDeadlineLine
+import uniffi.supermessage_ffi.gateReleaseLine
+import uniffi.supermessage_ffi.gateHeldLine
+import uniffi.supermessage_core.GateHold
 
 /**
  * A suite event — a Superpipeline card or run, a permission request, station
@@ -341,6 +344,8 @@ private fun RenderedCard(
                     detailsOpenInitially = detailsOpenInitially,
                     modifier = Modifier.testTag("decision-resolved"),
                     lineTag = "decision-outcome",
+                    held = outcome.held,
+                    onDecide = onDecide,
                 )
 
             // Pending and its receipt share one slot, so the change between
@@ -500,6 +505,8 @@ private fun ReceiptBody(
     detailsOpenInitially: Boolean,
     lineTag: String,
     modifier: Modifier = Modifier,
+    held: GateHold? = null,
+    onDecide: (suspend (GateAnswer) -> Boolean)? = null,
 ) {
     val digest = remember(fields, headline) { fieldDigest(fields, headline.orEmpty()) }
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -523,6 +530,8 @@ private fun ReceiptBody(
                 modifier = Modifier.testTag("decision-awaiting-board"),
             )
         }
+        // Approved, and held until its release time (`core::gate_release`).
+        if (held != null) HeldApproval(held, onDecide)
         Summary(digest.summary)
         Details(digest.rest, detailsOpenInitially)
         if (reasoning != null) ReasoningDisclosure(reasoning)
@@ -652,6 +661,15 @@ private fun PendingBody(
                 modifier = Modifier.testTag("decision-quorum-progress"),
             )
         }
+        // An approval here would wait before it acts (`core::gate_release`).
+        decision.gateV2?.release?.let { gateReleaseLine(it, System.currentTimeMillis()) }?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("decision-release"),
+            )
+        }
         withheld?.let {
             Text(
                 it,
@@ -663,6 +681,99 @@ private fun PendingBody(
         if (reasoning != null) ReasoningDisclosure(reasoning)
         LinkButton(link)
         DecisionButtons(decision, answers, answerKey, onDecide)
+    }
+}
+
+/**
+ * A held approval on its receipt: until when, worded by the core against this
+ * device's clock, and a Pull back that sends the card back for changes with a
+ * comment saying why. superpipeline judges whether this reader may; the hub
+ * says so in the room either way.
+ */
+@Composable
+private fun HeldApproval(held: GateHold, onDecide: (suspend (GateAnswer) -> Boolean)?) {
+    val scope = rememberCoroutineScope()
+    var asking by remember(held.gateId) { mutableStateOf(false) }
+    var comment by remember(held.gateId) { mutableStateOf("") }
+    var sending by remember(held.gateId) { mutableStateOf(false) }
+    var sent by remember(held.gateId) { mutableStateOf(false) }
+    var failed by remember(held.gateId) { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            gateHeldLine(held.heldUntil, System.currentTimeMillis()),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.testTag("decision-held"),
+        )
+        if (onDecide != null && !sent) {
+            TextButton(
+                onClick = { asking = true },
+                enabled = !sending,
+                modifier = Modifier.testTag("decision-pull-back"),
+            ) { Text("Pull back") }
+        }
+        if (sent) {
+            Text(
+                "Pull-back sent",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("decision-pull-back-sent"),
+            )
+        }
+        if (failed) {
+            Text(
+                "Not sent. Try again.",
+                style = MaterialTheme.typography.labelSmall,
+                color = SupermessageTheme.colors.danger,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }.testTag("decision-pull-back-failed"),
+            )
+        }
+    }
+    if (asking && onDecide != null) {
+        val focus = remember { FocusRequester() }
+        AlertDialog(
+            onDismissRequest = { asking = false },
+            title = { Text("Pull back this approval?") },
+            text = {
+                LaunchedEffect(Unit) { focus.requestFocus() }
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "It will not go ahead. The card goes back for changes, with your comment as the reason.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedTextField(
+                        value = comment,
+                        onValueChange = { comment = it },
+                        label = { Text("Why?") },
+                        modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag("decision-pull-back-comment"),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        asking = false
+                        sending = true
+                        failed = false
+                        val why = comment.trim()
+                        scope.launch {
+                            val ok = onDecide(
+                                GateAnswer(subject = held.gateId, optionId = "", comment = why, prompt = "", pullBack = held),
+                            )
+                            sending = false
+                            sent = ok
+                            failed = !ok
+                        }
+                    },
+                    // The board needs a reason; an empty one would be refused.
+                    enabled = comment.isNotBlank(),
+                    modifier = Modifier.testTag("decision-pull-back-send"),
+                ) { Text("Pull back") }
+            },
+            dismissButton = {
+                TextButton(onClick = { asking = false }, modifier = Modifier.testTag("decision-pull-back-cancel")) { Text("Cancel") }
+            },
+        )
     }
 }
 
@@ -1349,6 +1460,8 @@ data class GateAnswer(
     val attentionV2: AttentionV2Decision? = null,
     /** The version picked on a gate.v2 that offers a choice of them, sent with an approval of it. */
     val chosenVariant: String? = null,
+    /** A held approval being pulled back, with [comment] as the reason; sent with `Session.pullBackGate`. */
+    val pullBack: GateHold? = null,
 ) {
     companion object {
         /** Superpipeline's only option id that expects a comment. */

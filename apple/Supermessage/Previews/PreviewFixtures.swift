@@ -174,6 +174,7 @@ struct PreviewClient: SessionClient {
         roomId: String, delivery: GateV2Decision, optionId: String, text: String?,
         inReplyTo: String
     ) async throws {}
+    func sendGatePullBack(roomId: String, gateId: String, comment: String, inReplyTo: String) async throws {}
     func setTyping(roomId: String, typing: Bool) async throws {}
 
     // MARK: NotificationAnswering

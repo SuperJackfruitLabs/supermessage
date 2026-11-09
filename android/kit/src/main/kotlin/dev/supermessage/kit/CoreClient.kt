@@ -375,6 +375,14 @@ class CoreClient(
     }
 
     /**
+     * Pull a held approval back with the reader's [comment] saying why
+     * (`core::gate_release`). [inReplyTo] is the gate card's event.
+     */
+    suspend fun sendGatePullBack(roomId: String, gateId: String, comment: String, inReplyTo: String) {
+        run { it.sendGatePullBack(roomId, gateId, comment, inReplyTo) }
+    }
+
+    /**
      * Answer a question.v2. [question] is the card's own
      * `CustomEventDecision.questionV2`; [optionId] is one of its options (with
      * [text] when that option asks for input), or null for a free-text answer.

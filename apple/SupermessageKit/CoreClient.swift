@@ -351,6 +351,14 @@ public actor CoreClient {
     /// Answer a manual-delivery follow-up: the live link as `text` for
     /// `record_live_url`, or `switch_to_automatic`. `delivery` is the card's
     /// own `CustomEventDecision.deliveryV2`.
+    /// Pull a held approval back with the reader's `comment` saying why
+    /// (`core::gate_release`). `inReplyTo` is the gate card's event.
+    public func sendGatePullBack(roomId: String, gateId: String, comment: String, inReplyTo: String) async throws {
+        try await run {
+            try $0.sendGatePullBack(roomId: roomId, gateId: gateId, comment: comment, inReplyTo: inReplyTo)
+        }
+    }
+
     public func sendDeliveryAnswerV2(
         roomId: String, delivery: GateV2Decision, optionId: String, text: String?,
         inReplyTo: String

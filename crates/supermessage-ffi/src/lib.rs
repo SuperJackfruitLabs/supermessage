@@ -376,6 +376,24 @@ impl Core {
         Ok(())
     }
 
+    /// Pull a held approval back (`supermessage_core::gate_release`) with the
+    /// reader's comment saying why. `in_reply_to` is the gate card's event.
+    pub fn send_gate_pull_back(
+        &self,
+        room_id: String,
+        gate_id: String,
+        comment: String,
+        in_reply_to: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.focused_timeline().send_gate_pull_back(
+            &room_id,
+            &gate_id,
+            &comment,
+            &in_reply_to,
+        ))?;
+        Ok(())
+    }
+
     /// Answer a question.v2 from its card (`supermessage_core::question_v2`).
     ///
     /// `question` is the `CustomEventDecision::question_v2` the card was
@@ -1374,6 +1392,23 @@ pub fn voice_long_enough(duration_ms: u64) -> bool {
 #[uniffi::export]
 pub fn turn_record_label(thought: bool, steps: u32, elapsed_ms: Option<u64>) -> String {
     supermessage_core::turn_label::turn_record_label(thought, steps, elapsed_ms)
+}
+
+/// "If approved, it waits 30 min before it goes ahead." — see
+/// `core::gate_release::release_line`. Given the host's clock, as a deadline is.
+#[uniffi::export]
+pub fn gate_release_line(
+    release: supermessage_core::gate_release::GateRelease,
+    now_ms: i64,
+) -> Option<String> {
+    supermessage_core::gate_release::release_line(&release, now_ms)
+}
+
+/// "Goes ahead in 25 min unless pulled back." — see
+/// `core::gate_release::held_line`.
+#[uniffi::export]
+pub fn gate_held_line(held_until: String, now_ms: i64) -> String {
+    supermessage_core::gate_release::held_line(&held_until, now_ms)
 }
 
 /// "Working", "Done" or "Stopped" — see `core::turn_label::turn_status_word`.

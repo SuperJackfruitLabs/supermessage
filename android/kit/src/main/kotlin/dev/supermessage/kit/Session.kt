@@ -601,6 +601,23 @@ class Session(
     }
 
     /**
+     * Pull a held approval back (`core::gate_release`) with the reader's
+     * [comment]. superpipeline judges whether the reader may, and the hub
+     * says so in the room. False when it could not be sent.
+     */
+    suspend fun pullBackGate(eventId: String?, gateId: String, comment: String, roomId: String): Boolean {
+        if (eventId == null) return false
+        return try {
+            client.sendGatePullBack(roomId = roomId, gateId = gateId, comment = comment, inReplyTo = eventId)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
      * Answer a question.v2 from its card. [optionId] null answers a free-text
      * question with [text]; otherwise [text] is the chosen option's input,
      * when it asks for one. Otherwise as [answerGateV2].
