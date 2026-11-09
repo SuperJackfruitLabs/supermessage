@@ -18,7 +18,7 @@ plugins {
  */
 // Plain `val`, not `const val`: a .kts script body is a function body, and
 // Kotlin allows `const` only at true top level or in an object.
-val VERSION_CODE_FLOOR = 3
+val VERSION_CODE_FLOOR = 4
 
 android {
     namespace = "dev.supermessage"
@@ -46,7 +46,7 @@ android {
             System.getenv("ANDROID_VERSION_CODE")?.toIntOrNull() ?: 0,
             VERSION_CODE_FLOOR,
         )
-        versionName = "0.1.1"
+        versionName = "0.1.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
