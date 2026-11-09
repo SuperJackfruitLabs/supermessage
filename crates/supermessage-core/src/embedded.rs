@@ -39,6 +39,7 @@ use crate::attention_v2::ATTENTION_V2_EVENT_TYPE;
 use crate::custom_events::{GATE_EVENT_TYPE, PERMISSION_REQUEST_EVENT_TYPE};
 use crate::delivery_v2::DELIVERY_V2_EVENT_TYPE;
 use crate::dto::TimelineRow;
+use crate::gate_checks::CHECKS_WAITING_TYPE;
 use crate::gate_v2::GATE_V2_EVENT_TYPE;
 use crate::item_view::ItemView;
 use crate::permission_v2::PERMISSION_V2_EVENT_TYPE;
@@ -82,7 +83,8 @@ pub const EMBEDDED_SUITE_KEYS: [(&str, &str); 2] = [
 /// as before.
 ///
 /// A card waiting on a person (`crate::attention_v2`) has no v1 form: without
-/// valid v2 fields it stays prose.
+/// valid v2 fields it stays prose. Nor has a card of overdue checks
+/// (`crate::gate_checks`).
 pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
     if let Some(payload) = crate::permission_v2::embedded_payload(content) {
         return Some((PERMISSION_V2_EVENT_TYPE, payload));
@@ -103,6 +105,9 @@ pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
         if let Some(payload) = crate::attention_v2::embedded_payload(content) {
             return Some((ATTENTION_V2_EVENT_TYPE, payload));
         }
+        if let Some(payload) = crate::gate_checks::embedded_payload(content) {
+            return Some((CHECKS_WAITING_TYPE, payload));
+        }
     }
     EMBEDDED_SUITE_KEYS.iter().find_map(|(key, event_type)| {
         content
@@ -120,7 +125,8 @@ pub fn embedded_suite_event(content: &Value) -> Option<(&'static str, Value)> {
 /// and follow-up markers do not, so they are searched for by name. The
 /// permission.v2 marker, `dev.agentpod.permission.v2`, contains the
 /// permission key's text, so it is found like the gate's. The attention.v2
-/// marker does not, so it is searched for by name too.
+/// marker does not, so it is searched for by name too, as is the
+/// checks.waiting marker.
 pub fn may_carry_embedded(raw_json: &str) -> bool {
     EMBEDDED_SUITE_KEYS
         .iter()
@@ -128,6 +134,7 @@ pub fn may_carry_embedded(raw_json: &str) -> bool {
         || raw_json.contains(QUESTION_V2_EVENT_TYPE)
         || raw_json.contains(DELIVERY_V2_EVENT_TYPE)
         || raw_json.contains(ATTENTION_V2_EVENT_TYPE)
+        || raw_json.contains(CHECKS_WAITING_TYPE)
 }
 
 /// What makes two carriers of a decision the same decision.
@@ -174,6 +181,21 @@ pub fn decision_identity(event_type: &str, payload: &Value) -> Option<String> {
                 id(payload, "wait_id")?
             ))
         }
+        // A card of overdue checks is the card's checks at its stage. The
+        // card carries no arrival id, so a later check set at the same stage
+        // is the same decision here: the newer card supersedes the older,
+        // whose checks are over anyway.
+        CHECKS_WAITING_TYPE => {
+            fn id<'a>(payload: &'a Value, key: &str) -> Option<&'a str> {
+                payload.get(key)?.as_str().filter(|s| !s.is_empty())
+            }
+            Some(format!(
+                "checks:{}:{}:{}",
+                id(payload, "board_id")?,
+                id(payload, "card_id")?,
+                id(payload, "stage_key")?
+            ))
+        }
         _ => None,
     }
 }
@@ -189,9 +211,10 @@ pub const MOVED_DECISION: &str = "moved";
 
 /// Whether a decision identity is one a board decision has — the kinds the
 /// hub re-posts for an escalated admin (gate, question, follow-up, waiting
-/// card). A permission is the station's and is never re-posted.
+/// card, overdue checks). A permission is the station's and is never
+/// re-posted.
 fn reposted_kind(identity: &str) -> bool {
-    ["gate:", "question:", "delivery:", "attention:"]
+    ["gate:", "question:", "delivery:", "attention:", "checks:"]
         .iter()
         .any(|prefix| identity.starts_with(prefix))
 }
@@ -272,6 +295,8 @@ pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
     resolved.extend(crate::attention_v2::resolved_attention(rows));
     // How far each open quorum gate has got (`crate::gate_quorum`).
     let quorum = crate::gate_quorum::QuorumState::read(rows.iter().map(|row| &row.item));
+    // What the hub said about each card of overdue checks (`crate::gate_checks`).
+    let checks = crate::gate_checks::CheckNotices::read(rows.iter().map(|row| &row.item));
 
     let mut changed = Vec::new();
     for (index, row) in rows.iter_mut().enumerate() {
@@ -300,17 +325,32 @@ pub fn reconcile(rows: &mut [TimelineRow]) -> Vec<usize> {
             match resolved.get(&identity) {
                 Some(outcome) => crate::gate_outcome::as_receipt(own, outcome),
                 None if superseded => crate::gate_outcome::as_receipt(own, &moved),
-                None if quorum.is_empty() => own,
-                None => crate::gate_quorum::apply_to_view(
-                    &quorum,
-                    own,
-                    row.item.sender.as_deref(),
-                    row.item
-                        .custom_payload
-                        .as_ref()
-                        .and_then(|p| p.0.get("board_id"))
-                        .and_then(Value::as_str),
-                ),
+                None => {
+                    let own = if quorum.is_empty() {
+                        own
+                    } else {
+                        crate::gate_quorum::apply_to_view(
+                            &quorum,
+                            own,
+                            row.item.sender.as_deref(),
+                            row.item
+                                .custom_payload
+                                .as_ref()
+                                .and_then(|p| p.0.get("board_id"))
+                                .and_then(Value::as_str),
+                        )
+                    };
+                    if checks.is_empty() {
+                        own
+                    } else {
+                        crate::gate_checks::apply_to_view(
+                            &checks,
+                            own,
+                            row.item.event_id.as_deref(),
+                            row.item.sender.as_deref(),
+                        )
+                    }
+                }
             }
         };
         if row.view != wanted {

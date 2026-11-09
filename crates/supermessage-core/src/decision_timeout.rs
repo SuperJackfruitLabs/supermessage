@@ -41,7 +41,7 @@ pub const DECISION_REMINDED_EVENT_TYPE: &str = "dev.superpipeline.decision.remin
 pub const DECISION_ESCALATED_EVENT_TYPE: &str = "dev.superpipeline.decision.escalated.v1";
 
 /// The decision kinds a notice may name (`decision_kind`).
-const DECISION_KINDS: [&str; 4] = ["gate", "question", "delivery", "attention"];
+const DECISION_KINDS: [&str; 5] = ["gate", "question", "delivery", "attention", "checks"];
 
 /// The hub's own bound on a time (`TIME_MAX`, `decision-timeout-wire.ts`).
 const TIME_MAX_CHARS: usize = 40;
@@ -231,7 +231,8 @@ pub fn may_carry_notice(raw_json: &str) -> bool {
 /// The notice type a message's `content` declares, when it is one the corpus
 /// accepts: the declared type, a body, `schema_version`, the board, card and
 /// decision ids, a known `decision_kind`, `waiting_since` and the notice's
-/// own time as ISO times, and an `m.in_reply_to` naming the card's event.
+/// own time as ISO times, and an `m.in_reply_to` naming the card's event —
+/// except for overdue checks, which may stand alone.
 /// An `m.reference` is an answer or a receipt, not a notice.
 pub fn notice_type(content: &Value) -> Option<&'static str> {
     let (event_type, at_key) = match content.get("suite_event_type")?.as_str()? {
@@ -265,7 +266,10 @@ pub fn notice_type(content: &Value) -> Option<&'static str> {
         && kind_known
         && time("waiting_since").is_some()
         && time(at_key).is_some()
-        && replies_to;
+        // Checks wait before any card is posted: their reminder has nothing to
+        // reply to, and their escalation replies to the card of overdue
+        // checks it posts, or stands alone when none could be.
+        && (replies_to || content.get("decision_kind").and_then(Value::as_str) == Some("checks"));
     valid.then_some(event_type)
 }
 
@@ -281,6 +285,7 @@ pub fn notice_card_type(content: &Value) -> Option<&'static str> {
         "question" => crate::question_v2::QUESTION_V2_EVENT_TYPE,
         "delivery" => crate::delivery_v2::DELIVERY_V2_EVENT_TYPE,
         "attention" => crate::attention_v2::ATTENTION_V2_EVENT_TYPE,
+        "checks" => crate::gate_checks::CHECKS_WAITING_TYPE,
         _ => return None,
     })
 }
@@ -598,6 +603,38 @@ mod tests {
                 assert_eq!(notice_type(&content), None, "{suite_type}: {why}");
             }
         }
+    }
+
+    #[test]
+    fn overdue_checks_are_reminded_alone_and_escalated_as_quiet_lines() {
+        // A reminder of checks stands alone: nothing is posted for checks
+        // before an escalation (fixture v11).
+        for suite_type in NOTICES {
+            for (why, content) in cases(suite_type, Some("checks"), "accept") {
+                assert_eq!(notice_type(&content), Some(suite_type), "{why}");
+                assert_eq!(
+                    notice_card_type(&content),
+                    Some(crate::gate_checks::CHECKS_WAITING_TYPE),
+                    "{why}"
+                );
+                let row = projected(content);
+                assert!(
+                    matches!(
+                        row.view,
+                        ItemView::System {
+                            kind: SystemKind::Notice { .. },
+                            ..
+                        }
+                    ),
+                    "{why}: {:?}",
+                    row.view
+                );
+            }
+        }
+        // Any other kind still needs its card to reply to.
+        let (_, mut gate) = cases(DECISION_REMINDED_EVENT_TYPE, None, "accept").remove(0);
+        gate.as_object_mut().unwrap().remove("m.relates_to");
+        assert_eq!(notice_type(&gate), None);
     }
 
     #[test]

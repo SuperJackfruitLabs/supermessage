@@ -37,6 +37,7 @@ import uniffi.supermessage_core.AgentAvatar
 import uniffi.supermessage_core.AgentAvatarStyle
 import uniffi.supermessage_core.AgentState
 import uniffi.supermessage_core.AttentionV2Decision
+import uniffi.supermessage_core.ChecksWaitingDecision
 import uniffi.supermessage_core.Counterpart
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.DecisionDeadline
@@ -46,6 +47,7 @@ import uniffi.supermessage_core.FfiConverterTypeAgentAvatar
 import uniffi.supermessage_core.FfiConverterTypeAgentAvatarStyle
 import uniffi.supermessage_core.FfiConverterTypeAgentState
 import uniffi.supermessage_core.FfiConverterTypeAttentionV2Decision
+import uniffi.supermessage_core.FfiConverterTypeChecksWaitingDecision
 import uniffi.supermessage_core.FfiConverterTypeCounterpart
 import uniffi.supermessage_core.FfiConverterTypeCustomEventDecision
 import uniffi.supermessage_core.FfiConverterTypeDecisionDeadline
@@ -161,6 +163,7 @@ import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatar
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentAvatarStyle
 import uniffi.supermessage_core.RustBuffer as RustBufferAgentState
 import uniffi.supermessage_core.RustBuffer as RustBufferAttentionV2Decision
+import uniffi.supermessage_core.RustBuffer as RustBufferChecksWaitingDecision
 import uniffi.supermessage_core.RustBuffer as RustBufferCounterpart
 import uniffi.supermessage_core.RustBuffer as RustBufferCustomEventDecision
 import uniffi.supermessage_core.RustBuffer as RustBufferDecisionDeadline
@@ -1258,6 +1261,8 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1386,6 +1391,8 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_fn_method_core_search_messages(`ptr`: Pointer,`term`: RustBuffer.ByValue,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_send_attention_answer_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`attention`: RustBufferAttentionV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
+    fun uniffi_supermessage_ffi_fn_method_core_send_check_override(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`checks`: RustBufferChecksWaitingDecision.ByValue,`checkName`: RustBuffer.ByValue,`comment`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     fun uniffi_supermessage_ffi_fn_method_core_send_delivery_answer_v2(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`delivery`: RustBufferGateV2Decision.ByValue,`optionId`: RustBuffer.ByValue,`text`: RustBuffer.ByValue,`inReplyTo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
@@ -1941,6 +1948,8 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_attention_answer_v2(
     ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_send_check_override(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_delivery_answer_v2(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_send_gate_decision(
@@ -2386,6 +2395,9 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_attention_answer_v2() != 36441.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_send_check_override() != 19044.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_send_delivery_answer_v2() != 25249.toShort()) {
@@ -3280,6 +3292,18 @@ public interface CoreInterface {
      * from the card — referencing `in_reply_to`. The room need not be open.
      */
     fun `sendAttentionAnswerV2`(`roomId`: kotlin.String, `attention`: AttentionV2Decision, `optionId`: kotlin.String, `text`: kotlin.String?, `inReplyTo`: kotlin.String)
+    
+    /**
+     * Override a machine check from a card of overdue checks
+     * (`supermessage_core::gate_checks`), with the reader's comment saying
+     * why. `checks` is the card's `CustomEventDecision::checks_waiting`,
+     * handed back unchanged; `check_name` one of its checks offered
+     * Override. The core refuses a check not offered, no comment and one
+     * over the board's limit, then sends the
+     * `dev.superpipeline.check.override.v2` referencing `in_reply_to`, the
+     * card's event. superpipeline judges whether the reader may.
+     */
+    fun `sendCheckOverride`(`roomId`: kotlin.String, `checks`: ChecksWaitingDecision, `checkName`: kotlin.String, `comment`: kotlin.String, `inReplyTo`: kotlin.String)
     
     /**
      * Answer a manual-delivery follow-up from its card
@@ -4478,6 +4502,28 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_attention_answer_v2(
         it, FfiConverterString.lower(`roomId`),FfiConverterTypeAttentionV2Decision.lower(`attention`),FfiConverterString.lower(`optionId`),FfiConverterOptionalString.lower(`text`),FfiConverterString.lower(`inReplyTo`),_status)
+}
+    }
+    
+    
+
+    
+    /**
+     * Override a machine check from a card of overdue checks
+     * (`supermessage_core::gate_checks`), with the reader's comment saying
+     * why. `checks` is the card's `CustomEventDecision::checks_waiting`,
+     * handed back unchanged; `check_name` one of its checks offered
+     * Override. The core refuses a check not offered, no comment and one
+     * over the board's limit, then sends the
+     * `dev.superpipeline.check.override.v2` referencing `in_reply_to`, the
+     * card's event. superpipeline judges whether the reader may.
+     */
+    @Throws(FfiException::class)override fun `sendCheckOverride`(`roomId`: kotlin.String, `checks`: ChecksWaitingDecision, `checkName`: kotlin.String, `comment`: kotlin.String, `inReplyTo`: kotlin.String)
+        = 
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_send_check_override(
+        it, FfiConverterString.lower(`roomId`),FfiConverterTypeChecksWaitingDecision.lower(`checks`),FfiConverterString.lower(`checkName`),FfiConverterString.lower(`comment`),FfiConverterString.lower(`inReplyTo`),_status)
 }
     }
     
@@ -8129,6 +8175,10 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
         }
     }
 }
+
+
+
+
 
 
 

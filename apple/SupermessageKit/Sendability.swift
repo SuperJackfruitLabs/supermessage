@@ -45,6 +45,10 @@ extension GateVariantV2: @retroactive @unchecked Sendable {}
 extension GateHold: @retroactive @unchecked Sendable {}
 extension GateRelease: @retroactive @unchecked Sendable {}
 extension GateQuorum: @retroactive @unchecked Sendable {}
+extension GateCheck: @retroactive @unchecked Sendable {}
+extension CheckProvider: @retroactive @unchecked Sendable {}
+extension CheckStatus: @retroactive @unchecked Sendable {}
+extension ChecksWaitingDecision: @retroactive @unchecked Sendable {}
 extension OptionInput: @retroactive @unchecked Sendable {}
 extension OptionInputKind: @retroactive @unchecked Sendable {}
 extension QuestionFreeText: @retroactive @unchecked Sendable {}

@@ -1524,6 +1524,78 @@ public object FfiConverterTypeAudioView: FfiConverterRustBuffer<AudioView> {
 
 
 /**
+ * A checks.waiting card as a host draws and answers it. Rides on
+ * `CustomEventDecision::checks_waiting`.
+ */
+data class ChecksWaitingDecision (
+    /**
+     * Handed back verbatim in an override.
+     */
+    var `boardId`: kotlin.String, 
+    /**
+     * Handed back verbatim in an override.
+     */
+    var `cardId`: kotlin.String, 
+    /**
+     * Display text, bounded.
+     */
+    var `cardTitle`: kotlin.String, 
+    /**
+     * The stage the checks wait at, as the board keys it. Display text,
+     * bounded.
+     */
+    var `stageKey`: kotlin.String, 
+    /**
+     * In the board's order. Override is offered on each one
+     * [`GateCheck::overridable`].
+     */
+    var `checks`: List<GateCheck>, 
+    /**
+     * [`OVERRIDE_NOTE`]: who the board lets override.
+     */
+    var `overrideNote`: kotlin.String
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeChecksWaitingDecision: FfiConverterRustBuffer<ChecksWaitingDecision> {
+    override fun read(buf: ByteBuffer): ChecksWaitingDecision {
+        return ChecksWaitingDecision(
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterSequenceTypeGateCheck.read(buf),
+            FfiConverterString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ChecksWaitingDecision) = (
+            FfiConverterString.allocationSize(value.`boardId`) +
+            FfiConverterString.allocationSize(value.`cardId`) +
+            FfiConverterString.allocationSize(value.`cardTitle`) +
+            FfiConverterString.allocationSize(value.`stageKey`) +
+            FfiConverterSequenceTypeGateCheck.allocationSize(value.`checks`) +
+            FfiConverterString.allocationSize(value.`overrideNote`)
+    )
+
+    override fun write(value: ChecksWaitingDecision, buf: ByteBuffer) {
+            FfiConverterString.write(value.`boardId`, buf)
+            FfiConverterString.write(value.`cardId`, buf)
+            FfiConverterString.write(value.`cardTitle`, buf)
+            FfiConverterString.write(value.`stageKey`, buf)
+            FfiConverterSequenceTypeGateCheck.write(value.`checks`, buf)
+            FfiConverterString.write(value.`overrideNote`, buf)
+    }
+}
+
+
+
+/**
  * The single agent a room's messages go to, as the header names it.
  *
  * The typing line and the acknowledgement dock say "Atlas", not the bridge's
@@ -1641,6 +1713,16 @@ data class CustomEventDecision (
      */
     var `attentionV2`: AttentionV2Decision? = null, 
     /**
+     * A card's machine checks overdue and escalated, when the prose message
+     * carries `dev.agentpod.checks.waiting.v2` (`crate::gate_checks`): the
+     * card, the stage, and each check with its line and whether Override is
+     * offered on it (pending or failed). Answered with
+     * `send_check_override`, with a required comment. [`Self::options`] is
+     * empty: no plain reply overrides a check. `None` otherwise, and absent
+     * from the JSON.
+     */
+    var `checksWaiting`: ChecksWaitingDecision? = null, 
+    /**
      * When this decision is reminded and escalated, on a gate.v2,
      * question.v2, delivery.v2 or attention.v2 whose stage has a timeout
      * (`crate::decision_timeout`). A host words it with
@@ -1668,6 +1750,7 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeGateV2Decision.read(buf),
             FfiConverterOptionalTypePermissionV2Decision.read(buf),
             FfiConverterOptionalTypeAttentionV2Decision.read(buf),
+            FfiConverterOptionalTypeChecksWaitingDecision.read(buf),
             FfiConverterOptionalTypeDecisionDeadline.read(buf),
         )
     }
@@ -1681,6 +1764,7 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeGateV2Decision.allocationSize(value.`deliveryV2`) +
             FfiConverterOptionalTypePermissionV2Decision.allocationSize(value.`permissionV2`) +
             FfiConverterOptionalTypeAttentionV2Decision.allocationSize(value.`attentionV2`) +
+            FfiConverterOptionalTypeChecksWaitingDecision.allocationSize(value.`checksWaiting`) +
             FfiConverterOptionalTypeDecisionDeadline.allocationSize(value.`deadline`)
     )
 
@@ -1693,6 +1777,7 @@ public object FfiConverterTypeCustomEventDecision: FfiConverterRustBuffer<Custom
             FfiConverterOptionalTypeGateV2Decision.write(value.`deliveryV2`, buf)
             FfiConverterOptionalTypePermissionV2Decision.write(value.`permissionV2`, buf)
             FfiConverterOptionalTypeAttentionV2Decision.write(value.`attentionV2`, buf)
+            FfiConverterOptionalTypeChecksWaitingDecision.write(value.`checksWaiting`, buf)
             FfiConverterOptionalTypeDecisionDeadline.write(value.`deadline`, buf)
     }
 }
@@ -2118,6 +2203,75 @@ public object FfiConverterTypeGateAnswersV2: FfiConverterRustBuffer<GateAnswersV
 
 
 /**
+ * One check, as a host draws it.
+ */
+data class GateCheck (
+    /**
+     * The check's name, as the board knows it; handed back verbatim in an
+     * override. 1–40 characters, so drawn whole.
+     */
+    var `name`: kotlin.String, 
+    var `provider`: CheckProvider, 
+    var `status`: CheckStatus, 
+    /**
+     * A link to the result, when it is an `https://` address
+     * (`crate::custom_events::safe_url`); any other is dropped and the check
+     * kept, since a link decorates a check rather than deciding it.
+     */
+    var `url`: kotlin.String?, 
+    /**
+     * The plain line a host draws: "build (CI) — passed".
+     */
+    var `line`: kotlin.String, 
+    /**
+     * Whether this card offers Override on it: only a checks.waiting card,
+     * and only for a check pending or failed. Never on a gate.v2, whose
+     * checks are over by the time it opens, and which an override could not
+     * reference.
+     */
+    var `overridable`: kotlin.Boolean
+) {
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeGateCheck: FfiConverterRustBuffer<GateCheck> {
+    override fun read(buf: ByteBuffer): GateCheck {
+        return GateCheck(
+            FfiConverterString.read(buf),
+            FfiConverterTypeCheckProvider.read(buf),
+            FfiConverterTypeCheckStatus.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: GateCheck) = (
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterTypeCheckProvider.allocationSize(value.`provider`) +
+            FfiConverterTypeCheckStatus.allocationSize(value.`status`) +
+            FfiConverterOptionalString.allocationSize(value.`url`) +
+            FfiConverterString.allocationSize(value.`line`) +
+            FfiConverterBoolean.allocationSize(value.`overridable`)
+    )
+
+    override fun write(value: GateCheck, buf: ByteBuffer) {
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterTypeCheckProvider.write(value.`provider`, buf)
+            FfiConverterTypeCheckStatus.write(value.`status`, buf)
+            FfiConverterOptionalString.write(value.`url`, buf)
+            FfiConverterString.write(value.`line`, buf)
+            FfiConverterBoolean.write(value.`overridable`, buf)
+    }
+}
+
+
+
+/**
  * A held approval on a receipt: what a host needs to say until when, and to
  * offer Pull back.
  */
@@ -2470,7 +2624,15 @@ data class GateV2Decision (
      * worded at the host's clock by `crate::gate_release::release_line`.
      * `None` for a gate whose approval acts at once.
      */
-    var `release`: GateRelease? = null
+    var `release`: GateRelease? = null, 
+    /**
+     * The machine checks that ran before the gate opened for people (charter
+     * → `decisions/2026-11-09-a-gate-may-be-decided-by-checks.md`), in the
+     * board's order, each with its plain line ("build (CI) — passed")
+     * (`crate::gate_checks`). Empty for a gate whose stage has none. Never
+     * overridable here: by the time a gate opens every check is over.
+     */
+    var `checks`: List<GateCheck> = listOf()
 ) {
     
     companion object
@@ -2490,6 +2652,7 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterSequenceTypeGateVariantV2.read(buf),
             FfiConverterOptionalTypeGateQuorum.read(buf),
             FfiConverterOptionalTypeGateRelease.read(buf),
+            FfiConverterSequenceTypeGateCheck.read(buf),
         )
     }
 
@@ -2501,7 +2664,8 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterOptionalTypeGateSubjectBinding.allocationSize(value.`subject`) +
             FfiConverterSequenceTypeGateVariantV2.allocationSize(value.`variants`) +
             FfiConverterOptionalTypeGateQuorum.allocationSize(value.`quorum`) +
-            FfiConverterOptionalTypeGateRelease.allocationSize(value.`release`)
+            FfiConverterOptionalTypeGateRelease.allocationSize(value.`release`) +
+            FfiConverterSequenceTypeGateCheck.allocationSize(value.`checks`)
     )
 
     override fun write(value: GateV2Decision, buf: ByteBuffer) {
@@ -2513,6 +2677,7 @@ public object FfiConverterTypeGateV2Decision: FfiConverterRustBuffer<GateV2Decis
             FfiConverterSequenceTypeGateVariantV2.write(value.`variants`, buf)
             FfiConverterOptionalTypeGateQuorum.write(value.`quorum`, buf)
             FfiConverterOptionalTypeGateRelease.write(value.`release`, buf)
+            FfiConverterSequenceTypeGateCheck.write(value.`checks`, buf)
     }
 }
 
@@ -7459,6 +7624,83 @@ public object FfiConverterTypeAvatarRole: FfiConverterRustBuffer<AvatarRole> {
 
 
 /**
+ * Which kind of decider a check is.
+ */
+
+enum class CheckProvider {
+    
+    /**
+     * Every required CI status on the linked pull request's head commit.
+     */
+    CI,
+    /**
+     * A SuperWitness verdict on the card's latest run.
+     */
+    VERDICT;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCheckProvider: FfiConverterRustBuffer<CheckProvider> {
+    override fun read(buf: ByteBuffer) = try {
+        CheckProvider.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: CheckProvider) = 4UL
+
+    override fun write(value: CheckProvider, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
+ * Where a check stands.
+ */
+
+enum class CheckStatus {
+    
+    PENDING,
+    PASSED,
+    FAILED,
+    /**
+     * Passed by hand by a workspace owner or admin.
+     */
+    OVERRIDDEN;
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCheckStatus: FfiConverterRustBuffer<CheckStatus> {
+    override fun read(buf: ByteBuffer) = try {
+        CheckStatus.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: CheckStatus) = 4UL
+
+    override fun write(value: CheckStatus, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
+
+
+
+/**
  * The outcome of the whole fallback chain — what a host switches on.
  *
  * `Rendered` is much larger than the two fallbacks, and stays unboxed on
@@ -10843,6 +11085,38 @@ public object FfiConverterOptionalTypeAudioMetaDto: FfiConverterRustBuffer<Audio
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeChecksWaitingDecision: FfiConverterRustBuffer<ChecksWaitingDecision?> {
+    override fun read(buf: ByteBuffer): ChecksWaitingDecision? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeChecksWaitingDecision.read(buf)
+    }
+
+    override fun allocationSize(value: ChecksWaitingDecision?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeChecksWaitingDecision.allocationSize(value)
+        }
+    }
+
+    override fun write(value: ChecksWaitingDecision?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeChecksWaitingDecision.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalTypeCounterpart: FfiConverterRustBuffer<Counterpart?> {
     override fun read(buf: ByteBuffer): Counterpart? {
         if (buf.get().toInt() == 0) {
@@ -12317,6 +12591,34 @@ public object FfiConverterSequenceTypeCustomEventField: FfiConverterRustBuffer<L
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeCustomEventField.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeGateCheck: FfiConverterRustBuffer<List<GateCheck>> {
+    override fun read(buf: ByteBuffer): List<GateCheck> {
+        val len = buf.getInt()
+        return List<GateCheck>(len) {
+            FfiConverterTypeGateCheck.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<GateCheck>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeGateCheck.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<GateCheck>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeGateCheck.write(it, buf)
         }
     }
 }

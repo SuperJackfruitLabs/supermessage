@@ -486,6 +486,71 @@ held and may be pulled back (`core::gate_release`).
   notice is a row (`ItemView::None`) or a notification (`NotNews`): the
   readable reply beside each says it.
 
+#### A gate decided by machine checks
+
+charter `decisions/2026-11-09-a-gate-may-be-decided-by-checks.md` §7,
+fixture version 11 (entries tagged `variant: "checks"`). A stage may name
+machine checks (`ci`, `verdict`) that run before any person is asked.
+superpipeline runs them and decides; this client shows them and lets a
+workspace owner or admin override one (`core::gate_checks`).
+
+- **On the gate.** A gate.v2 may carry `checks: [{ name, provider, status,
+  url? }]`: 1 to 5, names unique, 1–40 characters without surrounding
+  spaces or "/", provider `ci | verdict`, status `pending | passed | failed
+  | overridden`. Anything else (an empty list, six, a slash, an unknown
+  provider or status, two of one name) refuses the whole gate.v2 and the v1
+  card is drawn, as for a malformed quorum. A `url` is kept only when it is
+  `https://` (`custom_events::safe_url`); any other is dropped and the check
+  kept. `GateV2Decision.checks` carries them, each `GateCheck` with its plain
+  `line` ("build (CI) — passed", "claims (verdict) — overridden"), and
+  `overridable` always false: by the time a gate opens every check is over,
+  and an override must reference a card of overdue checks. iOS, Android and
+  the desktop draw the lines under the preview (`decision-checks`), the
+  phones with "Open the result" beside a check that links one.
+- **A card of overdue checks.** When a check set's stage escalates, the hub
+  posts `dev.agentpod.checks.waiting.v2`: an `m.text` with `board_id`,
+  `card_id`, `card_title`, `stage_key` and `checks` (the same shape), and
+  `deep_link?`. It draws as a card (`CustomEventDecision.checks_waiting`,
+  `ChecksWaitingDecision`), prompt "Checks overdue on “<title>”", with
+  **Override** on each check pending or failed (`overridable`) and nothing
+  else to answer; a message missing a field, or with a list as above, stays
+  prose (it has no v1 form). Its identity is `checks:<board>:<card>:<stage>`,
+  so a copy the hub posts again below for an admin who just joined retires
+  the one above (§5e). It notifies as a DECISION that only opens.
+- **Who may override.** A workspace owner or admin, by the Accounts role at
+  the time, never the producer of the work and never an agent — the board's
+  to judge. The client holds no workspace role, so it shows Override with
+  "Admins only" (as an option that `requires: workspace-admin`) and the
+  card's `override_note`. A refusal comes back as the hub's reply in the
+  room: "Only a workspace owner or admin can override a check. Nothing has
+  changed." (or `SEPARATION_OF_DUTIES`, `CHECK_NOT_OPEN`, `CHECK_NOT_FOUND`,
+  `INVALID_COMMENT` in their own words).
+- **Override.** `send_check_override(room_id, checks, check_name, comment,
+  in_reply_to)` sends `dev.superpipeline.check.override.v2`: an `m.text`
+  with body "Override <name>: <comment>", `schema_version`, `board_id` and
+  `card_id` copied from the card, `check_name`, a required `comment` of at
+  most 8192 bytes, and `m.reference` to the card's event. The core refuses a
+  check the card does not offer Override on. Success posts nothing from the
+  answer itself: the board's `check.overridden` is what is said. The desktop
+  sends no override; it says a workspace owner or admin overrides on their
+  phone or the board.
+- **The notices.** `dev.agentpod.check.failed.v2` (`check { name, provider,
+  status: failed, detail?, url? }`, `returned_to` a stage or null) and
+  `dev.agentpod.check.overridden.v2` (`overridden_by`, `comment`, `at`) are
+  never rows (`ItemView::None`) or notifications (`NotNews`): the readable
+  reply beside each says it. When one comes from the identity that posted a
+  card of overdue checks, references that card's event (`m.reference`) and
+  names its board, card and stage, it settles the card: an override marks
+  the check "… — overridden by rakesh" and withdraws its Override; a failure
+  that could not go back marks it failed and keeps Override; a failure that
+  sent the card back closes it as a receipt, "Returned for changes — CI
+  check “build” failed" (decision `returned`); and a card with no check left
+  to override is a receipt listing them (decision `settled`).
+- **Reminders and escalations** of overdue checks are §5e's notices with
+  `decision_kind` `checks` and `decision_id` the check set's arrival. A
+  reminder stands alone (nothing is posted for checks before an escalation),
+  and an escalation replies to the card of overdue checks or stands alone.
+
 ### 5b. question.v2 and delivery.v2 — questions and follow-ups in the envelope
 
 charter `decisions/2026-11-07-the-envelope-covers-questions-and-follow-ups.md`.
@@ -708,10 +773,11 @@ fixture version 7. superpipeline owns the clock; this client only shows it
   `suite_event_type` `dev.superpipeline.decision.reminded.v1` or
   `dev.superpipeline.decision.escalated.v1`, with `schema_version`,
   `board_id`, `card_id`, `decision_kind` (`gate | question | delivery |
-  attention`), `decision_id`, `waiting_since`, and `reminded_at` or
+  attention | checks`), `decision_id`, `waiting_since`, and `reminded_at` or
   `escalated_at` (plus `deep_link?` on an escalation). A notice missing any of
   those, with an unknown kind, or related by `m.reference` instead of a reply
-  stays the ordinary message it is. `timeline::row_from_parts` sets the
+  stays the ordinary message it is — except that a notice of kind `checks`
+  may stand alone (§5a, machine checks). `timeline::row_from_parts` sets the
   item's `detail` to the notice type, and it draws as a quiet system line —
   `ItemView::System { kind: Notice }`, the hub's sentence without its trailing
   `[Open the card](…)` markdown link (the card above has the link). It is not
@@ -728,7 +794,7 @@ fixture version 7. superpipeline owns the clock; this client only shows it
   event, replies "Moved below …" to the old card and refuses an answer to it
   (agentpod `decision-repost.ts`). `embedded::reconcile` mirrors that by
   identity: of the prose carriers of one board decision (`gate:`, `question:`,
-  `delivery:`, `attention:` identities) from one sender, the latest in the
+  `delivery:`, `attention:`, `checks:` identities) from one sender, the latest in the
   timeline is the card, and every earlier one is drawn as a receipt with no
   buttons saying "Moved below — answer the copy below." (`outcome.decision`
   `moved`). A copy from any other sender retires nothing, a decision that is

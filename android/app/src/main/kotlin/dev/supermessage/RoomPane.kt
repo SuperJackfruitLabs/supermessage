@@ -312,7 +312,17 @@ internal fun RoomPane(
                             val permissionV2 = answer.permissionV2
                             val attentionV2 = answer.attentionV2
                             val pullBack = answer.pullBack
-                            if (pullBack != null) {
+                            val checksWaiting = answer.checksWaiting
+                            if (checksWaiting != null) {
+                                // Overdue checks: the check named, and why.
+                                session.overrideCheck(
+                                    eventId = row.item.eventId,
+                                    checks = checksWaiting,
+                                    checkName = answer.optionId,
+                                    comment = answer.comment.orEmpty(),
+                                    roomId = currentRoomId,
+                                )
+                            } else if (pullBack != null) {
                                 session.pullBackGate(
                                     eventId = row.item.eventId,
                                     gateId = pullBack.gateId,

@@ -642,6 +642,7 @@ fn gate_v2_response(
                 // The answer only; a quorum is the board's to count.
                 quorum: None,
                 release: None,
+                checks: Vec::new(),
             },
             option_id: option_id.clone(),
             comment,
@@ -805,6 +806,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            checks_waiting: None,
             deadline: None,
         }
     }

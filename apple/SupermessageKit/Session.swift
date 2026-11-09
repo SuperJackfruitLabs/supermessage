@@ -509,6 +509,26 @@ public final class Session {
         }
     }
 
+    /// Override a check on a card of overdue checks (`core::gate_checks`)
+    /// with the reader's `comment`. superpipeline judges whether the reader
+    /// may — a workspace owner or admin — and the hub says so in the room.
+    /// False when it could not be sent.
+    @discardableResult
+    public func overrideCheck(
+        _ eventId: String?, checks: ChecksWaitingDecision, checkName: String, comment: String,
+        in roomId: String
+    ) async -> Bool {
+        guard let eventId else { return false }
+        do {
+            try await client.sendCheckOverride(
+                roomId: roomId, checks: checks, checkName: checkName, comment: comment,
+                inReplyTo: eventId)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Answer a question.v2 from its card. `optionId` `nil` answers a
     /// free-text question with `text`; otherwise `text` is the chosen
     /// option's input, when it asks for one. Same contract as `answerGateV2`.

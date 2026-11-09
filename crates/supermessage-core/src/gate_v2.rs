@@ -316,6 +316,14 @@ pub struct GateV2Decision {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[uniffi(default = None)]
     pub release: Option<crate::gate_release::GateRelease>,
+    /// The machine checks that ran before the gate opened for people (charter
+    /// → `decisions/2026-11-09-a-gate-may-be-decided-by-checks.md`), in the
+    /// board's order, each with its plain line ("build (CI) — passed")
+    /// (`crate::gate_checks`). Empty for a gate whose stage has none. Never
+    /// overridable here: by the time a gate opens every check is over.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[uniffi(default = [])]
+    pub checks: Vec<crate::gate_checks::GateCheck>,
 }
 
 /// One version a variant gate offers: its label, its own subject and
@@ -419,6 +427,7 @@ pub(crate) struct ParsedGateV2 {
         Vec<crate::gate_quorum::GateQuorumApproval>,
     )>,
     release: Option<crate::gate_release::GateRelease>,
+    checks: Vec<crate::gate_checks::GateCheck>,
 }
 
 /// One version of a variant gate as read off the wire.
@@ -811,6 +820,9 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedGateV2>
     };
     let quorum = crate::gate_quorum::parse_quorum(content).ok()?;
     let release = crate::gate_release::parse_release(content).ok()?;
+    let checks = crate::gate_checks::parse_checks(content)
+        .ok()?
+        .unwrap_or_default();
     Some(ParsedGateV2 {
         gate_id,
         card_title,
@@ -823,6 +835,7 @@ pub(crate) fn parse(content: &Value, body: Option<&str>) -> Option<ParsedGateV2>
         variants,
         quorum,
         release,
+        checks,
     })
 }
 
@@ -908,6 +921,7 @@ impl ParsedGateV2 {
                 }
             }),
             release: self.release.clone(),
+            checks: self.checks.clone(),
         }
     }
 
@@ -978,6 +992,7 @@ impl CustomEventRenderer for GateV2Renderer {
                 delivery_v2: None,
                 permission_v2: None,
                 attention_v2: None,
+                checks_waiting: None,
                 // The stage's timeout (`crate::decision_timeout`).
                 deadline: crate::decision_timeout::parse_deadline(content),
             }),

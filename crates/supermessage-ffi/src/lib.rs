@@ -394,6 +394,32 @@ impl Core {
         Ok(())
     }
 
+    /// Override a machine check from a card of overdue checks
+    /// (`supermessage_core::gate_checks`), with the reader's comment saying
+    /// why. `checks` is the card's `CustomEventDecision::checks_waiting`,
+    /// handed back unchanged; `check_name` one of its checks offered
+    /// Override. The core refuses a check not offered, no comment and one
+    /// over the board's limit, then sends the
+    /// `dev.superpipeline.check.override.v2` referencing `in_reply_to`, the
+    /// card's event. superpipeline judges whether the reader may.
+    pub fn send_check_override(
+        &self,
+        room_id: String,
+        checks: supermessage_core::gate_checks::ChecksWaitingDecision,
+        check_name: String,
+        comment: String,
+        in_reply_to: String,
+    ) -> Result<(), FfiError> {
+        self.block(self.session.focused_timeline().send_check_override(
+            &room_id,
+            &checks,
+            &check_name,
+            &comment,
+            &in_reply_to,
+        ))?;
+        Ok(())
+    }
+
     /// Answer a question.v2 from its card (`supermessage_core::question_v2`).
     ///
     /// `question` is the `CustomEventDecision::question_v2` the card was

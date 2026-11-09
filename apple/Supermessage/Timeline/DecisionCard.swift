@@ -263,6 +263,17 @@ struct CustomEventCard: View {
 
             summary(digest)
             details(digest.rest)
+            // The machine checks a gate ran before it opened, or a card's
+            // overdue checks: one plain line each, worded by the core
+            // (`core::gate_checks`).
+            CheckLines(checks: decision.checksWaiting?.checks ?? decision.gateV2?.checks ?? [])
+            if let note = decision.checksWaiting?.overrideNote {
+                Text(note)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.contentMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("decision-override-note")
+            }
             if let gate = decision.gateV2 ?? decision.deliveryV2 {
                 // What is being approved, exactly — before the buttons that
                 // approve it. The core withheld every approving option when
@@ -604,6 +615,10 @@ private struct DecisionButtons: View {
         if let attention = decision.attentionV2 {
             return attention.options.map(DecisionChoice.init)
         }
+        if let waiting = decision.checksWaiting {
+            // Override, on each check the core says may be overridden.
+            return waiting.checks.filter(\.overridable).map(DecisionChoice.init(override:))
+        }
         return decision.options.map(DecisionChoice.init(legacy:))
     }
     /// A gate's choice of versions; empty for any other decision.
@@ -621,6 +636,7 @@ private struct DecisionButtons: View {
     private var isEnvelope: Bool {
         decision.gateV2 != nil || decision.questionV2 != nil || decision.deliveryV2 != nil
             || decision.permissionV2 != nil || decision.attentionV2 != nil
+            || decision.checksWaiting != nil
     }
     /// The main action. A gate.v2 can have more than one — a publishing gate
     /// approves automatically or manually — and each is a main action. A
@@ -833,7 +849,8 @@ private struct DecisionButtons: View {
             text: (typed?.isEmpty ?? true) ? nil : typed,
             // Only an approval carries a version; the set is sent back or
             // rejected whole.
-            chosenVariant: choice.role == .approve && !variants.isEmpty ? chosenVariant : nil)
+            chosenVariant: choice.role == .approve && !variants.isEmpty ? chosenVariant : nil,
+            checksWaiting: decision.checksWaiting)
         sending = true
         Task {
             let landed = await onDecide(answer)
@@ -893,6 +910,20 @@ struct DecisionChoice: Equatable {
         input = option.input
         scope = option.scope
         requires = option.requires
+    }
+
+    /// Override on a card of overdue checks (`core::gate_checks`): never
+    /// leading — the reader owes no answer unless they are an admin — always
+    /// with a comment saying why, and "Admins only" under it. Shown, never
+    /// judged: the board decides who may, and its refusal comes back as a
+    /// reply in the room.
+    init(override check: GateCheck) {
+        id = check.name
+        label = "Override \(check.name)"
+        role = .other
+        comment = .required
+        input = nil
+        requires = .workspaceAdmin
     }
 
     /// A free-text answer: no option, so an empty id, and the text itself as
@@ -1094,6 +1125,35 @@ private struct OptionLabel: View {
     }
 }
 
+/// A card's machine checks, one plain line each ("build (CI) — passed"),
+/// each with its result's link when it has one. The link already passed the
+/// core's `safe_url` (`https://` only).
+private struct CheckLines: View {
+    let checks: [GateCheck]
+
+    var body: some View {
+        if !checks.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(checks.enumerated()), id: \.offset) { _, check in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(verbatim: check.line)
+                            .font(.footnote)
+                            .foregroundStyle(check.status == .failed ? Theme.danger : Theme.contentMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("decision-check")
+                        if let url = check.url.flatMap({ URL(string: $0) }) {
+                            Link("Open the result", destination: url)
+                                .font(.footnote)
+                                .accessibilityIdentifier("decision-check-link")
+                        }
+                    }
+                }
+            }
+            .accessibilityIdentifier("decision-checks")
+        }
+    }
+}
+
 /// A held approval on its receipt: until when, worded by the core against
 /// this device's clock, and a Pull back that sends the card back for changes
 /// with a comment saying why. superpipeline judges whether this reader may;
@@ -1198,6 +1258,9 @@ struct GateAnswer {
     /// A held approval being pulled back, with `comment` as the reason; sent
     /// with `Session.pullBackGate`.
     var pullBack: GateHold? = nil
+    /// A card of overdue checks; `optionId` is the check overridden and
+    /// `comment` why. Sent with `Session.overrideCheck`.
+    var checksWaiting: ChecksWaitingDecision? = nil
 }
 
 #if DEBUG

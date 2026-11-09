@@ -420,6 +420,10 @@ pub fn notification_for_row(
             // A card waiting on a person only opens too: every resume needs
             // an instruction a notification cannot check, and archiving a
             // card from the lock screen is not a choice to make unread.
+            //
+            // A card of overdue checks only opens too, by falling through: it
+            // has no gate and no permission to answer, and an override needs
+            // a comment saying why.
             if decision.question_v2.is_some()
                 || decision.delivery_v2.is_some()
                 || decision.permission_v2.is_some()
@@ -928,6 +932,7 @@ fn decide_event(fetched: &FetchedEvent<'_>, own_user: &UserId) -> NotificationDt
                     || event_type == crate::attention_v2::ATTENTION_OUTCOME_EVENT_TYPE
                     || event_type == crate::gate_quorum::GATE_PROGRESS_TYPE
                     || crate::gate_release::is_notice_type(Some(&event_type))
+                    || crate::gate_checks::is_notice_type(Some(&event_type))
                 {
                     return quiet(
                         NotificationSuppression::NotNews,
@@ -1011,6 +1016,7 @@ mod tests {
             delivery_v2: None,
             permission_v2: None,
             attention_v2: None,
+            checks_waiting: None,
             deadline: None,
         }
     }
@@ -1801,6 +1807,48 @@ mod tests {
             );
             assert_eq!(note.category, NotificationCategory::Message, "{event_type}");
         }
+    }
+
+    fn corpus_checks(suite_type: &str) -> serde_json::Value {
+        corpus_variant(suite_type, "checks")
+    }
+
+    #[test]
+    fn a_failed_or_overridden_check_is_not_news() {
+        // The hub's readable reply beside each is the news.
+        for event_type in [
+            crate::gate_checks::CHECK_FAILED_TYPE,
+            crate::gate_checks::CHECK_OVERRIDDEN_TYPE,
+        ] {
+            let note = notify(json!({
+                "type": event_type,
+                "event_id": "$e",
+                "sender": "@board_checks:hs",
+                "origin_server_ts": 1,
+                "content": corpus_checks(event_type),
+            }));
+            assert_eq!(
+                note.suppress,
+                Some(NotificationSuppression::NotNews),
+                "{event_type}"
+            );
+            assert_eq!(note.category, NotificationCategory::Message, "{event_type}");
+        }
+    }
+
+    #[test]
+    fn a_card_of_overdue_checks_notifies_as_a_decision_that_only_opens() {
+        let note = notify(message(corpus_checks(
+            crate::gate_checks::CHECKS_WAITING_TYPE,
+        )));
+        assert_eq!(note.category, NotificationCategory::Decision);
+        assert_eq!(note.gate, None);
+        assert_eq!(note.permission, None);
+        assert_eq!(note.suppress, None);
+        assert_eq!(
+            note.body,
+            "Checks overdue on \u{201C}Ship the release\u{201D}"
+        );
     }
 
     #[test]

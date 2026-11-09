@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import uniffi.supermessage_core.Acknowledgement
 import uniffi.supermessage_core.AccountDto
 import uniffi.supermessage_core.AttentionV2Decision
+import uniffi.supermessage_core.ChecksWaitingDecision
 import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.QuestionV2Decision
@@ -380,6 +381,15 @@ class CoreClient(
      */
     suspend fun sendGatePullBack(roomId: String, gateId: String, comment: String, inReplyTo: String) {
         run { it.sendGatePullBack(roomId, gateId, comment, inReplyTo) }
+    }
+
+    /**
+     * Override [checkName] on a card of overdue checks with the reader's
+     * [comment] saying why (`core::gate_checks`). [checks] is the card's own
+     * `CustomEventDecision.checksWaiting`; [inReplyTo] the card's event.
+     */
+    suspend fun sendCheckOverride(roomId: String, checks: ChecksWaitingDecision, checkName: String, comment: String, inReplyTo: String) {
+        run { it.sendCheckOverride(roomId, checks, checkName, comment, inReplyTo) }
     }
 
     /**

@@ -6,7 +6,7 @@
     TimelineItem,
   } from "$lib/ipc";
   import type { AnsweredDecision } from "$lib/stores/answeredDecisions.svelte";
-  import { answerElsewhere, answeredWhen, arrangeOptions, heldLine, optionRole, quorumProgress, receiptOutcome, releaseLine } from "./decisionView";
+  import { answerElsewhere, answeredWhen, arrangeOptions, checkLines, heldLine, optionRole, quorumProgress, receiptOutcome, releaseLine } from "./decisionView";
   import { cubicOut } from "svelte/easing";
   import InlineFailure from "./InlineFailure.svelte";
   import RequestChangesDialog from "./RequestChangesDialog.svelte";
@@ -379,6 +379,13 @@
       send (text, a link, an approval it cannot show). Said, so a missing
       button does not read as a bug.
     -->
+    {#if checkLines(decision).length > 0}
+      <ul class="mt-2 font-sans text-meta text-content-muted" data-testid="decision-checks">
+        {#each checkLines(decision) as line (line)}
+          <li data-testid="decision-check">{line}</li>
+        {/each}
+      </ul>
+    {/if}
     {#if releaseLine(decision, Date.now())}
       <p class="mt-2 font-sans text-meta text-content-muted" data-testid="decision-release">{releaseLine(decision, Date.now())}</p>
     {/if}

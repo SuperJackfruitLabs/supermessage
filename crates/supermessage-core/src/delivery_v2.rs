@@ -167,6 +167,7 @@ impl ParsedDeliveryV2 {
             // A follow-up settles delivery after the gate passed: no count.
             quorum: None,
             release: None,
+            checks: Vec::new(),
         }
     }
 }
@@ -215,6 +216,7 @@ impl CustomEventRenderer for DeliveryV2Renderer {
                 delivery_v2: Some(delivery.decision()),
                 permission_v2: None,
                 attention_v2: None,
+                checks_waiting: None,
                 // The stage's timeout (`crate::decision_timeout`).
                 deadline: crate::decision_timeout::parse_deadline(content),
             }),

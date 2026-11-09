@@ -567,6 +567,11 @@ RustBuffer uniffi_supermessage_ffi_fn_method_core_search_messages(void*_Nonnull 
 void uniffi_supermessage_ffi_fn_method_core_send_attention_answer_v2(void*_Nonnull ptr, RustBuffer room_id, RustBuffer attention, RustBuffer option_id, RustBuffer text, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
 );
 #endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_CHECK_OVERRIDE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_CHECK_OVERRIDE
+void uniffi_supermessage_ffi_fn_method_core_send_check_override(void*_Nonnull ptr, RustBuffer room_id, RustBuffer checks, RustBuffer check_name, RustBuffer comment, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
+);
+#endif
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_DELIVERY_ANSWER_V2
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_FN_METHOD_CORE_SEND_DELIVERY_ANSWER_V2
 void uniffi_supermessage_ffi_fn_method_core_send_delivery_answer_v2(void*_Nonnull ptr, RustBuffer room_id, RustBuffer delivery, RustBuffer option_id, RustBuffer text, RustBuffer in_reply_to, RustCallStatus *_Nonnull out_status
@@ -2073,6 +2078,12 @@ uint16_t uniffi_supermessage_ffi_checksum_method_core_search_messages(void
 #ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_ATTENTION_ANSWER_V2
 #define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_ATTENTION_ANSWER_V2
 uint16_t uniffi_supermessage_ffi_checksum_method_core_send_attention_answer_v2(void
+    
+);
+#endif
+#ifndef UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_CHECK_OVERRIDE
+#define UNIFFI_FFIDEF_UNIFFI_SUPERMESSAGE_FFI_CHECKSUM_METHOD_CORE_SEND_CHECK_OVERRIDE
+uint16_t uniffi_supermessage_ffi_checksum_method_core_send_check_override(void
     
 );
 #endif

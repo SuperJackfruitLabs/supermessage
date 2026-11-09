@@ -10,6 +10,8 @@ import {
   answerElsewhere,
   answeredWhen,
   arrangeOptions,
+  checkLines,
+  OVERRIDE_ELSEWHERE,
   optionRole,
   PULL_BACK_ELSEWHERE,
   heldLine,
@@ -204,5 +206,38 @@ describe("releaseLine and heldLine", () => {
     const held = { ...outcome, held: { gateId: "gate_6e19", heldUntil: "2026-11-16T09:00:00.000Z" } };
     expect(heldLine(held, MONDAY_9 - 25 * 60_000)).toBe(`Goes ahead in 25 min unless pulled back. ${PULL_BACK_ELSEWHERE}`);
     expect(heldLine(held, MONDAY_9 + 60_000)).toBe(`Going ahead now. ${PULL_BACK_ELSEWHERE}`);
+  });
+});
+
+describe("machine checks", () => {
+  const check = (name: string, status: "pending" | "passed" | "failed" | "overridden", overridable = false) => ({
+    name,
+    status,
+    line: `${name} — ${status}`,
+    overridable,
+  });
+
+  it("draws a gate's checks as the core's lines and sends nothing elsewhere for them", () => {
+    const gate = { gateId: "gate_6e19", options: [opt("approve")], approvalsWithheld: null, checks: [check("build", "passed")] };
+    const decision: CustomEventDecision = { prompt: "Approve?", options: [opt("approve")], subject: "gate_6e19", gateV2: gate };
+    expect(checkLines(decision)).toEqual(["build — passed"]);
+    expect(answerElsewhere(decision)).toBeNull();
+  });
+
+  it("says who overrides overdue checks, and where", () => {
+    const waiting = (checks: ReturnType<typeof check>[]): CustomEventDecision => ({
+      prompt: "Checks overdue on “Ship the release”",
+      options: [],
+      subject: null,
+      checksWaiting: { boardId: "brd_7c1f", cardId: "crd_8a40", stageKey: "review", checks, overrideNote: "" },
+    });
+    const open = waiting([check("build", "passed"), check("quality", "pending", true)]);
+    expect(checkLines(open)).toEqual(["build — passed", "quality — pending"]);
+    expect(answerElsewhere(open)).toBe(OVERRIDE_ELSEWHERE);
+    expect(answerElsewhere(waiting([check("quality", "overridden")]))).toBeNull();
+  });
+
+  it("is nothing on a decision without checks", () => {
+    expect(checkLines({ prompt: "Approve?", options: [opt("approve")], subject: "gate_1" })).toEqual([]);
   });
 });

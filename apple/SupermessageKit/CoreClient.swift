@@ -359,6 +359,20 @@ public actor CoreClient {
         }
     }
 
+    /// Override `checkName` on a card of overdue checks with the reader's
+    /// `comment` saying why (`core::gate_checks`). `checks` is the card's own
+    /// `CustomEventDecision.checksWaiting`; `inReplyTo` the card's event.
+    public func sendCheckOverride(
+        roomId: String, checks: ChecksWaitingDecision, checkName: String, comment: String,
+        inReplyTo: String
+    ) async throws {
+        try await run {
+            try $0.sendCheckOverride(
+                roomId: roomId, checks: checks, checkName: checkName, comment: comment,
+                inReplyTo: inReplyTo)
+        }
+    }
+
     public func sendDeliveryAnswerV2(
         roomId: String, delivery: GateV2Decision, optionId: String, text: String?,
         inReplyTo: String

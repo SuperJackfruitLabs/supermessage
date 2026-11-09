@@ -380,6 +380,7 @@ impl CustomEventRenderer for QuestionV2Renderer {
                 delivery_v2: None,
                 permission_v2: None,
                 attention_v2: None,
+                checks_waiting: None,
                 // The stage's timeout (`crate::decision_timeout`).
                 deadline: crate::decision_timeout::parse_deadline(content),
             }),
