@@ -74,6 +74,7 @@ open class StubCore : CoreInterface {
     override fun sendGateDecisionV2(roomId: kotlin.String, gate: GateV2Decision, optionId: kotlin.String, chosenVariant: kotlin.String?, comment: kotlin.String?, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
     override fun sendGateDecisionV2To(roomId: kotlin.String, gate: GateV2Decision, optionId: kotlin.String, comment: kotlin.String?, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
     override fun sendGatePullBack(roomId: kotlin.String, gateId: kotlin.String, comment: kotlin.String, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
+    override fun sendCheckOverride(roomId: kotlin.String, checks: ChecksWaitingDecision, checkName: kotlin.String, comment: kotlin.String, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
     override fun sendQuestionAnswerV2(roomId: kotlin.String, question: QuestionV2Decision, optionId: kotlin.String?, text: kotlin.String?, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
     override fun sendDeliveryAnswerV2(roomId: kotlin.String, delivery: GateV2Decision, optionId: kotlin.String, text: kotlin.String?, inReplyTo: kotlin.String): Unit = throw NotImplementedError()
     override fun sendPermissionAnswerV2(roomId: kotlin.String, permission: PermissionV2Decision, optionId: kotlin.String, inReplyTo: kotlin.String): Unit = throw NotImplementedError()

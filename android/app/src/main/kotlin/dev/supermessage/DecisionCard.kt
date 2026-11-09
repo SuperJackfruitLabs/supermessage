@@ -92,6 +92,9 @@ import uniffi.supermessage_ffi.decisionDeadlineLine
 import uniffi.supermessage_ffi.gateReleaseLine
 import uniffi.supermessage_ffi.gateHeldLine
 import uniffi.supermessage_core.GateHold
+import uniffi.supermessage_core.ChecksWaitingDecision
+import uniffi.supermessage_core.GateCheck
+import uniffi.supermessage_core.CheckStatus
 
 /**
  * A suite event — a Superpipeline card or run, a permission request, station
@@ -431,17 +434,17 @@ private fun FieldRow(field: CustomEventField) {
  * a payload may become somewhere a tap can go.
  */
 @Composable
-private fun LinkButton(link: String?) {
+private fun LinkButton(link: String?, label: String = "Open the card", tag: String = "decision-link") {
     if (link == null) return
     val uriHandler = LocalUriHandler.current
     Text(
-        "Open the card",
+        label,
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier
             .heightIn(min = 44.dp)
-            .clickable(role = Role.Button, onClickLabel = "Open the card") { uriHandler.openUri(link) }
-            .testTag("decision-link"),
+            .clickable(role = Role.Button, onClickLabel = label) { uriHandler.openUri(link) }
+            .testTag(tag),
     )
 }
 
@@ -652,6 +655,17 @@ private fun PendingBody(
             ?: decision.permissionV2?.approvalsWithheld
             ?: decision.questionV2?.approvalsWithheld
         GatePreviewBlocks(preview)
+        // The machine checks a gate ran before it opened, or a card's overdue
+        // checks, one plain line each, worded by the core (`core::gate_checks`).
+        CheckLines(decision.checksWaiting?.checks ?: decision.gateV2?.checks.orEmpty())
+        decision.checksWaiting?.let {
+            Text(
+                it.overrideNote,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("decision-override-note"),
+            )
+        }
         // A gate that needs more than one approval: how far it has got,
         // worded by the core (`core::gate_quorum`).
         decision.gateV2?.quorum?.let {
@@ -681,6 +695,26 @@ private fun PendingBody(
         if (reasoning != null) ReasoningDisclosure(reasoning)
         LinkButton(link)
         DecisionButtons(decision, answers, answerKey, onDecide)
+    }
+}
+
+/** A card's machine checks, one plain line each ("build (CI) — passed"), each with its result's link when it has one. */
+@Composable
+private fun CheckLines(checks: List<GateCheck>) {
+    if (checks.isEmpty()) return
+    Column(modifier = Modifier.testTag("decision-checks"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        checks.forEach { check ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    check.line,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (check.status == CheckStatus.FAILED) SupermessageTheme.colors.danger else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f, fill = false).testTag("decision-check"),
+                )
+                // Through `safe_url` in the core: https only.
+                LinkButton(check.url, label = "Open the result", tag = "decision-check-link")
+            }
+        }
     }
 }
 
@@ -995,6 +1029,24 @@ internal data class DecisionChoice(
         )
 
         /**
+         * Override, on each check of a card of overdue checks that the core
+         * says may be overridden, always with a comment saying why. "Admins
+         * only" is shown, never judged: the board decides who may, and its
+         * refusal comes back as a reply in the room.
+         */
+        fun overrides(waiting: ChecksWaitingDecision): List<DecisionChoice> =
+            waiting.checks.filter { it.overridable }.map {
+                DecisionChoice(
+                    id = it.name,
+                    label = "Override ${it.name}",
+                    role = DecisionOptionRole.OTHER,
+                    comment = CommentAsk.REQUIRED,
+                    qualifier = "Admins only",
+                    receipt = "Override of ${it.name} sent by you",
+                )
+            }
+
+        /**
          * The caption under an option: its reach, then who may take it. Shown,
          * never judged — the producer decides who may take an option.
          */
@@ -1038,6 +1090,11 @@ internal data class DecisionChoice(
             decision.attentionV2?.let { waiting ->
                 val all = waiting.options.map { attention(it) }
                 return all to all.filter { it.role == DecisionOptionRole.APPROVE }
+            }
+            // Overdue checks: an Override on each pending or failed one, none
+            // leading — the reader owes no answer unless they are an admin.
+            decision.checksWaiting?.let { waiting ->
+                return overrides(waiting) to emptyList()
             }
             val envelope = decision.gateV2?.options
                 ?: decision.questionV2?.options
@@ -1116,6 +1173,7 @@ private fun DecisionButtons(
                 permissionV2 = decision.permissionV2,
                 attentionV2 = decision.attentionV2,
                 chosenVariant = chosenVariantFor(decision.gateV2, choice.role, chosenVariant),
+                checksWaiting = decision.checksWaiting,
             ),
             handler = handler,
             haptics = haptics,
@@ -1462,6 +1520,11 @@ data class GateAnswer(
     val chosenVariant: String? = null,
     /** A held approval being pulled back, with [comment] as the reason; sent with `Session.pullBackGate`. */
     val pullBack: GateHold? = null,
+    /**
+     * A card of overdue checks; [optionId] is the check overridden and
+     * [comment] why. Sent with `Session.overrideCheck`.
+     */
+    val checksWaiting: ChecksWaitingDecision? = null,
 ) {
     companion object {
         /** Superpipeline's only option id that expects a comment. */

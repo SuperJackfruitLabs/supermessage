@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import uniffi.supermessage_core.AttentionV2Decision
+import uniffi.supermessage_core.ChecksWaitingDecision
 import uniffi.supermessage_core.GateV2Decision
 import uniffi.supermessage_core.PermissionV2Decision
 import uniffi.supermessage_core.QuestionV2Decision
@@ -609,6 +610,24 @@ class Session(
         if (eventId == null) return false
         return try {
             client.sendGatePullBack(roomId = roomId, gateId = gateId, comment = comment, inReplyTo = eventId)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /**
+     * Override a check on a card of overdue checks (`core::gate_checks`) with
+     * the reader's [comment]. superpipeline judges whether the reader may — a
+     * workspace owner or admin — and the hub says so in the room. False when
+     * it could not be sent.
+     */
+    suspend fun overrideCheck(eventId: String?, checks: ChecksWaitingDecision, checkName: String, comment: String, roomId: String): Boolean {
+        if (eventId == null) return false
+        return try {
+            client.sendCheckOverride(roomId = roomId, checks = checks, checkName = checkName, comment = comment, inReplyTo = eventId)
             true
         } catch (e: CancellationException) {
             throw e

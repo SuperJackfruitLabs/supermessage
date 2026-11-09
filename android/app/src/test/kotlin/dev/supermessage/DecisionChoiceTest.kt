@@ -6,6 +6,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import uniffi.supermessage_core.AttentionReason
 import uniffi.supermessage_core.AttentionV2Decision
+import uniffi.supermessage_core.CheckProvider
+import uniffi.supermessage_core.CheckStatus
+import uniffi.supermessage_core.ChecksWaitingDecision
+import uniffi.supermessage_core.GateCheck
 import uniffi.supermessage_core.CustomEventDecision
 import uniffi.supermessage_core.CustomEventDecisionOption
 import uniffi.supermessage_core.GateOptionMeaning
@@ -493,5 +497,66 @@ class DecisionChoiceTest {
         assertEquals(null, chosenVariantFor(choice, byId.getValue("request_changes").role, "thread"))
         // A gate without versions refuses one, so none is sent.
         assertEquals(null, chosenVariantFor(publishing().gateV2, DecisionOptionRole.APPROVE, "thread"))
+    }
+
+    // ---- machine checks (corpus v11)
+
+    private fun check(name: String, provider: CheckProvider, status: CheckStatus, overridable: Boolean) =
+        GateCheck(name = name, provider = provider, status = status, url = null, line = "$name — ${status.name.lowercase()}", overridable = overridable)
+
+    /** The corpus's overdue checks as the core hands them over: build passed, quality pending. */
+    private fun overdue(checks: List<GateCheck> = listOf(
+        check("build", CheckProvider.CI, CheckStatus.PASSED, false),
+        check("quality", CheckProvider.VERDICT, CheckStatus.PENDING, true),
+    )) = CustomEventDecision(
+        prompt = "Checks overdue on “Ship the release”",
+        options = emptyList(),
+        subject = null,
+        checksWaiting = ChecksWaitingDecision(
+            boardId = "brd_7c1f",
+            cardId = "crd_8a40",
+            cardTitle = "Ship the release",
+            stageKey = "review",
+            checks = checks,
+            overrideNote = "Only a workspace owner or admin may override a check, with a comment.",
+        ),
+    )
+
+    @Test
+    fun overdueChecksOfferOverrideOnlyWhereTheCoreSaysAndNoneLeads() {
+        val (all, primaries) = DecisionChoice.of(overdue())
+        assertEquals(listOf("quality"), all.map { it.id })
+        assertEquals("Override quality", all[0].label)
+        // The reader owes no answer unless they are an admin: nothing in amber.
+        assertTrue(primaries.isEmpty())
+        assertEquals(DecisionOptionRole.OTHER, all[0].role)
+    }
+
+    @Test
+    fun anOverrideNeedsACommentAndSaysAdminsOnly() {
+        val override = DecisionChoice.of(overdue()).first.single()
+        assertEquals(DecisionChoice.CommentAsk.REQUIRED, override.comment)
+        assertTrue(override.lacksComment("   "))
+        assertFalse(override.lacksComment("the grader is down"))
+        assertEquals("Admins only", override.qualifier)
+        assertEquals("Override of quality sent by you", override.receipt)
+    }
+
+    @Test
+    fun aFailedCheckIsOverridableAndOneAlreadyOverriddenIsNot() {
+        val (all, _) = DecisionChoice.of(overdue(listOf(
+            check("build", CheckProvider.CI, CheckStatus.FAILED, true),
+            check("quality", CheckProvider.VERDICT, CheckStatus.OVERRIDDEN, false),
+        )))
+        assertEquals(listOf("build"), all.map { it.id })
+    }
+
+    @Test
+    fun aGatesChecksOfferNoOverride() {
+        val gate = publishing().let {
+            it.copy(gateV2 = it.gateV2!!.copy(checks = listOf(check("build", CheckProvider.CI, CheckStatus.PASSED, false))))
+        }
+        val (all, _) = DecisionChoice.of(gate)
+        assertEquals(publishingOptions.map { it.id }, all.map { it.id })
     }
 }
