@@ -2262,7 +2262,7 @@ mod tool_title_tests {
 /// The gate renderer, checked against the shared corpus.
 ///
 /// These cases mirror `fixtures/ecosystem-identity/matrix_gate_events.json` in
-/// AgentPod. They are hand-written rather than loaded, which is the same
+/// treaty. They are hand-written rather than loaded, which is the same
 /// arrangement superpipeline uses: the corpus is plain JSON depending on no type
 /// from any repo, and each repo reimplements against it. A published package
 /// would couple three release cadences to hold one contract.

@@ -6777,7 +6777,7 @@ mod tests {
 /// it, and this client that sends the answer. A rename here is a gate that
 /// silently never resolves, which reads to the person who tapped as a button
 /// that did nothing. Pinned by
-/// `fixtures/ecosystem-identity/matrix_gate_events.json` in AgentPod.
+/// `fixtures/ecosystem-identity/matrix_gate_events.json` in treaty.
 #[cfg(test)]
 mod gate_decision_tests {
     use super::*;
