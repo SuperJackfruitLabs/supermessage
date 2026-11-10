@@ -314,8 +314,9 @@ charter `decisions/2026-11-07-gate-v2-is-the-decision-envelope.md`. The hub
 also puts gate.v2 fields on the same prose message, beside the unchanged
 `dev.superpipeline.gate` card, marked `suite_event_type:
 "dev.superpipeline.gate.v2"`. The wire is pinned by
-`fixtures/ecosystem-identity/matrix_gate_events.json`, vendored from AgentPod
-unchanged and read by `core::gate_v2`'s tests.
+`fixtures/ecosystem-identity/matrix_gate_events.json`, vendored from treaty
+unchanged and read by `core::gate_v2`'s tests. `scripts/check-treaty-corpus.sh` fails CI when
+the copy differs from the pinned treaty package.
 
 - **Which card.** A message whose v2 fields validate is drawn from v2
   (`core::gate_v2`, registered as `dev.superpipeline.gate.v2`); anything the

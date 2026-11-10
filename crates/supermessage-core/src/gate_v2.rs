@@ -5,7 +5,7 @@
 //! v1 card under `dev.superpipeline.gate` (`crate::embedded`), marked with
 //! `suite_event_type: "dev.superpipeline.gate.v2"`. The wire is pinned by
 //! `fixtures/ecosystem-identity/matrix_gate_events.json`, vendored from
-//! AgentPod byte for byte and read by the tests below.
+//! treaty byte for byte and read by the tests below.
 //!
 //! What v2 changes for this client, and where each rule lives:
 //!

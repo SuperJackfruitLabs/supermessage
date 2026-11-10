@@ -1004,3 +1004,14 @@ jobs:
         with:
           manifest-path: src-tauri/Cargo.toml
           command: check licenses bans sources
+
+  # fixtures/ecosystem-identity/ holds copies of treaty's corpus, which Rust reads with
+  # include_str!. A copy that drifts from the pinned treaty version fails here, not in a
+  # conversation with another product. Cheap, so it runs on every change.
+  treaty-corpus:
+    name: Treaty corpus copies
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: The vendored corpus matches the pinned treaty package
+        run: ./scripts/check-treaty-corpus.sh
