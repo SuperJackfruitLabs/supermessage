@@ -1417,6 +1417,368 @@
               ]
             }
           }
+        },
+        {
+          "why": "a subject revision that is not a whole number",
+          "refusedBy": "schema",
+          "body": {
+            "msgtype": "m.text",
+            "body": "Permission needed: Run the test suite\n\n1. Allow once\n2. Always allow\n3. Reject\n4. Never allow\n\nReply with the number, or the option's name.",
+            "suite_event_type": "dev.agentpod.permission.v2",
+            "schema_version": 1,
+            "request_id": "acps_3f0c:12",
+            "session_id": "acps_3f0c",
+            "request_seq": 12,
+            "title": "Run the test suite",
+            "tool_kind": "execute",
+            "options": [
+              {
+                "id": "allow_once",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "allow_always",
+                "label": "Always allow",
+                "meaning": "approve",
+                "scope": "always"
+              },
+              {
+                "id": "reject_once",
+                "label": "Reject",
+                "meaning": "reject",
+                "scope": "once"
+              },
+              {
+                "id": "reject_always",
+                "label": "Never allow",
+                "meaning": "reject",
+                "scope": "always"
+              }
+            ],
+            "subject": {
+              "id": "acps_3f0c:12",
+              "digest": "bb03bfd8ee6d757e6957d029cd6a7b8e004f16386755ce672e3f97f445563878",
+              "schema": "harness-permission/v1",
+              "revision": 1.5,
+              "expires_at": "2026-11-07T10:30:00.000Z",
+              "preview": [
+                {
+                  "type": "field",
+                  "label": "Tool",
+                  "value": "Run the test suite"
+                },
+                {
+                  "type": "field",
+                  "label": "Kind",
+                  "value": "execute"
+                },
+                {
+                  "type": "text",
+                  "label": "Command",
+                  "text": "bun test"
+                },
+                {
+                  "type": "field",
+                  "label": "Location",
+                  "value": "apps/hub"
+                }
+              ],
+              "preview_complete": true
+            },
+            "dev.agentpod.permission": {
+              "schema_version": 1,
+              "session_id": "acps_3f0c",
+              "request_seq": 12,
+              "title": "Run the test suite",
+              "options": [
+                {
+                  "option_id": "allow_once",
+                  "name": "Allow once"
+                },
+                {
+                  "option_id": "allow_always",
+                  "name": "Always allow"
+                },
+                {
+                  "option_id": "reject_once",
+                  "name": "Reject"
+                },
+                {
+                  "option_id": "reject_always",
+                  "name": "Never allow"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "why": "no options: nothing to answer with",
+          "refusedBy": "schema",
+          "body": {
+            "msgtype": "m.text",
+            "body": "Permission needed: Run the test suite\n\n1. Allow once\n2. Always allow\n3. Reject\n4. Never allow\n\nReply with the number, or the option's name.",
+            "suite_event_type": "dev.agentpod.permission.v2",
+            "schema_version": 1,
+            "request_id": "acps_3f0c:12",
+            "session_id": "acps_3f0c",
+            "request_seq": 12,
+            "title": "Run the test suite",
+            "tool_kind": "execute",
+            "options": [],
+            "subject": {
+              "id": "acps_3f0c:12",
+              "digest": "bb03bfd8ee6d757e6957d029cd6a7b8e004f16386755ce672e3f97f445563878",
+              "schema": "harness-permission/v1",
+              "revision": 1,
+              "expires_at": "2026-11-07T10:30:00.000Z",
+              "preview": [
+                {
+                  "type": "field",
+                  "label": "Tool",
+                  "value": "Run the test suite"
+                },
+                {
+                  "type": "field",
+                  "label": "Kind",
+                  "value": "execute"
+                },
+                {
+                  "type": "text",
+                  "label": "Command",
+                  "text": "bun test"
+                },
+                {
+                  "type": "field",
+                  "label": "Location",
+                  "value": "apps/hub"
+                }
+              ],
+              "preview_complete": true
+            },
+            "dev.agentpod.permission": {
+              "schema_version": 1,
+              "session_id": "acps_3f0c",
+              "request_seq": 12,
+              "title": "Run the test suite",
+              "options": [
+                {
+                  "option_id": "allow_once",
+                  "name": "Allow once"
+                },
+                {
+                  "option_id": "allow_always",
+                  "name": "Always allow"
+                },
+                {
+                  "option_id": "reject_once",
+                  "name": "Reject"
+                },
+                {
+                  "option_id": "reject_always",
+                  "name": "Never allow"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "why": "twenty-one options: more than any decision card carries",
+          "refusedBy": "schema",
+          "body": {
+            "msgtype": "m.text",
+            "body": "Permission needed: Run the test suite\n\n1. Allow once\n2. Always allow\n3. Reject\n4. Never allow\n\nReply with the number, or the option's name.",
+            "suite_event_type": "dev.agentpod.permission.v2",
+            "schema_version": 1,
+            "request_id": "acps_3f0c:12",
+            "session_id": "acps_3f0c",
+            "request_seq": 12,
+            "title": "Run the test suite",
+            "tool_kind": "execute",
+            "options": [
+              {
+                "id": "o0",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o1",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o2",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o3",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o4",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o5",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o6",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o7",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o8",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o9",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o10",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o11",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o12",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o13",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o14",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o15",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o16",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o17",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o18",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o19",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              },
+              {
+                "id": "o20",
+                "label": "Allow once",
+                "meaning": "approve",
+                "scope": "once"
+              }
+            ],
+            "subject": {
+              "id": "acps_3f0c:12",
+              "digest": "bb03bfd8ee6d757e6957d029cd6a7b8e004f16386755ce672e3f97f445563878",
+              "schema": "harness-permission/v1",
+              "revision": 1,
+              "expires_at": "2026-11-07T10:30:00.000Z",
+              "preview": [
+                {
+                  "type": "field",
+                  "label": "Tool",
+                  "value": "Run the test suite"
+                },
+                {
+                  "type": "field",
+                  "label": "Kind",
+                  "value": "execute"
+                },
+                {
+                  "type": "text",
+                  "label": "Command",
+                  "text": "bun test"
+                },
+                {
+                  "type": "field",
+                  "label": "Location",
+                  "value": "apps/hub"
+                }
+              ],
+              "preview_complete": true
+            },
+            "dev.agentpod.permission": {
+              "schema_version": 1,
+              "session_id": "acps_3f0c",
+              "request_seq": 12,
+              "title": "Run the test suite",
+              "options": [
+                {
+                  "option_id": "allow_once",
+                  "name": "Allow once"
+                },
+                {
+                  "option_id": "allow_always",
+                  "name": "Always allow"
+                },
+                {
+                  "option_id": "reject_once",
+                  "name": "Reject"
+                },
+                {
+                  "option_id": "reject_always",
+                  "name": "Never allow"
+                }
+              ]
+            }
+          }
         }
       ]
     },
@@ -2125,6 +2487,28 @@
               "id": "x",
               "digest": "y"
             }
+          }
+        },
+        {
+          "why": "no options: nothing to answer with",
+          "refusedBy": "schema",
+          "body": {
+            "msgtype": "m.text",
+            "body": "A card is waiting on you — \"Ship the release\" at Build is blocked.\n\nStaging DB down\n\n```\nthe staging database is down\n```\n\n- Resume here\n- Resume at Plan\n- Archive\n\nChoose in an updated app, or [open the card](https://superpipeline.dev/b/brd_7c1f/c/crd_6b40) on the board.",
+            "suite_event_type": "dev.superpipeline.attention.v2",
+            "schema_version": 1,
+            "board_id": "brd_7c1f",
+            "card_id": "crd_6b40",
+            "card_title": "Ship the release",
+            "stage_key": "build",
+            "stage_name": "Build",
+            "wait_id": "wait_0123456789abcdef",
+            "reason": "blocked",
+            "detail": "the staging database is down",
+            "summary": "Staging DB down",
+            "failure_count": null,
+            "options": [],
+            "deep_link": "https://superpipeline.dev/b/brd_7c1f/c/crd_6b40"
           }
         }
       ]
@@ -3074,6 +3458,63 @@
               "digest": "sha256:9b2f4e0c1a7d",
               "schema": "social-publish/v1",
               "revision": 1,
+              "expires_at": "2030-01-02T03:04:05Z",
+              "preview": [
+                {
+                  "type": "text",
+                  "label": "Post",
+                  "text": "Our next release ships today.\n\nThanks to everyone who tested it."
+                },
+                {
+                  "type": "field",
+                  "label": "Account",
+                  "value": "@fixture_account on X"
+                }
+              ],
+              "preview_complete": true
+            },
+            "options": [
+              {
+                "id": "record_live_url",
+                "label": "Record the live link",
+                "meaning": "defer",
+                "needs_comment": false,
+                "input": {
+                  "kind": "url",
+                  "label": "Live link",
+                  "required": true,
+                  "max_length": 2000
+                }
+              },
+              {
+                "id": "switch_to_automatic",
+                "label": "Post it automatically",
+                "meaning": "approve",
+                "needs_comment": false,
+                "delivery": "automatic"
+              }
+            ],
+            "deep_link": "https://superpipeline.dev/b/brd_7c1f/c/crd_6b40"
+          }
+        },
+        {
+          "why": "a subject revision that is not a whole number",
+          "refusedBy": "schema",
+          "body": {
+            "msgtype": "m.text",
+            "body": "Waiting on a live link — \"Announce the release\" was approved to be posted by hand. Once it is live, record its link here.\n\nPost:\n```\nOur next release ships today.\n\nThanks to everyone who tested it.\n```\n\nAccount: @fixture_account on X\n\n- Record the live link\n- Post it automatically\n\n[Open the card](https://superpipeline.dev/b/brd_7c1f/c/crd_6b40)",
+            "suite_event_type": "dev.superpipeline.delivery.v2",
+            "schema_version": 1,
+            "board_id": "brd_7c1f",
+            "card_id": "crd_6b40",
+            "gate_id": "gate_8f3a",
+            "stage_key": "approve",
+            "card_title": "Announce the release",
+            "subject": {
+              "id": "aps_2c9e71",
+              "digest": "sha256:9b2f4e0c1a7d",
+              "schema": "social-publish/v1",
+              "revision": 1.5,
               "expires_at": "2030-01-02T03:04:05Z",
               "preview": [
                 {
@@ -6711,6 +7152,125 @@
               }
             ]
           }
+        },
+        {
+          "why": "a subject revision that is not a whole number",
+          "refusedBy": "schema",
+          "body": {
+            "msgtype": "m.text",
+            "body": "Approval needed — \"Announce the release\" at stage `approve`.\n\nPost:\n```\nOur next release ships today.\n\nThanks to everyone who tested it.\n```\n\nAccount: @fixture_account on X\n\nApproval expires: 2030-01-02T03:04:05Z\n\n[Open the card](https://superpipeline.dev/b/brd_7c1f/c/crd_6b40)",
+            "suite_event_type": "dev.superpipeline.gate.v2",
+            "schema_version": 1,
+            "board_id": "brd_7c1f",
+            "card_id": "crd_6b40",
+            "gate_id": "gate_8f3a",
+            "stage_key": "approve",
+            "return_stage_key": "draft",
+            "card_title": "Announce the release",
+            "produced_by": "agt_31d0",
+            "prompt": "Approve \"Announce the release\"?",
+            "handoff_summary": "Our next release ships today.\n\nThanks to everyone who tested it.",
+            "options": [
+              {
+                "id": "approve_manual",
+                "label": "Approve — I'll post it myself",
+                "meaning": "approve",
+                "needs_comment": false,
+                "delivery": "manual"
+              },
+              {
+                "id": "approve_automatic",
+                "label": "Approve — post automatically",
+                "meaning": "approve",
+                "needs_comment": false,
+                "delivery": "automatic"
+              },
+              {
+                "id": "request_changes",
+                "label": "Request changes",
+                "meaning": "revise",
+                "needs_comment": true
+              },
+              {
+                "id": "reject",
+                "label": "Reject",
+                "meaning": "reject",
+                "needs_comment": false
+              }
+            ],
+            "subject": {
+              "id": "aps_2c9e71",
+              "digest": "sha256:9b2f4e0c1a7d",
+              "schema": "social-publish/v1",
+              "revision": 1.5,
+              "expires_at": "2030-01-02T03:04:05Z",
+              "preview": [
+                {
+                  "type": "text",
+                  "label": "Post",
+                  "text": "Our next release ships today.\n\nThanks to everyone who tested it."
+                },
+                {
+                  "type": "field",
+                  "label": "Account",
+                  "value": "@fixture_account on X"
+                },
+                {
+                  "type": "field",
+                  "label": "Approval expires",
+                  "value": "2030-01-02T03:04:05Z"
+                }
+              ],
+              "preview_complete": true
+            },
+            "deep_link": "https://superpipeline.dev/b/brd_7c1f/c/crd_6b40"
+          }
+        },
+        {
+          "why": "no options: nothing to answer with",
+          "refusedBy": "schema",
+          "body": {
+            "msgtype": "m.text",
+            "body": "Approval needed — \"Announce the release\" at stage `approve`.\n\nPost:\n```\nOur next release ships today.\n\nThanks to everyone who tested it.\n```\n\nAccount: @fixture_account on X\n\nApproval expires: 2030-01-02T03:04:05Z\n\n[Open the card](https://superpipeline.dev/b/brd_7c1f/c/crd_6b40)",
+            "suite_event_type": "dev.superpipeline.gate.v2",
+            "schema_version": 1,
+            "board_id": "brd_7c1f",
+            "card_id": "crd_6b40",
+            "gate_id": "gate_8f3a",
+            "stage_key": "approve",
+            "return_stage_key": "draft",
+            "card_title": "Announce the release",
+            "produced_by": "agt_31d0",
+            "prompt": "Approve \"Announce the release\"?",
+            "handoff_summary": "Our next release ships today.\n\nThanks to everyone who tested it.",
+            "options": [],
+            "subject": {
+              "id": "aps_2c9e71",
+              "digest": "sha256:9b2f4e0c1a7d",
+              "schema": "social-publish/v1",
+              "revision": 1,
+              "expires_at": "2030-01-02T03:04:05Z",
+              "preview": [
+                {
+                  "type": "text",
+                  "label": "Post",
+                  "text": "Our next release ships today.\n\nThanks to everyone who tested it."
+                },
+                {
+                  "type": "field",
+                  "label": "Account",
+                  "value": "@fixture_account on X"
+                },
+                {
+                  "type": "field",
+                  "label": "Approval expires",
+                  "value": "2030-01-02T03:04:05Z"
+                }
+              ],
+              "preview_complete": true
+            },
+            "deep_link": "https://superpipeline.dev/b/brd_7c1f/c/crd_6b40"
+          }
         }
       ]
     },
@@ -8105,6 +8665,99 @@
               "preview_complete": true
             },
             "approval_request_id": "apr_5d2e9c41"
+          }
+        },
+        {
+          "why": "a subject revision that is not a whole number",
+          "refusedBy": "schema",
+          "body": {
+            "msgtype": "m.text",
+            "body": "An agent is waiting on you — \"Upgrade the build image\" at stage `build`.\n\nEdit app.js in the workspace?\n\n1. Approve\n2. Approve for this run\n3. Always allow\n4. Deny\n\nReply with the number, or the option's name. [Open the card](https://superpipeline.dev/b/brd_7c1f/c/crd_51d0)\n\nThis approves an exact operation. Approve it in an updated app, which shows what it does, or on the board. A reply here can only decline it.",
+            "suite_event_type": "dev.superpipeline.question.v2",
+            "schema_version": 1,
+            "elicitation_id": "elc_9b44",
+            "board_id": "brd_7c1f",
+            "card_id": "crd_51d0",
+            "run_id": "run_12",
+            "stage_key": "build",
+            "card_title": "Upgrade the build image",
+            "asked_by": "agt_31d0",
+            "question": "Edit app.js in the workspace?",
+            "options": [
+              {
+                "id": "approve",
+                "label": "Approve",
+                "meaning": "approve",
+                "needs_comment": false,
+                "scope": "once"
+              },
+              {
+                "id": "approve-run",
+                "label": "Approve for this run",
+                "meaning": "approve",
+                "needs_comment": false,
+                "scope": "run"
+              },
+              {
+                "id": "always",
+                "label": "Always allow",
+                "meaning": "approve",
+                "needs_comment": false,
+                "scope": "always",
+                "requires": "workspace-admin"
+              },
+              {
+                "id": "deny",
+                "label": "Deny",
+                "meaning": "reject",
+                "needs_comment": false,
+                "scope": "once"
+              }
+            ],
+            "subject": {
+              "id": "8f9a0d0e-4b2a-4c1e-9c55-1a2b3c4d5e6f",
+              "digest": "0588c96c7eff47e1a83d9fc1d0ecda3cc3b72e559a5c402bb9da29d9851dbceb",
+              "schema": "salaam-operation/v1",
+              "revision": 1.5,
+              "expires_at": "2026-11-07T10:30:00.000Z",
+              "preview": [
+                {
+                  "type": "text",
+                  "text": "Edit app.js in the workspace"
+                },
+                {
+                  "type": "field",
+                  "label": "File",
+                  "value": "app.js · edit · 16 bytes"
+                },
+                {
+                  "type": "text",
+                  "text": "console.log(1);\n"
+                }
+              ],
+              "preview_complete": true
+            },
+            "deep_link": "https://superpipeline.dev/b/brd_7c1f/c/crd_51d0"
+          }
+        },
+        {
+          "why": "no options: nothing to answer with",
+          "refusedBy": "schema",
+          "body": {
+            "msgtype": "m.text",
+            "body": "An agent is waiting on you — \"Upgrade the build image\" at stage `build`.\n\nThe tests need network access. May I run them?\n\n1. Run the tests\n2. Skip them\n3. Something else\n\nReply with the number, or the option's name. [Open the card](https://superpipeline.dev/b/brd_7c1f/c/crd_51d0)",
+            "suite_event_type": "dev.superpipeline.question.v2",
+            "schema_version": 1,
+            "elicitation_id": "elc_7f3c",
+            "board_id": "brd_7c1f",
+            "card_id": "crd_51d0",
+            "run_id": "run_12",
+            "stage_key": "build",
+            "card_title": "Upgrade the build image",
+            "asked_by": "agt_31d0",
+            "question": "The tests need network access. May I run them?",
+            "options": [],
+            "deep_link": "https://superpipeline.dev/b/brd_7c1f/c/crd_51d0"
           }
         }
       ]
