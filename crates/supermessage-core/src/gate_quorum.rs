@@ -230,6 +230,12 @@ fn progress_of(item: &TimelineItemDto) -> Option<Progress> {
     })
 }
 
+/// Whether a row is read as this module's event, for treaty's corpus (`crate::treaty_corpus`).
+#[cfg(test)]
+pub(crate) fn reads(item: &TimelineItemDto) -> bool {
+    progress_of(item).is_some()
+}
+
 /// The gate and option of a decision.v2 the reader sent, or `None`.
 fn own_decision_of(item: &TimelineItemDto) -> Option<(String, String)> {
     if !item.is_own || item.detail.as_deref() != Some(GATE_DECISION_V2_SUITE_TYPE) {

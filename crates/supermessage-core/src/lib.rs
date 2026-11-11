@@ -94,3 +94,6 @@ pub mod voice_recording;
 pub mod voice_reply;
 pub mod voice_transcript;
 pub mod widget;
+
+#[cfg(test)]
+mod treaty_corpus;

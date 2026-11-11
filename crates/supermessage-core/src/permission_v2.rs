@@ -375,6 +375,12 @@ fn outcome_of(item: &TimelineItemDto) -> Option<Outcome> {
     })
 }
 
+/// Whether a row is read as this module's event, for treaty's corpus (`crate::treaty_corpus`).
+#[cfg(test)]
+pub(crate) fn reads(item: &TimelineItemDto) -> bool {
+    outcome_of(item).is_some()
+}
+
 /// A permission card's carrier — the v2 or v1 prose message, or the legacy
 /// separate `dev.agentpod.permission.v1` event — as the matching needs it.
 struct Carrier<'a> {

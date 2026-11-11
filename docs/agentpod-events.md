@@ -318,6 +318,14 @@ also puts gate.v2 fields on the same prose message, beside the unchanged
 unchanged and read by `core::gate_v2`'s tests. `scripts/check-treaty-corpus.sh` fails CI when
 the copy differs from the pinned treaty package.
 
+Every board-room type is also held to treaty's per-type corpus,
+`fixtures/treaty-matrix-events/examples.json`: `@superjackfruitlabs/treaty-matrix-events`'s
+`examples.json` at the version the same script pins, beside the JSON Schemas it is checked
+against. `core::treaty_corpus` runs each case through this client's own code: a card, notice or
+receipt it reads must read every valid case and no case the schema refuses; an answer it sends
+must be one some valid card builds, and no invalid answer may ever be built. A type the corpus
+gains that this client neither reads, sends nor lists as not read fails the test.
+
 - **Which card.** A message whose v2 fields validate is drawn from v2
   (`core::gate_v2`, registered as `dev.superpipeline.gate.v2`); anything the
   corpus refuses — an option with no `meaning`, a subject with no `digest`, no

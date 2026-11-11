@@ -464,6 +464,12 @@ fn outcome_of(item: &TimelineItemDto) -> Option<Outcome> {
     })
 }
 
+/// Whether a row is read as this module's event, for treaty's corpus (`crate::treaty_corpus`).
+#[cfg(test)]
+pub(crate) fn reads(item: &TimelineItemDto) -> bool {
+    outcome_of(item).is_some()
+}
+
 /// A waiting card's carrier, as the matching needs it.
 struct Carrier<'a> {
     identity: String,
