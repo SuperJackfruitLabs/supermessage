@@ -516,6 +516,12 @@ fn notice_of(item: &TimelineItemDto) -> Option<Notice> {
     })
 }
 
+/// Whether a row is read as this module's event, for treaty's corpus (`crate::treaty_corpus`).
+#[cfg(test)]
+pub(crate) fn reads(item: &TimelineItemDto) -> bool {
+    notice_of(item).is_some()
+}
+
 /// The check notices a loaded timeline holds, in timeline order.
 pub(crate) struct CheckNotices(Vec<Notice>);
 

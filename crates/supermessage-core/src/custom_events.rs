@@ -982,8 +982,11 @@ impl CustomEventRenderer for GateRenderer {
     fn render(&self, content: &Value, _body: Option<&str>) -> CustomEventRenderResult {
         // `gate_id` is what resolution keys on. Without it every button on this
         // card would be unpressable, and a card that looks answerable and is
-        // not is worse than one that plainly is not.
-        let Some(gate_id) = safe_string_field(content, "gate_id", FIELD_VALUE_MAX_CHARS) else {
+        // not is worse than one that plainly is not. An empty one is none:
+        // `timeline::gate_decision_request` refuses it, so every tap would fail.
+        let Some(gate_id) = safe_string_field(content, "gate_id", FIELD_VALUE_MAX_CHARS)
+            .filter(|id| !id.is_empty())
+        else {
             return CustomEventRenderResult::default();
         };
         let Some(card_title) = safe_string_field(content, "card_title", FIELD_VALUE_MAX_CHARS)

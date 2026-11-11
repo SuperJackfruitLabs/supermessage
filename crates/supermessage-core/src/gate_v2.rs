@@ -69,9 +69,13 @@ const PREVIEW_TEXT_MAX_CHARS: usize = 4_000;
 const PREVIEW_FIELD_MAX_CHARS: usize = 200;
 const PREVIEW_MAX_BLOCKS: usize = 20;
 
-/// How many options a v2 card draws. The publishing gate has four; a gate
-/// offering more than a person can weigh at a glance falls back to v1.
-pub(crate) const OPTIONS_MAX: usize = 8;
+/// How many options a v2 card draws: the contract's bound (treaty's gate.v2,
+/// question.v2 and attention.v2 schemas, `options.maxItems`), which the hub
+/// sends up to. A waiting card offers a resume at each earlier stage, so a
+/// long pipeline needs more than a handful; hosts stack options, so a long
+/// list is drawn whole. Past the bound a card is not the contract and falls
+/// back (gate.v2 to its v1 card, the rest to prose).
+pub(crate) const OPTIONS_MAX: usize = 20;
 
 /// An option's label is a button.
 pub(crate) const OPTION_LABEL_MAX_CHARS: usize = 60;
