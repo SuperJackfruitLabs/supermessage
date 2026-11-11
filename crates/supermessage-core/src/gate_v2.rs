@@ -506,7 +506,9 @@ fn parse_block(raw: &Value) -> Option<GatePreviewBlock> {
 }
 
 /// `content.subject`: `Ok(None)` when absent, `Err(())` when present and not
-/// a subject an answer could be bound to (no id or no digest).
+/// a subject an answer could be bound to (no id or no digest, or a
+/// `revision` that is not a whole number: it counts versions of the frozen
+/// subject, and treaty refuses any other).
 pub(crate) fn parse_subject(content: &Value) -> Result<Option<Subject>, ()> {
     let raw = match content.get("subject") {
         None | Some(Value::Null) => return Ok(None),
@@ -515,6 +517,9 @@ pub(crate) fn parse_subject(content: &Value) -> Result<Option<Subject>, ()> {
     let (Some(id), Some(digest)) = (id_field(raw, "id"), id_field(raw, "digest")) else {
         return Err(());
     };
+    if raw.get("revision").is_some_and(|r| r.as_u64().is_none()) {
+        return Err(());
+    }
     // Only an explicit `true` counts. Absent is a board that did not say.
     let mut complete = raw.get("preview_complete").and_then(Value::as_bool) == Some(true);
     let mut preview = Vec::new();
