@@ -39,6 +39,6 @@ check() {
 }
 
 check @superjackfruitlabs/treaty-ecosystem-identity 0.0.1 corpus/ fixtures/ecosystem-identity
-check @superjackfruitlabs/treaty-matrix-events 0.0.9 "" fixtures/treaty-matrix-events
+check @superjackfruitlabs/treaty-matrix-events 0.0.10 "" fixtures/treaty-matrix-events
 
 exit "$status"
