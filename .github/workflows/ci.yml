@@ -5,14 +5,15 @@ on:
   push:
     branches: [main]
 
-# A second push to the same branch cancels the first: these jobs build the
+# A second push to the same pull request cancels the first: these jobs build the
 # whole Rust tree, and a queue of superseded runs is the main way a small
-# project burns its Actions minutes. Nothing here deploys — both sites are
-# built by Cloudflare Pages from Git — so no run is worth finishing once a
-# newer one exists.
+# project burns its Actions minutes. Main's runs always finish: a `v*` tag
+# releases the desktop installers a main run built and tested for that exact
+# commit (the shared release workflow, `.github/release-config.json`), so a
+# cancelled main run would leave its commit unreleasable.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -332,6 +333,116 @@ jobs:
         # Dependency compilation does not execute core or FFI tests.
         run: cargo test --workspace --all-features
         working-directory: src-tauri
+
+  # The desktop installers a `v*` tag releases. The shared release workflow
+  # fetches these `desktop-<target>-<sha>` artifacts from main's run for the
+  # tagged commit and ships them as they are; it never rebuilds. Main only: a
+  # pull request needs no installers, and the Rust job already builds and tests
+  # the tree. One platform failing does not cancel the others, but it fails
+  # the run, and a commit whose run failed is never released.
+  desktop:
+    name: Desktop (${{ matrix.label }})
+    needs: changes
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macOS (universal)
+            runner: macos-latest
+            # A single binary carrying both arm64 and x86_64, so one .dmg
+            # covers every Mac.
+            target: universal-apple-darwin
+            args: --target universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundle: src-tauri/target/universal-apple-darwin/release/bundle
+          - label: Linux (x86_64)
+            # Deliberately not `ubuntu-latest`. glibc is forward- but not
+            # backward-compatible, so a binary linked against 24.04's glibc
+            # refuses to start on 22.04. Building on the oldest supported
+            # runner is what makes the artifact portable.
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            args: ""
+            rust_targets: x86_64-unknown-linux-gnu
+            bundle: src-tauri/target/release/bundle
+          - label: Windows (x86_64)
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+            rust_targets: x86_64-pc-windows-msvc
+            bundle: src-tauri/target/release/bundle
+    runs-on: ${{ matrix.runner }}
+    env:
+      # The installers build as the old release workflow built them; the Rust
+      # job holds the tree to `-D warnings` on Linux.
+      RUSTFLAGS: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux build dependencies
+        if: matrix.runner == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            build-essential \
+            file \
+            wget
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `tauri build` runs `beforeBuildCommand` (`pnpm build`) itself.
+      - name: Build the installers
+        shell: bash
+        run: pnpm tauri build ${{ matrix.args }}
+
+      # One flat directory per platform: the installers, and the macOS app as
+      # a tarball (a .app is a directory). These unsigned installers warn on
+      # first run (Gatekeeper, SmartScreen) until signing is set up.
+      - name: Collect the installers
+        shell: bash
+        env:
+          BUNDLE: ${{ matrix.bundle }}
+        run: |
+          mkdir -p desktop-dist
+          find "$BUNDLE" -maxdepth 2 -type f \( -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' \
+            -o -name '*.AppImage' -o -name '*.msi' -o -name '*.exe' \) -exec cp {} desktop-dist/ \;
+          for app in "$BUNDLE"/macos/*.app; do
+            [ -d "$app" ] || continue
+            name=$(basename "$app" .app)
+            tar -czf "desktop-dist/${name}_universal.app.tar.gz" -C "$BUNDLE/macos" "$name.app"
+          done
+          ls -la desktop-dist
+          [ -n "$(ls desktop-dist)" ]
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}-${{ github.sha }}
+          path: desktop-dist/
+          if-no-files-found: error
+          retention-days: 30
 
   ios:
     name: iOS

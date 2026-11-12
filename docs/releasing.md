@@ -7,9 +7,26 @@ a command.
 
 | Platform | Workflow | Trigger |
 |---|---|---|
-| Desktop — macOS, Linux, Windows | `release.yml` | tag `v*`, or dispatch |
+| Desktop — macOS, Linux, Windows | `ci.yml` `desktop` builds on every push to main; `release.yml` releases them | tag `v*`, or dispatch with a tag |
 | iOS — TestFlight | `testflight.yml` | dispatch, upload off by default |
 | Android — Play internal | `play.yml` | dispatch, upload off by default |
+
+## Desktop
+
+Every push to `main` builds the desktop installers in CI's `desktop` job
+(macOS universal `.dmg` and `.app.tar.gz`, Linux `.deb`, `.rpm` and
+`.AppImage` on 22.04's glibc, Windows `.msi` and `.exe`) and keeps them as
+`desktop-<target>-<sha>` artifacts for 30 days. A `v*` tag runs the suite's
+shared release workflow (`.github/workflows/release.yml`, settings in
+`.github/release-config.json`): it refuses a tag whose commit is not on
+`main` or whose main CI run did not pass, fetches that run's installers
+without rebuilding, adds `SHA256SUMS` and a provenance attestation for each,
+writes the notes (a summary, this version's section of `CHANGELOG.md` and the
+grouped commits) and publishes the release as `SuperMessage vX.Y.Z`. The
+installers are unsigned: macOS Gatekeeper and Windows SmartScreen warn on
+first run until signing is set up. Re-run a release for an existing tag with
+`gh workflow run release.yml -f tag=vX.Y.Z`. The tag does not touch iOS or
+Android: those uploads stay manual, below.
 
 ## 1. Build numbers
 

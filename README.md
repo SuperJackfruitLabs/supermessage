@@ -147,8 +147,9 @@ cargo test --workspace     # core, FFI and desktop shell
 
 Use `pnpm tauri build` for a desktop bundle. `pnpm build` only builds the
 frontend; a bare Cargo debug binary expects the Vite server to be running.
-The [release workflow](.github/workflows/release.yml) creates draft releases
-on `v*` tags, which need publication before users can download them.
+On `v*` tags the [release workflow](.github/workflows/release.yml) releases the
+desktop installers that main's CI built for that commit (see
+[docs/releasing.md](docs/releasing.md)).
 
 ## Repository guide
 
