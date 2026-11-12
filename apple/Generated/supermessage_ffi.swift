@@ -575,6 +575,19 @@ public protocol CoreProtocol : AnyObject {
     func account() throws  -> AccountDto
     
     /**
+     * The Super Jackfruit Accounts origin this account links to, or `None`
+     * when there is none (then show no link row). `accounts_url` is the
+     * person's own setting, if any.
+     */
+    func accountLinkOrigin(accountsUrl: String?) throws  -> String?
+    
+    /**
+     * The Accounts page to open in a web authentication session, with a
+     * fresh OpenID token for this account in its fragment. Never log it.
+     */
+    func accountLinkUrl(accountsUrl: String?) throws  -> String
+    
+    /**
      * What the dock above the composer says, from the core's own rows and its
      * own "sent this session" — see `core::acknowledgement::for_focused`. The
      * host sends no rows. `None` when the focused room is not `room_id` (the
@@ -1273,6 +1286,31 @@ public static func withSecretStore(dataDir: String, store: HostSecretStore) -> C
 open func account()throws  -> AccountDto {
     return try  FfiConverterTypeAccountDto_lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
     uniffi_supermessage_ffi_fn_method_core_account(self.uniffiClonePointer(),$0
+    )
+})
+}
+    
+    /**
+     * The Super Jackfruit Accounts origin this account links to, or `None`
+     * when there is none (then show no link row). `accounts_url` is the
+     * person's own setting, if any.
+     */
+open func accountLinkOrigin(accountsUrl: String?)throws  -> String? {
+    return try  FfiConverterOptionString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_account_link_origin(self.uniffiClonePointer(),
+        FfiConverterOptionString.lower(accountsUrl),$0
+    )
+})
+}
+    
+    /**
+     * The Accounts page to open in a web authentication session, with a
+     * fresh OpenID token for this account in its fragment. Never log it.
+     */
+open func accountLinkUrl(accountsUrl: String?)throws  -> String {
+    return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeFfiError.lift) {
+    uniffi_supermessage_ffi_fn_method_core_account_link_url(self.uniffiClonePointer(),
+        FfiConverterOptionString.lower(accountsUrl),$0
     )
 })
 }
@@ -5330,6 +5368,17 @@ fileprivate struct FfiConverterDictionaryStringString: FfiConverterRustBuffer {
 
 
 /**
+ * The Matrix id Accounts reports linked, from the page's
+ * `supermessage://linked?mxid=…` callback; `None` for any other URL.
+ */
+public func accountLinkedMxid(callback: String) -> String? {
+    return try!  FfiConverterOptionString.lift(try! rustCall() {
+    uniffi_supermessage_ffi_fn_func_account_linked_mxid(
+        FfiConverterString.lower(callback),$0
+    )
+})
+}
+/**
  * What the dock above the composer says after the reader wrote to an agent —
  * see `core::acknowledgement`. A free function for the same reason as
  * `peer_color_index`.
@@ -6205,6 +6254,9 @@ private var initializationResult: InitializationResult = {
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
     }
+    if (uniffi_supermessage_ffi_checksum_func_account_linked_mxid() != 60481) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_supermessage_ffi_checksum_func_acknowledgement() != 12992) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -6419,6 +6471,12 @@ private var initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_account() != 48469) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_account_link_origin() != 5248) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_supermessage_ffi_checksum_method_core_account_link_url() != 44474) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_supermessage_ffi_checksum_method_core_acknowledgement() != 40306) {

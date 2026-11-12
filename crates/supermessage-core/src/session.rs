@@ -1786,6 +1786,36 @@ impl Session {
         })
     }
 
+    /// The Accounts origin this account links to (`account_link::accounts_origin`),
+    /// or `None` when there is none and the host shows no link row.
+    pub async fn account_link_origin(
+        &self,
+        accounts_url: Option<&str>,
+    ) -> CoreResult<Option<String>> {
+        let client = self.require_client().await?;
+        let user = client
+            .user_id()
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+        Ok(crate::account_link::accounts_origin(&user, accounts_url))
+    }
+
+    /// Mints an OpenID token for this account and returns the Accounts page
+    /// that takes it, the token in the fragment. The token goes nowhere else.
+    pub async fn account_link_url(&self, accounts_url: Option<&str>) -> CoreResult<String> {
+        let client = self.require_client().await?;
+        let user = client
+            .user_id()
+            .map(|id| id.to_string())
+            .unwrap_or_default();
+        let origin =
+            crate::account_link::accounts_origin(&user, accounts_url).ok_or_else(|| {
+                CoreError::Refused("This account has no Super Jackfruit account to link to.".into())
+            })?;
+        let token = crate::account_link::request_link_token(&client).await?;
+        Ok(crate::account_link::link_url(&origin, &token))
+    }
+
     /// Who invited this account to `room_id`, named the way everything else
     /// names people.
     ///

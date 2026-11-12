@@ -1263,6 +1263,12 @@ internal open class UniffiVTableCallbackInterfaceHostSecretStore(
 
 
 
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -1296,6 +1302,10 @@ internal interface UniffiLib : Library {
     ): Pointer
     fun uniffi_supermessage_ffi_fn_method_core_account(`ptr`: Pointer,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBufferAccountDto.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_account_link_origin(`ptr`: Pointer,`accountsUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_supermessage_ffi_fn_method_core_account_link_url(`ptr`: Pointer,`accountsUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_acknowledgement(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,`addressee`: RustBuffer.ByValue,`agentIds`: RustBuffer.ByValue,`typingAgents`: RustBuffer.ByValue,`turnInProgress`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_method_core_agent_avatar(`ptr`: Pointer,`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1454,6 +1464,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_supermessage_ffi_fn_init_callback_vtable_hostsecretstore(`vtable`: UniffiVTableCallbackInterfaceHostSecretStore,
     ): Unit
+    fun uniffi_supermessage_ffi_fn_func_account_linked_mxid(`callback`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_acknowledgement(`rows`: RustBuffer.ByValue,`addressee`: RustBuffer.ByValue,`agentIds`: RustBuffer.ByValue,`sentThisSession`: Byte,`typingAgents`: RustBuffer.ByValue,`turnInProgress`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_supermessage_ffi_fn_func_agent_avatar_style(`roomId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -1708,6 +1720,8 @@ internal interface UniffiLib : Library {
     ): Unit
     fun ffi_supermessage_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
+    fun uniffi_supermessage_ffi_checksum_func_account_linked_mxid(
+    ): Short
     fun uniffi_supermessage_ffi_checksum_func_acknowledgement(
     ): Short
     fun uniffi_supermessage_ffi_checksum_func_agent_avatar_style(
@@ -1851,6 +1865,10 @@ internal interface UniffiLib : Library {
     fun uniffi_supermessage_ffi_checksum_func_widget_view(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_account(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_account_link_origin(
+    ): Short
+    fun uniffi_supermessage_ffi_checksum_method_core_account_link_url(
     ): Short
     fun uniffi_supermessage_ffi_checksum_method_core_acknowledgement(
     ): Short
@@ -2037,6 +2055,9 @@ private fun uniffiCheckContractApiVersion(lib: UniffiLib) {
 
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: UniffiLib) {
+    if (lib.uniffi_supermessage_ffi_checksum_func_account_linked_mxid() != 60481.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_supermessage_ffi_checksum_func_acknowledgement() != 12992.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -2251,6 +2272,12 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_account() != 48469.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_account_link_origin() != 5248.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_supermessage_ffi_checksum_method_core_account_link_url() != 44474.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_supermessage_ffi_checksum_method_core_acknowledgement() != 40306.toShort()) {
@@ -2945,6 +2972,19 @@ public interface CoreInterface {
      * Who this app is signed in as, and where.
      */
     fun `account`(): AccountDto
+    
+    /**
+     * The Super Jackfruit Accounts origin this account links to, or `None`
+     * when there is none (then show no link row). `accounts_url` is the
+     * person's own setting, if any.
+     */
+    fun `accountLinkOrigin`(`accountsUrl`: kotlin.String?): kotlin.String?
+    
+    /**
+     * The Accounts page to open in a web authentication session, with a
+     * fresh OpenID token for this account in its fragment. Never log it.
+     */
+    fun `accountLinkUrl`(`accountsUrl`: kotlin.String?): kotlin.String
     
     /**
      * What the dock above the composer says, from the core's own rows and its
@@ -3648,6 +3688,41 @@ open class Core: Disposable, AutoCloseable, CoreInterface {
     uniffiRustCallWithError(FfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_account(
         it, _status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The Super Jackfruit Accounts origin this account links to, or `None`
+     * when there is none (then show no link row). `accounts_url` is the
+     * person's own setting, if any.
+     */
+    @Throws(FfiException::class)override fun `accountLinkOrigin`(`accountsUrl`: kotlin.String?): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_account_link_origin(
+        it, FfiConverterOptionalString.lower(`accountsUrl`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    /**
+     * The Accounts page to open in a web authentication session, with a
+     * fresh OpenID token for this account in its fragment. Never log it.
+     */
+    @Throws(FfiException::class)override fun `accountLinkUrl`(`accountsUrl`: kotlin.String?): kotlin.String {
+            return FfiConverterString.lift(
+    callWithPointer {
+    uniffiRustCallWithError(FfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_method_core_account_link_url(
+        it, FfiConverterOptionalString.lower(`accountsUrl`),_status)
 }
     }
     )
@@ -8426,6 +8501,19 @@ public object FfiConverterMapStringString: FfiConverterRustBuffer<Map<kotlin.Str
 
 
 
+
+        /**
+         * The Matrix id Accounts reports linked, from the page's
+         * `supermessage://linked?mxid=…` callback; `None` for any other URL.
+         */ fun `accountLinkedMxid`(`callback`: kotlin.String): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    uniffiRustCall() { _status ->
+    UniffiLib.INSTANCE.uniffi_supermessage_ffi_fn_func_account_linked_mxid(
+        FfiConverterString.lower(`callback`),_status)
+}
+    )
+    }
+    
 
         /**
          * What the dock above the composer says after the reader wrote to an agent —

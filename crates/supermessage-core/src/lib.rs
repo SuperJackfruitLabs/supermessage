@@ -29,6 +29,7 @@
 // scaffolding emits a few `extern "C"` symbols the desktop build never calls.
 uniffi::setup_scaffolding!();
 
+pub mod account_link;
 pub mod acknowledgement;
 pub mod agent_avatar;
 pub mod attachments;
