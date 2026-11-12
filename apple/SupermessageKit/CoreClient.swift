@@ -499,6 +499,14 @@ public actor CoreClient {
         try await run { try $0.unignoreUser(userId: userId) }
     }
 
+    public func accountLinkOrigin(accountsUrl: String?) async throws -> String? {
+        try await run { try $0.accountLinkOrigin(accountsUrl: accountsUrl) }
+    }
+
+    public func accountLinkUrl(accountsUrl: String?) async throws -> String {
+        try await run { try $0.accountLinkUrl(accountsUrl: accountsUrl) }
+    }
+
     public func ignoredUsers() async throws -> [RoomMemberDto] {
         try await run { try $0.ignoredUsers() }
     }

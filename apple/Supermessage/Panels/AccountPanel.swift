@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SupermessageFFI
 import SupermessageKit
 import SwiftUI
@@ -26,6 +27,13 @@ struct AccountPanel: View {
     @AppStorage(AppearanceSettings.modeKey) private var mode = AppearanceMode.system.rawValue
     @AppStorage(AppearanceSettings.darkStyleKey) private var darkStyle = DarkStyle.tinted.rawValue
     @AppStorage(AppearanceSettings.accentKey) private var accent = ""
+    /// The person's own Accounts address, for a homeserver that is not the
+    /// suite's. Blank: the core's default for this homeserver, if it has one.
+    @AppStorage(AccountLink.accountsURLKey) private var accountsURL = ""
+    /// The Accounts this account links to; `nil` hides the row (asked once).
+    @State private var linkOrigin: String?
+    @State private var link = LinkState.idle
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
 
     init(session: Session, onClose: @escaping () -> Void) {
         self.session = session
@@ -109,6 +117,30 @@ struct AccountPanel: View {
                         Text("Waiting first puts what needs an answer at the top. Agent state is the dot and word beside an agent's name.")
                     }
 
+                    // Only for an account with an Accounts to link to: a
+                    // homeserver outside the suite has nothing to offer here.
+                    if linkOrigin != nil {
+                        Section {
+                            Button {
+                                Task { await linkAccount() }
+                            } label: {
+                                Label("Link to your Super Jackfruit account", systemImage: "link")
+                            }
+                            .disabled(link == .working)
+                        } header: {
+                            Text("Super Jackfruit account")
+                        } footer: {
+                            switch link {
+                            case .idle, .working:
+                                Text("Lets you approve requests from chat as yourself. You sign in to your Super Jackfruit account next.")
+                            case let .linked(mxid):
+                                Text("Linked as \(mxid). Approvals from chat start working 15 minutes after linking.")
+                            case let .failed(message):
+                                Text(message).foregroundStyle(Theme.danger)
+                            }
+                        }
+                    }
+
                     // Only when there is someone in it: an empty "Blocked"
                     // heading on every account is a list of nobody.
                     if let blocked, !blocked.isEmpty {
@@ -177,6 +209,7 @@ struct AccountPanel: View {
             .task {
                 account = await session.account()
                 if blocked == nil { blocked = await session.blockedUsers() }
+                linkOrigin = await session.accountLinkOrigin(accountsURL: accountsURL)
             }
             .sensoryFeedback(.success, trigger: unblocked)
             .confirmationDialog(
@@ -201,6 +234,30 @@ struct AccountPanel: View {
     static let termsURL = URL(string: "https://supermessage.dev/terms/")!
     static let privacyURL = URL(string: "https://supermessage.dev/privacy/")!
 
+    /// Opens the Accounts page in a web authentication session that shares the
+    /// browser's cookies (not ephemeral), so a signed-in Accounts is reused.
+    /// The page's URL carries the OpenID token in its fragment; it is handed
+    /// to the session and kept nowhere.
+    private func linkAccount() async {
+        link = .working
+        do {
+            let page = try await session.accountLinkURL(accountsURL: accountsURL)
+            let callback = try await webAuthenticationSession.authenticate(
+                using: page, callbackURLScheme: AccountLink.callbackScheme)
+            if let mxid = AccountLink.linkedMxid(from: callback) {
+                link = .linked(mxid)
+            } else {
+                link = .failed("The link didn't finish. Try again.")
+            }
+        } catch let failure as AccountLinkFailure {
+            link = .failed(failure.message)
+        } catch let error as ASWebAuthenticationSessionError where error.code == .canceledLogin {
+            link = .idle
+        } catch {
+            link = .failed("The link didn't finish. Try again.")
+        }
+    }
+
     private func unblock(_ member: RoomMemberDto) async {
         unblockFailure = nil
         if let refused = await session.unblock(member.userId) {
@@ -216,6 +273,13 @@ struct AccountPanel: View {
     private var name: String { AccountLabel.name(of: account?.userId) }
 
     private var initial: String { AccountLabel.initial(of: account?.userId) }
+}
+
+/// Where linking to the person's Super Jackfruit account has got to.
+private enum LinkState: Equatable {
+    case idle, working
+    case linked(String)
+    case failed(String)
 }
 
 /// The accents, as a row of swatches — the house violet first.

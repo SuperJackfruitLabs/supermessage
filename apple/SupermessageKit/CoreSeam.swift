@@ -285,6 +285,21 @@ public protocol SafetyActions: Sendable {
     func reportUser(userId: String, reason: String) async throws
 }
 
+/// Linking this account to the person's Super Jackfruit account. `AccountPanel`.
+public protocol AccountLinking: Sendable {
+    /// The Accounts origin this account links to, or `nil`: then no row.
+    func accountLinkOrigin(accountsUrl: String?) async throws -> String?
+    /// The Accounts page with a fresh OpenID token in its fragment.
+    func accountLinkUrl(accountsUrl: String?) async throws -> String
+}
+
+/// A conformer without linking (a preview, a test double) has nothing to
+/// link to, so the account screen shows no row for it.
+extension AccountLinking {
+    public func accountLinkOrigin(accountsUrl: String?) async throws -> String? { nil }
+    public func accountLinkUrl(accountsUrl: String?) async throws -> String { throw CancellationError() }
+}
+
 // MARK: - The composition Session takes
 
 /// Everything a `Session` needs, which is everything above.
@@ -297,7 +312,7 @@ public protocol SafetyActions: Sendable {
 public typealias SessionClient = AvatarFetching & MediaFetching & AudioFetching & RoomsSnapshotting
     & SpaceSelecting & AttachmentStaging & TimelineSubscribing & SessionAuthenticating
     & MessageSending & RoomMembership & RoomAdministering & AccountDirectory
-    & NotificationAnswering & SafetyActions & TurnFetching
+    & NotificationAnswering & SafetyActions & TurnFetching & AccountLinking
 
 // MARK: - The one real conformer
 
