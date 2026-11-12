@@ -638,6 +638,26 @@ public final class Session {
         try? await client.account()
     }
 
+    /// The Super Jackfruit Accounts this account links to, or `nil` when there
+    /// is none — then the account screen shows no link row.
+    public func accountLinkOrigin(accountsURL: String) async -> String? {
+        (try? await client.accountLinkOrigin(accountsUrl: AccountLink.override(accountsURL))) ?? nil
+    }
+
+    /// The Accounts page to open in a web authentication session. Its fragment
+    /// carries a fresh OpenID token: never log or keep this URL. Throws with the
+    /// words to show when the homeserver issues no token.
+    public func accountLinkURL(accountsURL: String) async throws -> URL {
+        let raw: String
+        do {
+            raw = try await client.accountLinkUrl(accountsUrl: AccountLink.override(accountsURL))
+        } catch let error as FfiError {
+            throw AccountLinkFailure(message: ErrorPresenter.message(for: error))
+        }
+        guard let url = URL(string: raw) else { throw AccountLinkFailure(message: "That didn't work.") }
+        return url
+    }
+
     public func roomInfo(_ roomId: String) async throws -> RoomInfoDto {
         try await client.roomInfo(roomId: roomId)
     }

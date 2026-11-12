@@ -974,6 +974,22 @@ impl Core {
         Ok(self.block(self.session.account())?)
     }
 
+    /// The Super Jackfruit Accounts origin this account links to, or `None`
+    /// when there is none (then show no link row). `accounts_url` is the
+    /// person's own setting, if any.
+    pub fn account_link_origin(
+        &self,
+        accounts_url: Option<String>,
+    ) -> Result<Option<String>, FfiError> {
+        Ok(self.block(self.session.account_link_origin(accounts_url.as_deref()))?)
+    }
+
+    /// The Accounts page to open in a web authentication session, with a
+    /// fresh OpenID token for this account in its fragment. Never log it.
+    pub fn account_link_url(&self, accounts_url: Option<String>) -> Result<String, FfiError> {
+        Ok(self.block(self.session.account_link_url(accounts_url.as_deref()))?)
+    }
+
     /// Sign out and wipe the local stores.
     pub fn logout(&self) -> Result<(), FfiError> {
         self.block(self.session.logout())?;
@@ -2034,6 +2050,13 @@ pub fn notification_category_identifier(
     category: supermessage_core::notification::NotificationCategory,
 ) -> String {
     category.identifier().to_string()
+}
+
+/// The Matrix id Accounts reports linked, from the page's
+/// `supermessage://linked?mxid=…` callback; `None` for any other URL.
+#[uniffi::export]
+pub fn account_linked_mxid(callback: String) -> Option<String> {
+    supermessage_core::account_link::linked_mxid(&callback)
 }
 
 /// How many more characters a report's reason may take — negative once it is
