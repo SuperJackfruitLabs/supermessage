@@ -8,8 +8,9 @@ name: Play
 # `versionCode` it has already seen, so an accidental upload burns a number
 # exactly as it does on iOS.
 #
-# Android had no release path at all before this — `release.yml` builds the
-# desktop Tauri app for three platforms and nothing produced an `.aab`.
+# Android had no release path at all before this — the desktop Tauri app is
+# built for three platforms (now CI's `desktop` job, released by `release.yml`)
+# and nothing produced an `.aab`.
 on:
   workflow_dispatch:
     inputs:
