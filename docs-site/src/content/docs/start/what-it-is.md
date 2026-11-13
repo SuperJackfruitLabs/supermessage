@@ -91,6 +91,10 @@ It is **not a harness** — it does not run agents. [AgentPod](https://docs.agen
 where they run, and [SuperPipeline](https://docs.superpipeline.dev) decides what they work on.
 SuperMessage is where you and they talk.
 
+**Contracts: [Treaty](https://treaty.superjackfruit.com).** The board-room cards, answers, notices and receipts this client
+draws and sends are specified in [Treaty's Matrix catalogue](https://treaty.superjackfruit.com/matrix/), and the client's tests
+hold its readers and builders to Treaty's [Matrix corpus](https://treaty.superjackfruit.com/fixtures/).
+
 ## Next
 
 - [Concepts](/start/concepts/) — rooms, spaces, and the event types above

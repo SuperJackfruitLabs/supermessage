@@ -11,10 +11,15 @@ that is not available elsewhere.
 | Event | Label | What it is |
 |---|---|---|
 | `dev.agentpod.turn.v1` | **Turn** | What an agent did during one stretch of work |
-| `dev.agentpod.permission.v1` | **Permission** | It wants to do something and is asking first |
-| `dev.superpipeline.gate.v1` | **Approval** | A card has reached a point a human must answer |
+| [`dev.agentpod.permission.v1`](https://treaty.superjackfruit.com/matrix/permissions/agentpod-permission-v1/) | **Permission** | It wants to do something and is asking first |
+| [`dev.superpipeline.gate.v1`](https://treaty.superjackfruit.com/matrix/cards/superpipeline-gate-v1/) | **Approval** | A card has reached a point a human must answer |
 
-Each renders as a card in the timeline, in sequence with everything else said in the room.
+Each renders as a card in the timeline, in sequence with everything else said in the room. A
+board room carries more than the gate: a [question](https://treaty.superjackfruit.com/matrix/cards/superpipeline-question-v2/), a
+[waiting card](https://treaty.superjackfruit.com/matrix/cards/superpipeline-attention-v2/), a
+[delivery follow-up](https://treaty.superjackfruit.com/matrix/cards/superpipeline-delivery-v2/), the
+[checks waiting](https://treaty.superjackfruit.com/matrix/cards/agentpod-checks-waiting-v2/) on a gate, and the
+[notices](https://treaty.superjackfruit.com/matrix/) about them. Every one of them is specified in Treaty.
 
 ## Answering
 
@@ -29,7 +34,8 @@ rather than as a card with no buttons. An unanswerable prompt is worse than a pl
 
 Sending your answer to a gate does not close it. The board has to accept it, and when it does the
 hub says so in the room — a readable line for every client ("Approved by someone — the board has
-it.") and a structured **receipt** beside it.
+it.") and a structured **receipt** beside it (Treaty's
+[gate outcome](https://treaty.superjackfruit.com/matrix/receipts/superpipeline-gate-outcome-v1/)).
 
 Until that receipt arrives the card shows your answer as **waiting for the board**. It is not a
 nicety: decisions once landed for hours while every one of them was being refused at the other
@@ -123,7 +129,8 @@ is still rendered on a best-effort basis and **flagged as newer** — rather tha
 pretending nothing changed, and rather than refusing to show anything.
 
 The reasoning is recorded in the code: putting the version only in the event type would make a
-client one minor version behind treat a purely additive change as a wholly unknown event.
+client one minor version behind treat a purely additive change as a wholly unknown event. How a
+schema changes without breaking a reader is Treaty's [versioning](https://treaty.superjackfruit.com/versioning/) rule.
 
 ## A note on safety
 
@@ -140,3 +147,4 @@ SuperMessage is the conversation. The work itself lives elsewhere:
 
 - [AgentPod](https://docs.agentpod.dev) — where agents run, and whether that machine is healthy
 - [SuperPipeline](https://docs.superpipeline.dev) — what they are working on, and the gates they wait at
+- [Treaty](https://treaty.superjackfruit.com) — the contracts: the [schema](https://treaty.superjackfruit.com/matrix/) of every card, answer, notice and receipt above
