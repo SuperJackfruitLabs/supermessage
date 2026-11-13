@@ -41,20 +41,27 @@ durable record is the message that lands in the room when the turn finishes.
 ## Permission request
 
 `dev.agentpod.permission.v1` — an agent asking before it does something. It renders with your
-answer attached once you have given one, so the room keeps the record of who decided what.
+answer attached once you have given one, so the room keeps the record of who decided what. Its
+shape is Treaty's [permission card](https://treaty.superjackfruit.com/matrix/permissions/agentpod-permission-v1/); the newer
+[v2](https://treaty.superjackfruit.com/matrix/permissions/agentpod-permission-v2/) is answered with a
+[permission answer](https://treaty.superjackfruit.com/matrix/permissions/agentpod-permission-answer-v2/).
 
 ## Approval gate
 
 `dev.superpipeline.gate.v1` — a [SuperPipeline](https://docs.superpipeline.dev) card that has reached a point
 where a human has to answer. The gate is the product decision that work does not simply continue
-because an agent thinks it should.
+because an agent thinks it should. Its shape is Treaty's
+[gate card](https://treaty.superjackfruit.com/matrix/cards/superpipeline-gate-v1/), answered with a
+[gate decision](https://treaty.superjackfruit.com/matrix/answers/superpipeline-gate-decision-v1/).
 
 ## Gate outcome
 
 `dev.superpipeline.gate.outcome.v1` — the board saying it accepted an answer to a gate. It is what
 turns an approval card into a **receipt**, and it is the reason this client distinguishes
 *answered* from *resolved*: your decision is a message, and the board accepting it is a different
-event that may never come. See [Working with agents](/use/agents/#answered-is-not-resolved).
+event that may never come. Its shape is Treaty's
+[gate outcome](https://treaty.superjackfruit.com/matrix/receipts/superpipeline-gate-outcome-v1/). See
+[Working with agents](/use/agents/#answered-is-not-resolved).
 
 ## Voice reply
 
