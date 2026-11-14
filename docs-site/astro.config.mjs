@@ -84,8 +84,8 @@ export default defineConfig({
           href: 'https://github.com/SuperJackfruitLabs/supermessage',
         },
       ],
-      // The suite's groups, in the order a reader needs them. This site has pages for two of the
-      // five (Start, Use it); the theme lets a site leave the others out.
+      // The suite's five groups, in the order a reader needs them: Build on it is what a bot or a
+      // push gateway integrates with, Run it is getting the apps onto devices, Reference the tables.
       sidebar: [
         {
           label: 'Start',
@@ -103,6 +103,27 @@ export default defineConfig({
             { label: 'Notifications', slug: 'use/notifications' },
             { label: 'Widgets and the Lock Screen', slug: 'use/widgets' },
             { label: 'Encryption', slug: 'use/encryption' },
+          ],
+        },
+        {
+          label: 'Build on it',
+          items: [
+            { label: 'Sending cards to a room', slug: 'build/cards' },
+            { label: 'The push contract', slug: 'build/push' },
+          ],
+        },
+        {
+          label: 'Run it',
+          items: [
+            { label: 'Installing it', slug: 'run/install' },
+            { label: 'Building from source', slug: 'run/from-source' },
+          ],
+        },
+        {
+          label: 'Reference',
+          items: [
+            { label: 'Event types', slug: 'reference/events' },
+            { label: 'Platform support', slug: 'reference/platforms' },
           ],
         },
       ],

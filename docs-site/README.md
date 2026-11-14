@@ -15,8 +15,9 @@ ships as plain JavaScript; without it `npm run check` fails with TS7016 under `s
 The status is `wet paint` because the site's own "Early preview" notice says the same thing:
 unsigned desktop previews, TestFlight by invitation, no app-store release. Change both together.
 
-The sidebar uses the suite's group names. This site has pages for two of the five, Start and Use
-it; the theme allows a site to leave groups out, and warns at build time on any other name.
+The sidebar uses the suite's five group names, in order: Start, Use it, Build on it (the events a
+bot sends and the push contract), Run it (installing and building) and Reference (the event and
+platform tables). The theme warns at build time on any other name.
 
 `src/styles/tokens.css` and `public/favicon.svg` are still generated from `design/tokens.toml` by
 `scripts/generate-tokens.py`, and CI's tokens job still compares them. The favicon is served; the
