@@ -1,5 +1,5 @@
 {
   "product": "SuperMessage",
   "ci_workflow": "ci.yml",
-  "artifact": "desktop-*-{sha}"
+  "artifact": "*-{sha}"
 }
