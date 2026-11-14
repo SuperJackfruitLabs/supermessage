@@ -3,12 +3,15 @@ title: Notifications
 description: Answering a permission request from the Lock Screen, how a push stays private, and why nothing arrives blank.
 ---
 
-An agent that needs an answer is usually asking while you are somewhere else. So a notification
-has to do more than say something happened: it has to be the thing you answer.
+An agent usually needs an answer while you are somewhere else. We therefore ask more of a
+notification than "something happened": it should carry the answer you can safely give.
+
+The iOS path described here is implemented and covered by local tests, but the complete remote
+push, decrypt, and Lock Screen answer flow has not yet been verified on a physical device.
 
 ## Answering without opening the app
 
-A notification carries the actions its row deserves:
+We derive a notification's actions from the row it represents:
 
 | what arrived | what the notification offers |
 |---|---|
@@ -17,24 +20,24 @@ A notification carries the actions its row deserves:
 | an **approval gate** | Approve · Request changes · Reject |
 | a decision that must be read first | Open |
 
-Answering from the notification sends the same decision the room would, to the same place. You do
-not need the room open — or even to have opened the app since the request arrived.
+Choose an action and the implemented path sends the same decision the room would, to the same
+place. The answer does not depend on that room being open, so you can act without navigating back
+through the app first.
 
 Permission requests and gates arrive **time-sensitive**, so they reach you through Focus. Nothing
 else does.
 
 ## A push does not carry what was said
 
-The hub is the push gateway, and a message push carries **ids only**: the room, the event, an
+The configured hub gateway receives a message push with **ids only**: the room, the event, and an
 unread count. Not the message.
 
-The app's **Notification Service Extension** then fetches that event and decrypts it on your
-device, and words the notification from the decrypted row. So the text you read on your Lock
-Screen was assembled locally, and the push that triggered it told Apple nothing about the
-contents.
+The app's **Notification Service Extension** is built to fetch that event, decrypt it on your
+device, and word the notification from the decrypted row. That design keeps message text out of
+the triggering push; Apple receives identifiers rather than the room's contents.
 
-One push carries slightly more: an agent's answer that ended a turn with tool calls adds **counts**
-— seven steps, one failed — which is what the Agents widget reads. Counts, not text.
+The client contract also accepts **counts** with an agent's answer — seven steps, one failed — and
+relays them into the Agents widget. The widget does not derive those numbers from message text.
 
 :::note
 The [fleet Live Activity](/use/widgets/#the-fleet-live-activity) is the one exception in the suite,
@@ -47,9 +50,9 @@ in plaintext. It is called out on that page rather than buried here.
 Two things post notifications: the app, from a row it is already showing, and the extension, from
 an event it has only a push for.
 
-They go through **the same decision in the core**. If they decided separately, the same permission
-request would offer Allow and Reject from one and only Open from the other, and whichever arrived
-second would win.
+We send both through **the same decision in the core**. That gives a permission request the same
+Allow and Reject whether the app or extension saw it first, instead of letting two processes race
+to tell you different stories.
 
 ## Quiet events never interrupt
 
@@ -62,9 +65,9 @@ each catching what the one before cannot:
 | your account's push rules | unencrypted reactions, edits and suite cards, whoever sent them | **encrypted** events: the homeserver sees only that there is one |
 | the extension | everything still arriving, including encrypted events and races | — |
 
-Installing the push rules is idempotent, never touches a rule outside its own prefix, and leaves
-one alone if you disabled it. If it fails, it is logged rather than fatal — the third layer still
-holds.
+We install the push rules idempotently, never touch a rule outside our own prefix, and leave one
+alone if you disabled it. A failed installation is logged rather than made fatal; the extension's
+quiet fallback still protects the presentation path.
 
 ### Never a blank notification
 
@@ -72,16 +75,18 @@ The honest failure here is worth describing, because an earlier build had it. To
 push it could not drop, the extension emptied it — and iOS shows an empty notification as a
 **blank banner**.
 
-Without Apple's filtering entitlement an extension cannot discard a push at all. So instead of
-emptying it, the app shows a short true line — "… reacted ✅ to a message", "… finished · 4 steps",
+Without Apple's filtering entitlement an extension cannot discard a push at all. Instead of
+emptying it, we show a short true line — "… reacted ✅ to a message", "… finished · 4 steps",
 "… edited a message", "Sent from your other device" — **quietly**: passive, no sound, no actions.
-With the entitlement it drops the push instead. Either way you never get a blank one.
+A build with the filtering entitlement drops the push instead. In either configuration, the code
+never deliberately produces a blank notification.
 
 ## Background behaviour
 
-Once a pusher is registered the app **pauses syncing in the background**, so the extension can
-take the store's lock and do the decrypting. That is why the extension is the main writer while
-the app is away, and why notifications keep working after a force-quit.
+Once a pusher is registered, the app **pauses syncing in the background** so the extension can
+take the store's lock and decrypt. The extension becomes the main writer while the app is away;
+the architecture is designed for push handling after a force-quit, though that full path still
+needs the physical-device verification noted above.
 
 A background launch restores quietly, and the stores are closed before the app can be suspended
 mid-write.

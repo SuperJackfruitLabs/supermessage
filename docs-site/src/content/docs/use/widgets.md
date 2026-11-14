@@ -3,32 +3,34 @@ title: Widgets and the Lock Screen
 description: A Home Screen recap of what happened while you were away, a live Lock Screen card of what needs you now, and why they are different things.
 ---
 
-Two surfaces, and the split between them is deliberate rather than incidental.
+We use two surfaces for two different promises. Keeping them separate is how we avoid calling an
+old snapshot live.
 
-**The Home Screen is a recap.** Widgets cannot be live: WidgetKit defers the reloads a push asks
-for — measured at five minutes — and budgets them to a few dozen a day. A widget that pretends to
-be current is a widget that lies.
+**The Home Screen is a recap.** WidgetKit defers requested reloads — five minutes in the recorded
+device observation — and budgets them to a few dozen a day. So we show what happened while you
+were away instead of pretending an old widget is current.
 
-**The Lock Screen is live**, as a Live Activity pushed by the hub. It works with the app closed,
-which a local one cannot: a local activity freezes the moment iOS suspends the app.
+**The Lock Screen is designed to be live**, through a Live Activity pushed by the hub rather than
+updated by the app. The client-side token path is implemented, but the full hub-to-device flow has
+not yet been verified on a physical device.
 
 ## The Agents widget: since you last opened
 
-One row per agent that **did something since you last opened the app**. Failed first, then
-finished, then said. Quiet agents are left out entirely — a recap of nothing happening is not a
-recap.
+Open the Agents widget and you get one row per agent that **did something since you last opened the
+app**: failed first, then finished, then said. We leave quiet agents out, so the recap spends its
+small space on something that happened.
 
-"Finished · 7 steps" and "Failed at step 4 of 7" come from the counts the hub adds to an answer's
-push, not from anything the widget computed.
+When an answer notification includes turn counts, the client turns them into lines such as
+"Finished · 7 steps" and "Failed at step 4 of 7". The widget does not compute those counts.
 
 ## The Needs you widget, and answering from it
 
-Pending decisions, answerable in place: Allow, Reject, Approve.
+The Needs you widget collects pending decisions and offers the answers it can send safely: Allow,
+Reject, or Approve.
 
 A widget extension has no access to the core — no keychain, and a tight memory ceiling — so the
-button runs **in the app's process**. The app asks whether that answer is still owed before
-sending it, so a decision answered elsewhere ten seconds ago cannot be answered again from a stale
-widget.
+button runs **in the app's process**. Before sending, we ask whether the answer is still owed. A
+stale widget therefore opens no second decision after you answered elsewhere.
 
 ### Answered is not resolved
 
@@ -45,8 +47,8 @@ shown as sent.
 
 ## Refresh, honestly
 
-A decision arriving or leaving reloads the widgets at once. Everything else waits — at most once
-every fifteen minutes. The snapshot the widgets read is written by three processes under a lock:
+A decision arriving or leaving asks WidgetKit to reload at once. Everything else waits — at most
+once every fifteen minutes. Three processes write the snapshot under a lock:
 the app while it runs, the extension once per push (the only writer while the app is suspended),
 and a background refresh task catching up.
 
@@ -56,16 +58,17 @@ process.
 
 ## The fleet Live Activity
 
-One card for the whole fleet — not one per turn, and not one per decision. It shows what needs you
-and what is happening now, on the Lock Screen and, where there is one, simply in the Dynamic
-Island.
+The intended Live Activity is one card for the whole fleet — not one per turn and not one per
+decision. It shows what needs you and what is happening now on the Lock Screen and, where there is
+one, more simply in the Dynamic Island.
 
-It appears while any agent is **active**: a turn is running, a decision is pending, or the agent
-spoke within the last fifteen minutes. It ends when every agent has been quiet past that.
+The hub contract keeps it present while any agent is **active**: a turn is running, a decision is
+pending, or the agent spoke within the last fifteen minutes. It ends after every agent has been
+quiet past that. That remote behavior remains part of the unverified end-to-end path above.
 
-**The hub starts, updates and ends it — never the app.** The app's only job is relaying
-ActivityKit's tokens to the hub, and deleting them when you sign out. That is what makes the card
-live while the app is closed.
+**The hub, not the app, owns starting, updating, and ending it.** SuperMessage relays ActivityKit's
+tokens to the hub and deletes them when you sign out. With that division, the design does not need
+the app to stay awake to keep the card moving.
 
 :::caution[This is the one place your words reach Apple]
 The Live Activity's pushes carry **agent names, the current step's title, and a pending decision's

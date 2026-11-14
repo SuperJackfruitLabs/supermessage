@@ -3,8 +3,8 @@ title: Rooms and spaces
 description: Finding the conversation you want when some of the participants are machines.
 ---
 
-A room full of agents fills up faster than a room full of people, and the usual "most recent
-first" list stops helping quickly. The roster is built for that.
+A room list fills up quickly when agents join the people already there. We give you three roster
+arrangements so "most recent first" does not have to answer every question badly.
 
 ## Three arrangements
 
@@ -14,8 +14,8 @@ first" list stops helping quickly. The roster is built for that.
 | **Waiting** | What owes you an answer, above everything else |
 | **Machine** | Grouped by the machine the agent runs on |
 
-**Waiting** is the one to reach for when you have been away. It puts the rooms that are blocked
-on *you* at the top, which is usually the only question worth asking after lunch.
+Choose **Waiting** after you have been away. Rooms blocked on *you* rise to the top, so your first
+scroll becomes an answerable queue instead of an archaeology project.
 
 ## What the roster says a room is doing
 
@@ -28,28 +28,29 @@ Each room can be in one of four states:
 | **idle** | Nothing lately, but within living memory |
 | **quiet** | Silent long enough that its absence is the fact |
 
-**This is not a health check**, and the client is careful not to imply that it is. It does not
-know whether a process is running. Every one of those four is a statement about when the room
-last spoke, or about what it said — nothing more. If you need to know whether an agent's machine
-is actually up, that is [AgentPod](https://docs.agentpod.dev)'s question.
+**This is not a health check.** We do not know whether a process is running, so every state above
+says only when the room last spoke or what it said. For the machine's actual health, follow the
+question to [AgentPod](https://docs.agentpod.dev) instead of reading more into a quiet room.
 
 ## Spaces
 
-Spaces are rooms that contain rooms. They appear as a rail you can filter by, which is what keeps
-a fleet of agent rooms from burying the two conversations you actually have with people.
+Spaces are rooms that contain rooms. Pick one from the rail and the roster narrows to its
+conversations, keeping a fleet of agent rooms from burying the two conversations you meant to
+find.
 
 ## Joining and leaving
 
-You can join by invitation, by room ID, or by alias. Creating rooms, inviting people, and leaving
-are all supported.
+Join from an invitation, a room ID, or an alias. You can also create a room, invite people, and
+leave it; each action changes the same Matrix membership other clients see.
 
-Invitations appear in the roster and can be hidden if you want them out of the way without acting
-on them.
+Hide invitations when you want them out of the way without accepting or rejecting them. They are
+withheld from the roster, not acted on behind your back.
 
 ## Searching
 
-Message search asks your homeserver, across every room your account is in or within one room. It
-is the fastest way back to a decision somebody made three weeks ago in a room you had forgotten.
+Search every room your account can see, or narrow the search to one room. We ask your homeserver,
+then show readable message hits newest first — a quicker route back to the decision you half
+remember from three weeks ago.
 
 Because the homeserver does the searching, it can only find what it can read: messages in
 **end-to-end encrypted rooms do not appear in results**. Results are plain-text messages, newest
@@ -59,20 +60,21 @@ first, up to twenty at a time.
 
 Both are Matrix, not something invented here.
 
-**Blocking** adds the person to your ignore list, as account data. Your homeserver stops
-delivering their events to your account **on every device**. It works on an agent exactly as on a
-person: the agent keeps running, its messages simply stop reaching you.
+Block a person and we add them to your Matrix ignore list as account data. Your homeserver stops
+delivering their events to your account **on every device**. The same action works on an agent:
+the agent keeps running, but its messages stop reaching you.
 
 Expect your timelines to empty and refill when you block someone. That is the SDK clearing cached
 events that the newly-ignored account may have sent, and the room refills rather than going blank.
 
-**Reporting** a message, a room or a person reaches **your homeserver's administrator** — not
-anyone in the room, and not us. You can add a reason.
+Report a message, room, or person and the report reaches **your homeserver's administrator** — not
+anyone in the room, and not us. Add a reason when context will help; the result is still a Matrix
+report to the server that owns the account.
 
 ## Marking read
 
-Rooms can be marked read explicitly, and read receipts are sent for message-like events only —
-not for every state change that happens to pass through.
+Mark a room read and we send the receipt for its latest message-like event, not for whichever
+state change happened to pass through last. Your unread boundary now follows the conversation.
 
 ## Next
 

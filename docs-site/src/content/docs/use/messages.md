@@ -3,61 +3,62 @@ title: Messages
 description: Sending, editing, replying, reacting, and what each message type looks like.
 ---
 
-The ordinary half of the client. It is ordinary on purpose — the interesting parts should be the
-agents, not relearning how to send a message.
+Here is the deliberately ordinary half of the client. You already know how a conversation should
+behave; we would rather spend your attention on the agents than on relearning Send.
 
 ## Sending
 
-Markdown is supported and converted to formatted HTML on the way out, so what you write reads the
-same in Element as it does here.
+Write Markdown when you need it. We convert it to formatted HTML on the way out, so emphasis and
+structure survive when somebody opens the message in Element.
 
-Mentions are collected as you type.
+Mention somebody as you type and the message carries that mention with it. The reader gets both
+the visible name and the Matrix metadata that makes it an actual mention.
 
 ## Editing and deleting
 
-Messages can be edited and deleted. An edited message is folded into the original by the SDK and
-carries an **edited** marker rather than appearing twice.
+Edit a message and the SDK folds the replacement into the original, adding an **edited** marker
+instead of a second copy. Delete one and we leave a tombstone rather than a blank.
 
-A deleted message leaves a tombstone, not a blank. A gap where a message used to be is worse than
-a line saying one was removed.
+You can now tell both that the conversation changed and where it changed; no mystery gap required.
 
 ## Replies
 
-A reply quotes its parent above the body.
+Reply to a message and its parent appears above your body, so the answer keeps its context even
+after the room moves on.
 
 When the parent is something that cannot be quoted as text — a sticker, a poll, a redacted
 message, an undecryptable one — you get a label saying what it was rather than an empty quote.
 
 ## Reactions
 
-Reactions aggregate onto the message they target rather than appearing as separate timeline
-entries, and there is an emoji picker.
+Choose a reaction from the emoji picker and it joins the count on the message it targets. The
+timeline stays a conversation rather than becoming a list of reaction events.
 
 ## Attachments
 
-Files are staged before they are sent, so you can discard one you picked by mistake. Images,
-files, audio and video are all handled, and media is downloaded on demand.
+Pick a file and we stage it before sending, which gives you a chance to discard the wrong one.
+Images, files, audio, and video are all handled; recipients download the media on demand.
 
 ## How message types render
 
-The client switches on the Matrix **msgtype**, which most clients get wrong in at least one
-direction:
+We switch on the Matrix **msgtype** rather than treating every message as the same bubble:
 
 | msgtype | Renders as |
 |---|---|
 | `m.text` | An ordinary bubble |
-| `m.notice` | A **de-emphasised** bubble — automated output, never suppressed |
+| `m.notice` | A one-line system notice, or a de-emphasised bubble for longer or formatted output — never suppressed |
 | `m.emote` | `* Alice waves`, not a bubble |
 | `m.image` | An image, with dimensions where the sender gave them |
-| `m.file`, `m.audio`, `m.video` | A file row with name, size and type |
+| `m.audio` | An audio player, with length and waveform where the sender gave them |
+| `m.file`, `m.video` | A file row with name, size and type |
 
-`m.notice` matters more here than in most clients: it is what bots and bridges are supposed to
-use, so it is the msgtype most agent traffic actually arrives as. De-emphasised, because a room
-where the machines shout as loudly as the people is a room nobody reads.
+`m.notice` matters more here than in most clients: bots and bridges are supposed to use it, and it
+is how most agent traffic arrives. We de-emphasise it so the machines do not shout over the people.
 
 ## Typing
 
-Typing indicators are sent and shown.
+When you type, the room gets a typing indicator; when somebody else types, you see theirs. That
+small bit of motion is enough to tell you the conversation has not stalled.
 
 ## What you will not see
 

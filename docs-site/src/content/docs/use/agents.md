@@ -3,8 +3,8 @@ title: Working with agents
 description: Turns, permission requests and approval gates — the part that is not like other Matrix clients.
 ---
 
-This is why SuperMessage exists. Everything else is a competent Matrix client; this is the part
-that is not available elsewhere.
+This is the reason we built SuperMessage. The rest should feel like a competent Matrix client;
+here, you get the part that changes when an agent joins the room.
 
 ## Three things an agent sends
 
@@ -14,8 +14,9 @@ that is not available elsewhere.
 | [`dev.agentpod.permission.v1`](https://treaty.superjackfruit.com/matrix/permissions/agentpod-permission-v1/) | **Permission** | It wants to do something and is asking first |
 | [`dev.superpipeline.gate.v1`](https://treaty.superjackfruit.com/matrix/cards/superpipeline-gate-v1/) | **Approval** | A card has reached a point a human must answer |
 
-Each renders as a card in the timeline, in sequence with everything else said in the room. A
-board room carries more than the gate: a [question](https://treaty.superjackfruit.com/matrix/cards/superpipeline-question-v2/), a
+We render each one as a card in the timeline, in sequence with everything else said in the room.
+You can read the work where it happened instead of translating a payload first. A board room
+carries more than the gate: a [question](https://treaty.superjackfruit.com/matrix/cards/superpipeline-question-v2/), a
 [waiting card](https://treaty.superjackfruit.com/matrix/cards/superpipeline-attention-v2/), a
 [delivery follow-up](https://treaty.superjackfruit.com/matrix/cards/superpipeline-delivery-v2/), the
 [checks waiting](https://treaty.superjackfruit.com/matrix/cards/agentpod-checks-waiting-v2/) on a gate, and the
@@ -23,8 +24,8 @@ board room carries more than the gate: a [question](https://treaty.superjackfrui
 
 ## Answering
 
-A permission request or a gate arrives with a prompt and a set of options. You answer in the
-room, and the answer stays attached to the request — so the record of who decided what lives
+A permission request or gate arrives with a prompt and a set of options. Choose one in the room
+and we keep the answer attached to the request. You get the record of who decided what exactly
 where the decision was made, not in a separate audit tool.
 
 A request whose options are missing or malformed renders as a **description of the request**
@@ -37,9 +38,8 @@ hub says so in the room — a readable line for every client ("Approved by someo
 it.") and a structured **receipt** beside it (Treaty's
 [gate outcome](https://treaty.superjackfruit.com/matrix/receipts/superpipeline-gate-outcome-v1/)).
 
-Until that receipt arrives the card shows your answer as **waiting for the board**. It is not a
-nicety: decisions once landed for hours while every one of them was being refused at the other
-end, and a card that had read "Approved" would have been wrong about all of them.
+Until that receipt arrives, we show your answer as **waiting for the board**. That wording protects
+you from a false success: decisions once landed for hours while the other end refused every one.
 
 When the receipt lands, the card becomes a receipt: no buttons, no amber, naming who decided.
 
@@ -66,18 +66,18 @@ malformed is shown as that sentence here too.
 
 ## Voice notes
 
-A voice note recorded on iPhone is sent as a Matrix voice message, with its length and a
-waveform, so agents that transcribe voice will pick it up. When AgentPod posts the
+A voice note you record on iPhone is sent as a Matrix voice message, with its length and a
+waveform. Agents that transcribe voice can pick it up, and when AgentPod posts the
 transcript, it appears directly under the note it belongs to — under your own note on your
 side — with a small "Transcript" caption, the detected language and the note's length. A long
-transcript opens at six lines with **Show more**. Other clients see the same transcript as a
-plain reply that starts "Transcript:".
+transcript opens at six lines with **Show more**. You get the text beside the note; other clients
+get the same transcript as a plain reply that starts "Transcript:".
 
 ## An agent answering out loud
 
 Where AgentPod is set to speak an agent's replies, the agent's **text** arrives first and a voice
-message of the same words follows seconds later. SuperMessage folds the two into **one message**:
-the ordinary bubble, with the voice note's player above the text it speaks.
+message of the same words follows. We fold them into **one message**: the ordinary bubble, with
+the voice player's controls above the text it speaks.
 
 The text row is the primary one — it arrives first, it is what every other client shows, and
 reactions, replies, edits and copy all address it. An edit keeps the pairing, and the player shows
@@ -101,8 +101,9 @@ those were decided from the event itself, and a voice note does not outrank them
 
 ## Live output
 
-While an agent is working, partial text streams in over to-device messages — the answer as it is
-written, the reasoning behind it, and each tool call as it moves.
+While an agent works, we stream partial text from to-device messages — the answer as it is written,
+the reasoning behind it, and each tool call as it moves. You can follow the turn without mistaking
+that live view for permanent history.
 
 Two consequences worth knowing:
 
@@ -117,16 +118,16 @@ cleared — a record that vanishes the moment the answer lands is one nobody had
 ## Other clients still work
 
 Every one of these events carries a plain-text fallback body. Open the room in Element and you
-get a readable sentence.
+still get a readable sentence.
 
 This is a rule the project holds itself to, not an accident: rooms stay open to clients that know
 nothing about the suite.
 
 ## Versioning
 
-Events carry a schema version. If an agent sends a version newer than this client knows, the card
-is still rendered on a best-effort basis and **flagged as newer** — rather than silently
-pretending nothing changed, and rather than refusing to show anything.
+Events carry a schema version. If an agent sends a version newer than this client knows, we render
+the card on a best-effort basis and **flag it as newer**. You see both the useful fields we still
+understand and the warning that our understanding may be incomplete.
 
 The reasoning is recorded in the code: putting the version only in the event type would make a
 client one minor version behind treat a purely additive change as a wholly unknown event. How a
@@ -134,8 +135,8 @@ schema changes without breaking a reader is Treaty's [versioning](https://treaty
 
 ## A note on safety
 
-Event payloads come from outside, and the renderers treat them that way. A renderer reads **named
-fields, one level at a time**, and never descends into nested structures — which is what makes a
+Event payloads come from outside, and we treat them that way. A renderer reads **named fields, one
+level at a time**, and never descends into nested structures — which is what makes a
 huge or deeply nested payload harmless without needing a depth or size guard.
 
 Everything a renderer produces is **text only**. None of it is ever routed into markup, a link

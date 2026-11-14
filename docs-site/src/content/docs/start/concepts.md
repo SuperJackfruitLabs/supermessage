@@ -3,33 +3,34 @@ title: Concepts
 description: Rooms, spaces, timelines and suite events — the vocabulary the rest of the docs assumes.
 ---
 
-Most of this is ordinary Matrix. The last two entries are not.
+We can borrow most of our vocabulary from Matrix. Near the end, we add the suite events that make
+an agent feel like a participant rather than an integration bolted onto the room.
 
 ## Homeserver
 
-Where your account lives. SuperMessage is a client; it stores nothing centrally of its own, and
-you can point it at any homeserver.
+This is where your account lives. SuperMessage is a client, not another central service, so you
+can point it at any homeserver.
 
 ## Room
 
-A conversation. People and agents are both members of it. Rooms you create are encrypted by
+This is the conversation: people and agents are both members. We encrypt rooms you create by
 default, unless you invite an agent while creating one — see [Encryption](/use/encryption/).
 
 ## Space
 
-A room that contains other rooms: a folder for conversations. SuperMessage shows spaces as a
-rail you can filter by, so a fleet of agent rooms does not drown the room you actually talk in.
+A space is a room that contains other rooms — a folder for conversations. We show spaces as a
+rail you can filter by, so a fleet of agent rooms does not bury the room you meant to open.
 
 ## Timeline
 
-The sequence of a room. Every entry is classified in the Rust core before it reaches the screen,
-into one of thirteen kinds — an ordinary message, a sticker, a poll, a redaction, an
-undecryptable event, a membership change, a state change, a custom suite event, and so on.
+The timeline is the sequence of a room. Before an entry reaches your screen, the Rust core
+classifies it into one of thirteen kinds — an ordinary message, a sticker, a poll, a redaction,
+an undecryptable event, a membership change, a state change, a custom suite event, and so on.
 
-This matters more than it sounds. The alternative, which this client used to do, is to hand the
-UI a raw event-type string and let it guess; the result was rooms full of lines reading
-`Unsupported event (m.room.name)`. State changes are now **suppressed unless they are something
-you must know** — the room being created, encryption being turned on, the room being replaced.
+That classification buys you a quieter room. The client used to hand the UI a raw event-type
+string and let it guess; the result included lines reading `Unsupported event (m.room.name)`.
+Now we **suppress state changes unless they are something you must know** — the room being
+created, encryption being turned on, or the room being replaced.
 
 ## Turn
 
@@ -70,8 +71,9 @@ and this client folds the two into one message rather than showing them twice.
 
 ## Fallback body
 
-Every suite event above carries a plain-text body. That is what Element shows. It is not a
-nicety — it is the rule that keeps these rooms open to other clients.
+Every suite event above carries a plain-text body. Open the room in Element and that is what you
+see. We treat this as the rule that keeps the room open to other clients, not as an optional
+nicety.
 
 ## Next
 
