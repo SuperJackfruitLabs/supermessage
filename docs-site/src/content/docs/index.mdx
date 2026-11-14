@@ -54,15 +54,17 @@ usable against the same rooms. Nothing here locks a room to this client. See
 it. Until then the card says *waiting for the board*. See
 [Answered is not resolved](/use/agents/#answered-is-not-resolved).
 
-**A push carries ids, not words.** The event is fetched and decrypted on your device, and the
-notification is worded there. See [Notifications](/use/notifications/).
+**Answerable from the Lock Screen.** On iOS a permission request gets its own Allow and Reject,
+and a widget can answer a gate in place. A message push carries ids, not words: your device fetches
+and decrypts the event and words the notification itself. This path has not yet been verified end to
+end on a physical device. See [Notifications](/use/notifications/).
 
 **Encrypted by default, with one exception.** End-to-end encryption through the Matrix Rust SDK
 and vodozemac. A room you create with an agent invited is left unencrypted so the agent can read
 it. See [Encryption](/use/encryption/).
 
-**One core, five platforms.** iOS, Android, Windows, macOS and Linux. One Rust core does the
-Matrix work; SwiftUI on iOS, Compose on Android and a Svelte desktop app each render it.
+**One core, five platforms.** iOS, Android, Windows, macOS and Linux. We keep the Matrix decisions
+in one Rust core; SwiftUI on iOS, Compose on Android and a Svelte desktop app each render them.
 
 <WetPaint>
   SuperMessage is in development. The latest release, v0.1.2 (9 November 2026), is on
