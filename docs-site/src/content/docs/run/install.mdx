@@ -1,0 +1,122 @@
+---
+title: Installing it
+description: Get the right build for each platform, sign in to your homeserver, keep your recovery key, and turn on background notifications.
+---
+
+import Tip from '@superjackfruit/docs-theme/components/Tip.astro';
+import HeadsUp from '@superjackfruit/docs-theme/components/HeadsUp.astro';
+
+SuperMessage is a client, so installing it is the whole job: there is no server of its own to
+run. We'll pick the build for your device, get past the first-launch warning a preview build
+earns, sign in, and turn on notifications for when the app is closed.
+
+## What you need
+
+- A Matrix account on a homeserver that offers **password login**. SuperMessage signs in with
+  `m.login.password` and nothing else: no SSO, no OIDC.
+- A homeserver that supports **Simplified Sliding Sync** (MSC4186). The app syncs through the
+  Matrix Rust SDK's sync service, which uses it.
+- Nothing else for ordinary chat. AgentPod and SuperPipeline are what put agents and gates in
+  your rooms; you do not need them to talk to people.
+
+## 1. Pick your build
+
+Every desktop and Android build is on the
+[latest GitHub release](https://github.com/SuperJackfruitLabs/supermessage/releases/latest).
+
+| Device | File | Notes |
+|---|---|---|
+| Mac, Apple silicon or Intel | `supermessage_<version>_universal.dmg`, or `supermessage_universal.app.tar.gz` | One app for both kinds of Mac |
+| Windows, x64 | `supermessage_<version>_x64-setup.exe` or `supermessage_<version>_x64_en-US.msi` | |
+| Linux, x86_64 | `.deb`, `.rpm` or `.AppImage` | Built on Ubuntu 22.04, so it runs on that glibc and newer |
+| Android 12 or later | `supermessage_<version>_android-arm64-v8a-debug.apk` for most phones | Also `armeabi-v7a`, `x86_64` and `x86` |
+| iPhone or iPad, iOS 18 or later | TestFlight | By invitation only |
+
+There is no App Store or Google Play release yet.
+
+On a Mac, this fetches the latest release and opens it:
+
+```sh
+curl -fL https://github.com/SuperJackfruitLabs/supermessage/releases/latest/download/supermessage_universal.app.tar.gz | tar xzf - && open supermessage.app
+```
+
+On Debian or Ubuntu, install the `.deb` with `apt`, so its dependencies come along:
+
+```sh
+sudo apt install ./supermessage_<version>_amd64.deb
+```
+
+The `.deb` and `.rpm` declare GStreamer's base and good plugins, which recording a voice message
+needs. The `.AppImage` cannot declare anything, so with it, install `gst-plugins-good` yourself if
+you want the microphone.
+
+## 2. Get past the first launch
+
+These are previews, and they are signed like previews.
+
+- **macOS** warns the first time a downloaded copy opens, because the app is not notarised.
+- **Windows** SmartScreen warns the first time the installer runs, because it is unsigned.
+- **Android** asks you to allow installs from the app you downloaded the APK with. The APK is
+  debug-signed, for sideloading only.
+
+<HeadsUp>
+  Each release's APKs are debug-signed on a fresh CI runner, and the repository keeps no debug
+  keystore, so a newer release's APK can refuse to install over an older one ("signatures do not
+  match"). Uninstalling the old one first works, and signs that device out.
+</HeadsUp>
+
+Once it opens, a welcome screen comes before the sign-in form. You're in.
+
+## 3. Sign in
+
+The sign-in form asks for a **homeserver**, a **username** and a **password**. The homeserver
+starts filled in as `https://id.agentpod.dev`; change it to yours. On iPhone it sits under
+**Advanced**, showing the server's name until you open it.
+
+On iPhone and Android the app remembers the homeserver between attempts, so a mistyped password
+does not cost you the address.
+
+If sign-in fails, SuperMessage tells three causes apart: a wrong password, a homeserver it could
+not reach, and a store on this device that would not open. Each points you at a different place
+to look, which beats checking a network connection that was fine all along.
+
+That's the payoff: your rooms load.
+
+## 4. Keep the recovery key
+
+If your account has no key backup yet, SuperMessage sets one up when you sign in and shows you a
+**recovery key once**. Keep it somewhere that is not this device. It is what lets a new device
+read the history your old one could, after this phone is lost.
+
+The app also turns on cross-signing at sign-in, so the devices you sign in on can be verified.
+What a missing key looks like is on [Encryption](/use/encryption/).
+
+After that, the first time you sign in, the app plays a short sample conversation. It is a local
+script; nothing is sent to your homeserver.
+
+## Background notifications
+
+While the app is running, every platform shows its own notifications. When it is closed:
+
+- **iPhone.** A TestFlight build registers for push with the AgentPod hub's gateway, so
+  notifications arrive with the app closed. Allow notifications when asked; that is all.
+- **Android.** Install a UnifiedPush distributor, such as [ntfy](https://ntfy.sh), and pick it.
+  **Account → Notifications** then says which one push is going through, or why it is off:
+  *Off: install a UnifiedPush app such as ntfy to get notifications while supermessage is
+  closed*, *Off: your UnifiedPush server can't take Matrix notifications*, or *Off: notifications
+  are turned off for supermessage*.
+- **Desktop.** Nothing arrives while the app is closed. On Linux, **Account** offers *Keep running
+  in the tray when the window is closed* where the desktop has a tray that can show it.
+
+What a push carries, and why it carries so little, is on [The push contract](/build/push/).
+
+<Tip>
+  On Android, the distributor's own server must be a Matrix push gateway. ntfy.sh is one, and so
+  is a self-hosted ntfy. SuperMessage never falls back to someone else's.
+</Tip>
+
+## Next
+
+- [Rooms and spaces](/use/rooms/): the roster you just signed in to
+- [Platform support](/reference/platforms/): what each platform does and does not do yet
+- [Building from source](/run/from-source/): when a preview build is not new enough
