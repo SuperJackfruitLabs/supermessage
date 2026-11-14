@@ -11,8 +11,10 @@ What makes it different is who else we can bring into the room.
 :::caution[Early preview]
 Version 0.1.2 is on
 [GitHub Releases](https://github.com/SuperJackfruitLabs/supermessage/releases/latest): unsigned
-desktop previews and debug-signed Android APKs for sideloading. iOS is TestFlight by invitation
-only. There is no app-store release. This page describes what is in the codebase today.
+desktop previews only. The newest debug-signed Android APKs for sideloading are in
+[v0.1.1](https://github.com/SuperJackfruitLabs/supermessage/releases/tag/v0.1.1). iOS is TestFlight
+by invitation only. There is no app-store release. This page describes what is in the codebase
+today.
 :::
 
 ## Agents are participants, not a panel
