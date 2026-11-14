@@ -1,0 +1,261 @@
+---
+title: Sending cards to a room
+description: Post a turn, a permission request and a gate from your own bot, see SuperMessage draw each as a card, and close the gate with a receipt.
+---
+
+import Tip from '@superjackfruit/docs-theme/components/Tip.astro';
+import HeadsUp from '@superjackfruit/docs-theme/components/HeadsUp.astro';
+
+SuperMessage draws a card only from what the event itself says. There is no plugin to register
+and no server to call: any Matrix account that can send to a room can post a card. So let's be
+that account. We'll post the three suite events this client has drawn the longest (an agent's
+turn, a permission request and an approval gate), see what each becomes, and then close the gate
+the way a board does.
+
+Every shape on this page is specified in [Treaty's Matrix catalogue](https://treaty.superjackfruit.com/matrix/).
+This page is about the other half: what SuperMessage reads out of those shapes, and what it does
+when a shape is wrong.
+
+## What you need
+
+- A Matrix account for your bot, and its access token in `$TOKEN`.
+- A room the bot and you are both in, its ID in `$ROOM`, and your homeserver's URL in `$HS`.
+- SuperMessage signed in to your own account, with the room open.
+
+The commands below use the plain Matrix client-server API, so they work only in an
+**unencrypted** room: `curl` cannot encrypt. That is less exotic than it sounds. A room you create
+in SuperMessage with an agent among the invitees is created unencrypted, for reasons
+[Encryption](/use/encryption/#rooms-with-agents-in-them) gives. In an encrypted room, send the
+same content through a Matrix SDK instead.
+
+<HeadsUp>
+  Keep the access token out of your shell history and out of the room. It is the bot's whole
+  identity.
+</HeadsUp>
+
+## 1. Always write the sentence first
+
+Before any card, the rule every card on this page follows: **the content carries a plain-text
+`body`**. Element, Cinny and every other client show that sentence and nothing else, so it has to
+say the whole thing.
+
+It matters in SuperMessage too. When a card cannot be drawn (an unknown type, a payload too big,
+the fields it needs missing) the client shows the `body`. With no `body` either, you get a line
+reading `Custom event (` and the type, never a blank row.
+
+## 2. Post an agent's turn
+
+A turn is `dev.agentpod.turn.v1`, sent as its own event. It says what the agent did, in counts and
+a list:
+
+```sh
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  "$HS/_matrix/client/v3/rooms/$ROOM/send/dev.agentpod.turn.v1/turn-1" \
+  -d '{
+    "body": "Finished: 2 steps, 1 failed",
+    "schema_version": 1,
+    "counts": { "total": 2, "failed": 1, "omitted": 0 },
+    "tools": [
+      { "title": "Read src/main.ts", "status": "completed" },
+      { "title": "Run tests", "status": "failed" }
+    ]
+  }'
+```
+
+The room shows a card headed **Turn**. Its first row is the headline, **Did · 2 things, 1
+failed**, and then one row per tool, labelled with its status: **completed · Read src/main.ts**,
+**failed · Run tests**. That is the whole point of the card: "it did two things and one broke"
+reads before the details do.
+
+What the turn card reads:
+
+| Field | What it becomes |
+|---|---|
+| `counts.total`, `counts.failed` | The **Did** row. With no `failed`, it says only how many. |
+| `tools[].title`, `tools[].status` | One row per tool. A tool with no `title` is skipped; one with no `status` is labelled `did`. |
+| `counts.omitted` | A last row, **and · N more not listed**. |
+| `reasoning` | Prose kept with the card, up to 4,000 characters. It is room history, so it is still there tomorrow. |
+
+A long shell command in a title is tidied for reading: the shell wrapper is dropped, continuation
+lines are folded, and a deep absolute path keeps its last two parts (`…/src/lib.rs`).
+
+A turn card is context, not news, so it is kept from interrupting anyone: see
+[Quiet events never interrupt](/use/notifications/#quiet-events-never-interrupt) and the rules in
+[The push contract](/build/push/#the-rules-that-keep-quiet-events-quiet).
+
+## 3. Ask permission
+
+A permission request is `dev.agentpod.permission.v1`. You can send it as its own event beside a
+prose message, but the better way is to put it **on** the prose message, under the key
+`dev.agentpod.permission`. Then one event carries both the sentence and the card:
+
+```sh
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  "$HS/_matrix/client/v3/rooms/$ROOM/send/m.room.message/perm-1" \
+  -d '{
+    "msgtype": "m.text",
+    "body": "The agent wants to write src/main.ts. Reply 1 for Allow once, 2 for Reject.",
+    "dev.agentpod.permission": {
+      "schema_version": 1,
+      "session_id": "sess_1",
+      "request_seq": 41,
+      "title": "Write src/main.ts",
+      "options": [
+        { "option_id": "allow_once", "name": "Allow once" },
+        { "option_id": "reject", "name": "Reject" }
+      ]
+    }
+  }'
+```
+
+You now have a **Permission** card: a **Wants to · Write src/main.ts** row, the question
+**Allow Write src/main.ts?**, and two buttons, **Allow once** and **Reject**. Element shows your
+sentence.
+
+| Field | What it becomes |
+|---|---|
+| `title` | The **Wants to** row and the question. Without it there is no card, only the `body`. |
+| `options[].name` | One button each, at most four. An option with no `name` is dropped. |
+| `session_id`, `request_seq` | Which request this is. Two carriers with the same pair are one request. |
+
+With no usable options the card still appears, as a description of the request with no buttons.
+A prompt nobody can answer would be worse than a plain sentence.
+
+**What comes back.** Tapping **Allow once** sends an ordinary text message whose body is the
+option's **name**, `Allow once`, exactly what the composer would send for that text. The name
+rather than `allow_once`, because the room is a record people read later. Matching that reply to
+the request is the receiver's job; AgentPod's hub does it for its agents.
+
+<Tip>
+  If you send both forms, the prose message with the key and a separate
+  `dev.agentpod.permission.v1` event for the same `session_id` and `request_seq`, SuperMessage
+  draws one card. The prose message wins, because it is the one other clients show too.
+</Tip>
+
+## 4. Raise a gate
+
+A gate is `dev.superpipeline.gate.v1`: a board asking a person to approve, send back or reject a
+card. It rides on its prose message under `dev.superpipeline.gate`, the same way:
+
+```sh
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  "$HS/_matrix/client/v3/rooms/$ROOM/send/m.room.message/gate-1" \
+  -d '{
+    "msgtype": "m.text",
+    "body": "Approval needed: \"Add OAuth login\" at stage review.",
+    "dev.superpipeline.gate": {
+      "schema_version": 1,
+      "board_id": "brd_7c1f",
+      "gate_id": "gate_4e8b",
+      "card_title": "Add OAuth login",
+      "stage_key": "review",
+      "prompt": "Ship the OAuth change to staging?",
+      "options": [
+        { "id": "approve", "label": "Approve" },
+        { "id": "request_changes", "label": "Request changes" },
+        { "id": "reject", "label": "Reject" }
+      ]
+    }
+  }'
+```
+
+An **Approval** card arrives: **Card · Add OAuth login**, **Stage · review**, your prompt, and
+three buttons. Note the event ID the server returns; the receipt in the next step points at it.
+
+| Field | What it becomes |
+|---|---|
+| `gate_id` | What the answer names. Without it, or empty, there is no card. |
+| `card_title` | The **Card** row. Required. |
+| `stage_key` | The **Stage** row. |
+| `prompt` | The question. Without it: `Approve "` and the card title, then `"?`. |
+| `options[].id` | Only `approve`, `request_changes` and `reject` become buttons. |
+| `options[].label` | The button's text. Without it, the id. |
+| `handoff_summary` | Schema version 2: what the reviewer is approving, collapsed under the card. |
+| `deep_link` | A link the card offers to open, if it is `https://`. |
+
+Option ids are strict because SuperPipeline resolves a gate on exactly those three. Any other id
+is dropped, and a gate left with none renders as a description without buttons. Two options with
+the same id also leave the card without buttons: picking one of them for the reader would be a
+guess, and a guess is a poor thing to approve with.
+
+**What comes back.** Tapping **Approve** sends an `m.room.message` that is Treaty's
+[gate decision](https://treaty.superjackfruit.com/matrix/answers/superpipeline-gate-decision-v1/):
+a readable body (`Approved — Ship the OAuth change to staging?`), `schema_version` 1, the
+decision's `suite_event_type`, your `gate_id`, the chosen `option_id`, an optional `comment`, and
+an `m.reference` relation to the gate's event. The card now says your answer is **waiting for the
+board**. It has been sent. It has not been accepted.
+
+## 5. Close it with a receipt
+
+The gate stays open until the room says the board accepted the answer. That is
+`dev.superpipeline.gate.outcome.v1`, and the bot that posted the gate has to be the one to send
+it:
+
+```sh
+curl -X PUT -H "Authorization: Bearer $TOKEN" \
+  "$HS/_matrix/client/v3/rooms/$ROOM/send/m.room.message/outcome-1" \
+  -d '{
+    "msgtype": "m.notice",
+    "body": "Approved by rakesh. The board has it.",
+    "suite_event_type": "dev.superpipeline.gate.outcome.v1",
+    "board_id": "brd_7c1f",
+    "gate_id": "gate_4e8b",
+    "decision": "approve",
+    "decided_by": "rakesh",
+    "m.relates_to": { "rel_type": "m.reference", "event_id": "$THE_GATE_EVENT_ID" }
+  }'
+```
+
+The card becomes a receipt: no buttons, no amber, **Approved by rakesh**. Your sentence shows as
+an ordinary message beside it, and that is what Element shows too. You can also send the outcome
+as its own event of type `dev.superpipeline.gate.outcome.v1` with the same keys; that event draws
+nothing on its own, and the card still turns into the receipt.
+
+Three rules decide whether an outcome closes a card:
+
+- **Same sender.** An outcome counts only from the account that posted the gate. Anyone in the
+  room can send this shape, and closing someone else's approval is exactly what a forged one
+  would be for.
+- **`gate_id` first.** It closes every carrier of that gate, unless both name a `board_id` and
+  the two differ. An outcome with no `gate_id` closes the gate whose event its `m.reference`
+  points at.
+- **Order does not matter.** Outcome first, gate first, or the gate paginated in later: the card
+  reads correctly whenever both are loaded. If the outcome leaves the timeline, the card is
+  pending again.
+
+That's the loop: a sentence for everyone, a card for this client, an answer that names the gate,
+and a receipt only the gate's own sender can write.
+
+## What the client refuses
+
+Every payload comes from whoever can send to the room, so the limits are firm:
+
+| What | Limit |
+|---|---|
+| The event's `content`, serialized | 8 KiB. Over it, the payload is dropped whole and the `body` shows. |
+| Rows on one card | 12 |
+| A row's value, its label | 300 and 60 characters, then an ellipsis |
+| Buttons on one card | 4 |
+| A link | `https://` only, printable ASCII, at most 2,048 characters |
+| `schema_version` above what the renderer knows | Drawn anyway, best effort, and flagged as newer |
+
+The renderers read named fields one level at a time and produce text only: nothing from a payload
+becomes markup, an image or a style. The one exception is the gate's `deep_link`, and only after
+the `https://` check.
+
+## Other things a message can carry
+
+AgentPod also puts structured data on ordinary messages, each with a complete sentence in `body`:
+a failed turn under `dev.agentpod.turn_error`, a voice note's transcript under
+`dev.agentpod.voice_transcript`, and a spoken reply under `dev.agentpod.voice_reply`. How each
+reads is on [Working with agents](/use/agents/); a payload that does not parse leaves the message
+as its `body`.
+
+The newer board cards (the version 2 gate, questions, follow-ups, waiting cards and overdue
+checks) ride on prose messages that declare their type in a `suite_event_type` key. Their shapes
+are Treaty's, and [Event types](/reference/events/) lists each one with what SuperMessage draws.
+
+## Next
+
+- [Event types](/reference/events/): every type this client draws, and what answers it
+- [The push contract](/build/push/): what a push for one of these cards carries
