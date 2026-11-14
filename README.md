@@ -191,3 +191,5 @@ plus unmodified MPL-2.0, with GPL, AGPL and LGPL refused. This is enforced in
 CI by [`src-tauri/deny.toml`](src-tauri/deny.toml) rather than left to
 review, because the case that matters is a transitive dependency changing
 licence during a routine bump.
+
+CI fixture line (docs-only).
