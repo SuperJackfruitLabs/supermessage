@@ -49,6 +49,12 @@ void describe('the release ships the desktop installers and the Android APKs', (
     assert.deepEqual(desktopTargets(), ['universal-apple-darwin', 'x86_64-unknown-linux-gnu', 'x86_64-pc-windows-msvc']);
   });
 
+  void test("each desktop bundle is under the root workspace's target/, where tauri writes it", () => {
+    assert.match(readFileSync(join(ROOT, 'Cargo.toml'), 'utf8'), /^\[workspace\]\nmembers = \[[^\]]*"src-tauri"/m);
+    const bundles = [...job('desktop').matchAll(/^ {12}bundle: (\S+)$/gm)].map((m) => m[1]);
+    assert.deepEqual(bundles, ['target/universal-apple-darwin/release/bundle', 'target/release/bundle', 'target/release/bundle']);
+  });
+
   void test("the config's pattern fetches exactly the release artifacts, and nothing else ci.yml uploads", () => {
     const pattern = CONFIG.artifact.replaceAll('{sha}', SHA);
     assert.deepEqual(uploadedNames().filter((name) => matches(pattern, name)).sort(), RELEASED());

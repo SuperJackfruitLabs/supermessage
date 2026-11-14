@@ -421,11 +421,13 @@ jobs:
           - label: macOS (universal)
             runner: macos-latest
             # A single binary carrying both arm64 and x86_64, so one .dmg
-            # covers every Mac.
+            # covers every Mac. Each `bundle` is under the repository root's
+            # target/, not src-tauri/'s: src-tauri is a member of the root
+            # Cargo workspace, which owns the target directory.
             target: universal-apple-darwin
             args: --target universal-apple-darwin
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
-            bundle: src-tauri/target/universal-apple-darwin/release/bundle
+            bundle: target/universal-apple-darwin/release/bundle
           - label: Linux (x86_64)
             # Deliberately not `ubuntu-latest`. glibc is forward- but not
             # backward-compatible, so a binary linked against 24.04's glibc
@@ -435,13 +437,13 @@ jobs:
             target: x86_64-unknown-linux-gnu
             args: ""
             rust_targets: x86_64-unknown-linux-gnu
-            bundle: src-tauri/target/release/bundle
+            bundle: target/release/bundle
           - label: Windows (x86_64)
             runner: windows-latest
             target: x86_64-pc-windows-msvc
             args: ""
             rust_targets: x86_64-pc-windows-msvc
-            bundle: src-tauri/target/release/bundle
+            bundle: target/release/bundle
     runs-on: ${{ matrix.runner }}
     env:
       # The installers build as the old release workflow built them; the Rust
