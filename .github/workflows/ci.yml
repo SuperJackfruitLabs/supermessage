@@ -38,19 +38,44 @@ jobs:
   #
   # Every filter includes this workflow file: a change to the rules must be
   # validated by the rules it changes.
+  #
+  # A pull request whose every changed path is a root README / README.* or
+  # under docs/ or docs-site/ (less the generated token files,
+  # scripts/ci-plan.mjs) is docs-only: it runs `docs` and `docs-claims` and
+  # nothing else. Any other path, any doubt (empty diff, missing merge base,
+  # failed diff, classifier error) and every other event keep the filter's
+  # outputs exactly as they are.
   changes:
     name: Changed paths
     runs-on: ubuntu-24.04
     outputs:
-      frontend: ${{ steps.filter.outputs.frontend }}
-      rust: ${{ steps.filter.outputs.rust }}
-      ios: ${{ steps.filter.outputs.ios }}
-      android: ${{ steps.filter.outputs.android }}
-      licences: ${{ steps.filter.outputs.licences }}
-      tokens: ${{ steps.filter.outputs.tokens }}
-      docs: ${{ steps.filter.outputs.docs }}
+      frontend: ${{ steps.plan.outputs.frontend }}
+      rust: ${{ steps.plan.outputs.rust }}
+      ios: ${{ steps.plan.outputs.ios }}
+      android: ${{ steps.plan.outputs.android }}
+      licences: ${{ steps.plan.outputs.licences }}
+      tokens: ${{ steps.plan.outputs.tokens }}
+      docs: ${{ steps.plan.outputs.docs }}
+      docs_only: ${{ steps.plan.outputs.docs_only }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The merge base has to be in the clone for the docs-only diff.
+          # Trees only: the diff reads names, never contents.
+          fetch-depth: 0
+          filter: blob:none
+          persist-credentials: false
+      # Whether this pull request is docs-only, from the git clone rather than
+      # the API, so the path set cannot be truncated. If this step fails at
+      # all, docs_only is not 'true' and the outputs are the filter's.
+      - name: Docs-only?
+        id: docs
+        continue-on-error: true
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ci-plan.mjs plan
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -111,6 +136,7 @@ jobs:
               - 'design/tokens.toml'
               - 'scripts/tokens/**'
               - 'scripts/tests/**'
+              - 'scripts/ci-plan.mjs'
               - 'scripts/generate-tokens.py'
               - 'src/lib/tokens.css'
               - 'apple/Supermessage/Generated/ThemeTokens.swift'
@@ -134,6 +160,33 @@ jobs:
               - 'src-tauri/Cargo.toml'
               - 'src-tauri/deny.toml'
               - 'crates/**/Cargo.toml'
+      # The filter's outputs, passed through unchanged, unless this is a
+      # docs-only pull request: then only the docs lane. Only the exact string
+      # 'true' on a pull_request counts.
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          DOCS_ONLY: ${{ steps.docs.outputs.docs_only }}
+          FRONTEND: ${{ steps.filter.outputs.frontend }}
+          RUST: ${{ steps.filter.outputs.rust }}
+          IOS: ${{ steps.filter.outputs.ios }}
+          ANDROID: ${{ steps.filter.outputs.android }}
+          LICENCES: ${{ steps.filter.outputs.licences }}
+          TOKENS: ${{ steps.filter.outputs.tokens }}
+          DOCS: ${{ steps.filter.outputs.docs }}
+        run: |
+          frontend=$FRONTEND; rust=$RUST; ios=$IOS; android=$ANDROID
+          licences=$LICENCES; tokens=$TOKENS; docs=$DOCS
+          docs_only=false
+          if [ "$EVENT" = pull_request ] && [ "$DOCS_ONLY" = true ]; then
+            docs_only=true; frontend=false; rust=false; ios=false; android=false
+            licences=false; tokens=false; docs=true
+          fi
+          {
+            echo "frontend=$frontend"; echo "rust=$rust"; echo "ios=$ios"; echo "android=$android"
+            echo "licences=$licences"; echo "tokens=$tokens"; echo "docs=$docs"; echo "docs_only=$docs_only"
+          } >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend rust=$rust ios=$ios android=$android licences=$licences tokens=$tokens docs=$docs docs_only=$docs_only"
 
   tokens:
     name: Design tokens
@@ -154,6 +207,11 @@ jobs:
         # paints nothing, and a fixed point size that would cost every native
         # user their Dynamic Type.
         run: python3 -m unittest discover -s scripts/tests -t . -v
+
+      # The docs-only plan and the `check` verdict (scripts/ci-plan.mjs). The
+      # tokens filter lists both files, so this runs whenever either changes.
+      - name: The CI plan's own cases
+        run: node --test scripts/tests/test_ci_plan.mjs
 
       - name: Regenerate every target
         run: python3 scripts/generate-tokens.py
@@ -1121,8 +1179,48 @@ jobs:
   # conversation with another product. Cheap, so it runs on every change.
   treaty-corpus:
     name: Treaty corpus copies
+    needs: changes
+    # Every change but a docs-only pull request, including when `changes`
+    # itself failed.
+    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: The vendored corpus matches the pinned treaty package
         run: ./scripts/check-treaty-corpus.sh
+
+  # The docs claims test (crates/supermessage-core/tests/docs_claims.rs): every
+  # name the docs-site pages use must exist in the code. `rust` runs it inside
+  # `cargo test --workspace`; a docs-only pull request skips `rust`, so it runs
+  # that one test target here with the same toolchain and flags.
+  docs-claims:
+    name: Docs claims
+    needs: changes
+    if: needs.changes.outputs.docs_only == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Docs claims
+        run: cargo test -p supermessage-core --all-features --test docs_claims
+
+  # The run's verdict (scripts/ci-plan.mjs aggregate): passes only when
+  # `changes` succeeded and every job below ended the way its plan selected
+  # it, success if selected and skipped if not. A failed, cancelled, missing
+  # or unplanned job fails it. The release workflow does not read it.
+  check:
+    name: check
+    needs: [changes, tokens, docs, frontend, rust, ios, android-libs, android-unit, android-apks, android-avd, android-instrumented, android, licences, treaty-corpus, docs-claims]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+      - name: Aggregate
+        env:
+          EVENT: ${{ github.event_name }}
+          NEEDS: ${{ toJSON(needs) }}
+        run: node scripts/ci-plan.mjs aggregate
