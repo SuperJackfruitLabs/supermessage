@@ -8,6 +8,7 @@ a command.
 | Platform | Workflow | Trigger |
 |---|---|---|
 | Desktop — macOS, Linux, Windows | `ci.yml` `desktop` builds on every push to main; `release.yml` releases them | tag `v*`, or dispatch with a tag |
+| Android — debug APKs on the GitHub release | `ci.yml` `android-apks` builds on every push to main; `release.yml` releases them beside the desktop installers | tag `v*`, or dispatch with a tag |
 | iOS — TestFlight | `testflight.yml` | dispatch, upload off by default |
 | Android — Play internal | `play.yml` | dispatch, upload off by default |
 
@@ -16,17 +17,26 @@ a command.
 Every push to `main` builds the desktop installers in CI's `desktop` job
 (macOS universal `.dmg` and `.app.tar.gz`, Linux `.deb`, `.rpm` and
 `.AppImage` on 22.04's glibc, Windows `.msi` and `.exe`) and keeps them as
-`desktop-<target>-<sha>` artifacts for 30 days. A `v*` tag runs the suite's
+`desktop-<target>-<sha>` artifacts for 30 days. The same push builds the
+Android debug APKs (CI's `android-libs` cross-compiles the core for the four
+ABIs, `android-apks` assembles them) and keeps the four per-ABI ones as one
+`android-apks-<sha>` artifact for 30 days, named
+`supermessage_<versionName>_android-<abi>-debug.apk`. A `v*` tag runs the suite's
 shared release workflow (`.github/workflows/release.yml`, settings in
 `.github/release-config.json`): it refuses a tag whose commit is not on
-`main` or whose main CI run did not pass, fetches that run's installers
-without rebuilding, adds `SHA256SUMS` and a provenance attestation for each,
-writes the notes (a summary, this version's section of `CHANGELOG.md` and the
+`main` or whose main CI run did not pass, and, through SuperMessage's own
+check hook (`.github/release/check.sh`), one whose run lacks any of those
+artifacts (three desktop, one Android) or let them expire. It fetches every
+artifact of that run whose name ends in the commit sha
+(`"artifact": "*-{sha}"`) without rebuilding, adds `SHA256SUMS` and a
+provenance attestation for each, writes the notes (a summary, this version's section of `CHANGELOG.md` and the
 grouped commits) and publishes the release as `SuperMessage vX.Y.Z`. The
 installers are unsigned: macOS Gatekeeper and Windows SmartScreen warn on
-first run until signing is set up. Re-run a release for an existing tag with
-`gh workflow run release.yml -f tag=vX.Y.Z`. The tag does not touch iOS or
-Android: those uploads stay manual, below.
+first run until signing is set up, and the APKs are debug-signed, for
+sideloading: a signed release APK needs a signing key and is a separate
+decision. Re-run a release for an existing tag with
+`gh workflow run release.yml --ref vX.Y.Z -f tag=vX.Y.Z`. The tag does not
+touch TestFlight or Play: those uploads stay manual, below.
 
 ## 1. Build numbers
 

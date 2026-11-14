@@ -96,9 +96,10 @@ export const JOBS = {
   frontend: (plan) => plan.frontend,
   rust: (plan) => plan.rust,
   ios: (plan) => plan.ios,
-  'android-libs': (plan) => plan.android,
+  // On every push to main too: the APKs a `v*` tag releases come from main's run.
+  'android-libs': (plan, event) => plan.android || event !== 'pull_request',
   'android-unit': (plan) => plan.android,
-  'android-apks': (plan, event) => plan.android && event !== 'pull_request',
+  'android-apks': (plan, event) => event !== 'pull_request',
   'android-avd': (plan) => plan.android,
   'android-instrumented': (plan) => plan.android,
   android: (plan) => plan.android,

@@ -8,9 +8,10 @@ on:
 # A second push to the same pull request cancels the first: these jobs build the
 # whole Rust tree, and a queue of superseded runs is the main way a small
 # project burns its Actions minutes. Main's runs always finish: a `v*` tag
-# releases the desktop installers a main run built and tested for that exact
-# commit (the shared release workflow, `.github/release-config.json`), so a
-# cancelled main run would leave its commit unreleasable.
+# releases the desktop installers and Android debug APKs a main run built and
+# tested for that exact commit (the shared release workflow,
+# `.github/release-config.json`), so a cancelled main run would leave its
+# commit unreleasable.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -137,6 +138,8 @@ jobs:
               - 'scripts/tokens/**'
               - 'scripts/tests/**'
               - 'scripts/ci-plan.mjs'
+              - '.github/release-config.json'
+              - '.github/release/check.sh'
               - 'scripts/generate-tokens.py'
               - 'src/lib/tokens.css'
               - 'apple/Supermessage/Generated/ThemeTokens.swift'
@@ -212,6 +215,13 @@ jobs:
       # tokens filter lists both files, so this runs whenever either changes.
       - name: The CI plan's own cases
         run: node --test scripts/tests/test_ci_plan.mjs
+
+      # What a `v*` tag releases: the artifacts this workflow uploads for it,
+      # the pattern in .github/release-config.json that fetches them, and
+      # .github/release/check.sh, which refuses a run lacking one. The tokens
+      # filter lists all three.
+      - name: The release's own cases
+        run: node --test scripts/tests/test_release_assets.mjs
 
       - name: Regenerate every target
         run: python3 scripts/generate-tokens.py
@@ -393,11 +403,13 @@ jobs:
         working-directory: src-tauri
 
   # The desktop installers a `v*` tag releases. The shared release workflow
-  # fetches these `desktop-<target>-<sha>` artifacts from main's run for the
-  # tagged commit and ships them as they are; it never rebuilds. Main only: a
-  # pull request needs no installers, and the Rust job already builds and tests
-  # the tree. One platform failing does not cancel the others, but it fails
-  # the run, and a commit whose run failed is never released.
+  # fetches these `desktop-<target>-<sha>` artifacts (and android-apks'
+  # `android-apks-<sha>`: every artifact whose name ends in the commit sha)
+  # from main's run for the tagged commit and ships them as they are; it never
+  # rebuilds. Main only: a pull request needs no installers, and the Rust job
+  # already builds and tests the tree. One platform failing does not cancel
+  # the others, but it fails the run, and a commit whose run failed is never
+  # released.
   desktop:
     name: Desktop (${{ matrix.label }})
     needs: changes
@@ -409,11 +421,13 @@ jobs:
           - label: macOS (universal)
             runner: macos-latest
             # A single binary carrying both arm64 and x86_64, so one .dmg
-            # covers every Mac.
+            # covers every Mac. Each `bundle` is under the repository root's
+            # target/, not src-tauri/'s: src-tauri is a member of the root
+            # Cargo workspace, which owns the target directory.
             target: universal-apple-darwin
             args: --target universal-apple-darwin
             rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
-            bundle: src-tauri/target/universal-apple-darwin/release/bundle
+            bundle: target/universal-apple-darwin/release/bundle
           - label: Linux (x86_64)
             # Deliberately not `ubuntu-latest`. glibc is forward- but not
             # backward-compatible, so a binary linked against 24.04's glibc
@@ -423,13 +437,13 @@ jobs:
             target: x86_64-unknown-linux-gnu
             args: ""
             rust_targets: x86_64-unknown-linux-gnu
-            bundle: src-tauri/target/release/bundle
+            bundle: target/release/bundle
           - label: Windows (x86_64)
             runner: windows-latest
             target: x86_64-pc-windows-msvc
             args: ""
             rust_targets: x86_64-pc-windows-msvc
-            bundle: src-tauri/target/release/bundle
+            bundle: target/release/bundle
     runs-on: ${{ matrix.runner }}
     env:
       # The installers build as the old release workflow built them; the Rust
@@ -671,10 +685,13 @@ jobs:
   # cache (android-avd) is built in parallel, and android-unit (host build,
   # bindings check, unit tests, Roborazzi) runs alongside the shards. `android`
   # is the aggregator that keeps the single check name.
+  # On every push to main as well as on Android changes: android-apks needs all
+  # four ABIs for the APKs a `v*` tag releases, and a tag can land on any main
+  # commit, not only one that touched Android.
   android-libs:
     name: Android libs
     needs: changes
-    if: needs.changes.outputs.android == 'true'
+    if: needs.changes.outputs.android == 'true' || github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     env:
       # One ABI on a pull request, four on main.
@@ -725,9 +742,8 @@ jobs:
         # built on main, where the cost buys real coverage of the targets a
         # device actually uses.
         #
-        # If that trade ever looks wrong, the honest fix is a release workflow
-        # that builds all four and assembles an artifact — which does not exist
-        # today, and is why the device-capable build ended up in PR CI at all.
+        # On main the four ABIs are what android-apks assembles into the APKs
+        # a `v*` tag releases (see that job).
         run: ./scripts/build-android-libs.sh
 
       - name: Upload the x86_64 JNI library for the instrumented shards
@@ -865,10 +881,14 @@ jobs:
         # turning every match into a failure.
         run: ./scripts/tests/test_android_preview_leak.sh
 
+  # The Android debug APKs a `v*` tag releases, beside the desktop installers.
+  # Like `desktop`, on every push to main and never on a pull request: the
+  # shared release workflow fetches this run's `android-apks-<sha>` artifact
+  # for the tagged commit and ships it as it is; it never rebuilds.
   android-apks:
     name: Android debug APKs
     needs: [changes, android-libs]
-    if: needs.changes.outputs.android == 'true' && github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
     env:
       # One ABI on a pull request, four on main.
@@ -915,10 +935,7 @@ jobs:
       # genuinely needs an on-device build can re-run this job from a branch
       # push, or the trade can be revisited if it starts biting.
       #
-      # The honest longer-term fix is a release workflow that builds all four
-      # and assembles a signed artifact. There isn't one — `release.yml` builds
-      # no Android at all today — which is exactly why a device-capable build
-      # ended up living in pull-request CI.
+      # The release copies of the same four APKs are the last step below.
 
       - name: Upload arm64-v8a APK
         # The maintainer's own test device (a OnePlus 8T) is arm64-v8a — the
@@ -956,6 +973,32 @@ jobs:
         with:
           name: supermessage-debug-universal
           path: android/app/build/outputs/apk/debug/app-universal-debug.apk
+
+      # The four per-ABI APKs a `v*` tag releases, named as the releases have
+      # always named them: supermessage_<versionName>_android-<abi>-debug.apk.
+      # The version is the app's own versionName, as the desktop installers'
+      # is tauri.conf.json's. The shared release workflow fetches every
+      # artifact of this run whose name ends in the commit sha
+      # (`.github/release-config.json`), and `.github/release/check.sh` refuses
+      # a tag whose run lacks this one. Debug-signed: there is no release
+      # signing config yet.
+      - name: Collect the release APKs
+        run: |
+          version=$(cd android && ./gradlew -q :app:printVersion | sed -n 's/.*versionName=//p')
+          [ -n "$version" ] || { echo "::error::no versionName from :app:printVersion"; exit 1; }
+          mkdir -p android-dist
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            cp "android/app/build/outputs/apk/debug/app-$abi-debug.apk" \
+              "android-dist/supermessage_${version}_android-$abi-debug.apk"
+          done
+          ls -la android-dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apks-${{ github.sha }}
+          path: android-dist/
+          if-no-files-found: error
+          retention-days: 30
 
 
   android-avd:

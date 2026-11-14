@@ -9,3 +9,7 @@ to v0.1.2 predate this file.
 
 - Desktop releases are published, with `SHA256SUMS` and a build-provenance attestation for each
   installer, from the installers main's CI built and tested for the tagged commit.
+- Every release carries the four Android debug APKs again
+  (`supermessage_<version>_android-<abi>-debug.apk` for arm64-v8a, armeabi-v7a, x86 and x86_64),
+  built by main's CI for the tagged commit beside the desktop installers. A tag whose CI run lacks
+  any of them is refused rather than released without it.
