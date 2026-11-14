@@ -1,6 +1,7 @@
 # Claims ledger — SuperMessage docs voice rollout
 
-Status: draft-stage evidence for the nine-page voice rollout.
+Status: verify-stage evidence for the nine-page voice rollout; live distribution and hub evidence
+remain pending from the operator.
 
 ## Immutable revisions and scope
 
@@ -9,7 +10,12 @@ Status: draft-stage evidence for the nine-page voice rollout.
 - Reference rollout: every published page in `SuperJackfruitLabs/superdispatch@77185fc39f3431a3ffeca6d05bf405561b58f1b0`, especially `start/first-placement.mdx`, `run/running-it.md`, `run/opting-a-board-in.md`, `placement/`, and `records/`.
 - Scope: all nine hand-written, published pages under `docs-site/src/content/docs/`, the repository-owned docs claims test, and this ledger.
 - Product code, site configuration, theme, package manifests, styles, components, generated files, and the home-page layout are unchanged.
-- Product evidence below is pinned to the PR base. The docs-only CI workflow at that base is `.github/workflows/ci.yml:42-47,231-249,1192-1206`.
+- Product evidence below is pinned to the PR base. The docs-only CI commands at that base are
+  `.github/workflows/ci.yml:231-249,1192-1206`. Because this rollout also changes
+  `crates/supermessage-core/tests/docs_claims.rs`, `scripts/ci-plan.mjs:20-42` classifies the actual
+  patch as non-docs-only; the operator's GitHub PR will therefore need the regular component plan
+  to finish as well. The checks recorded below are the required docs checks, not a claim that the
+  unpushed artifact has completed that remote plan.
 
 ## Page-by-page voice review
 
@@ -96,3 +102,8 @@ No humour was added to any exact region, warning, recovery step, table, literal 
 
 - Rust formatting and docs claims: **pass** — `cargo fmt --all --check`; `cargo test -p supermessage-core --all-features --test docs_claims` ran 8 tests, 8 passed, 0 failed. Cargo emitted the existing unused `uniffi` build-dependency warning and a future-incompatibility note for `proc-macro-error2`; neither failed the target.
 - Docs-only site command from `.github/workflows/ci.yml:231-249`: **pass** — `npm ci && npm run build` in `docs-site`. `npm ci` added 308 packages and audited 309; npm reported 9 dependency vulnerabilities (3 moderate, 6 high) and an unapproved `esbuild@0.28.2` install script. The build completed, generated the nine docs routes plus `/404.html`, built 10 pages, indexed 10 HTML files with Pagefind, generated the sitemap and LLM text routes, and retained the existing warnings that the optional `i18n` collection is empty and `docs → 404` is absent.
+- CI routing probe: **non-docs-only** — with the base and artifact head supplied to
+  `node scripts/ci-plan.mjs plan`, the classifier reported
+  `reason=crates/supermessage-core/tests/docs_claims.rs is not a docs path`. This is an expected
+  consequence of extending the repository-owned claims ratchet, but it means the eventual GitHub
+  PR must not be described as having only the two docs jobs.
