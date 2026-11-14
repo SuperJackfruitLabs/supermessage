@@ -139,6 +139,57 @@ fn every_roster_word_named_is_one_the_roster_produces() {
 }
 
 #[test]
+fn message_rendering_table_matches_the_core() {
+    let page = read("docs-site/src/content/docs/use/messages.md");
+    let views = read("crates/supermessage-core/src/item_view.rs");
+
+    // Audio stopped being a generic file row when the shared core gained an
+    // audio player. Keep the published table on the real branch of the match.
+    assert!(views.contains("Some(\"m.audio\") =>"));
+    assert!(views.contains("ItemView::Audio"));
+    assert!(page.contains("| `m.audio` | An audio player"));
+    assert!(!page.contains("`m.file`, `m.audio`, `m.video`"));
+
+    // Short notices are system lines; only longer or formatted notices keep a
+    // muted bubble. A single "notice = bubble" row hides that distinction.
+    assert!(views.contains("Some(\"m.notice\") if is_one_line_notice(item)"));
+    assert!(views.contains("Some(\"m.notice\") => ItemView::Bubble"));
+    assert!(page.contains("A one-line system notice, or a de-emphasised bubble"));
+}
+
+#[test]
+fn encryption_page_names_recovery_not_verification_as_the_history_path() {
+    let page = read("docs-site/src/content/docs/use/encryption.md");
+    let recovery = read("crates/supermessage-core/src/recovery.rs");
+    let session = read("crates/supermessage-core/src/session.rs");
+
+    assert!(recovery.contains("pub async fn recover(client: &Client, recovery_key: &str)"));
+    assert!(session.contains("auto_enable_backups: true"));
+    assert!(page.contains("recovery key on the new device"));
+    assert!(page.contains("device verification alone does not"));
+    assert!(!page.contains("Verifying the device brings history within reach"));
+}
+
+#[test]
+fn ios_push_pages_keep_the_unverified_device_boundary_visible() {
+    for file in [
+        "index.mdx",
+        "start/what-it-is.md",
+        "use/notifications.md",
+        "use/widgets.md",
+    ] {
+        let page = read(&format!("docs-site/src/content/docs/{file}"));
+        assert!(
+            page.contains("physical device"),
+            "{file} describes the iOS push path without its physical-device verification limit"
+        );
+    }
+
+    let notifications = read("docs-site/src/content/docs/use/notifications.md");
+    assert!(!notifications.contains("notifications keep working after a force-quit"));
+}
+
+#[test]
 fn every_internal_link_resolves_to_a_page() {
     let slugs: Vec<String> = pages()
         .into_iter()
