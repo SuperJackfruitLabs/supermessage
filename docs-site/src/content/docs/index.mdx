@@ -2,60 +2,80 @@
 title: Overview
 description: A Matrix client where the agents you work with are participants, not a panel.
 template: splash
-hero:
-  # The page's <title> is "Overview | SuperMessage"; the hero still says the name.
-  # With `title: supermessage` the tab read "SuperMessage | SuperMessage".
-  title: SuperMessage
-  tagline: Your agents already work. This is where you talk to them — in the same rooms as everyone else.
-  actions:
-    - text: What SuperMessage is
-      link: /start/what-it-is/
-      icon: right-arrow
-    - text: Working with agents
-      link: /use/agents/
-      variant: minimal
+status: wet paint
+# The page's <title> is "Overview | SuperMessage"; the Bento's eyebrow says the name.
+# With `title: SuperMessage` the tab read "SuperMessage | SuperMessage".
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import BentoHome from '@superjackfruit/docs-theme/components/BentoHome.astro';
+import FlowSteps from '@superjackfruit/docs-theme/components/FlowSteps.astro';
+import WetPaint from '@superjackfruit/docs-theme/components/WetPaint.astro';
+import JackAside from '@superjackfruit/docs-theme/components/JackAside.astro';
 
-:::caution[Early preview]
-SuperMessage is in development. Version 0.1.2 is on
-[GitHub Releases](https://github.com/SuperJackfruitLabs/supermessage/releases/latest): desktop
-previews for macOS, Windows and Linux — unsigned, so macOS and Windows will warn the first time
-you open one — and debug-signed Android APKs for sideloading (background push needs a
-UnifiedPush distributor such as ntfy). iOS is TestFlight by invitation only. There is no app-store
-release. These pages describe what exists in the codebase today.
-:::
+<BentoHome
+  claim="Chat where your agents are in the room."
+  sub="SuperMessage is a Matrix client, and your agents sit in the same rooms as your team. An agent's turn, its request to do something and a board's approval gate each land in the timeline as themselves, and the ones that need you can be answered right there, or from the Lock Screen. Approve a gate and the card waits for the board's receipt before it claims anything grander, because a card that said Approved too early would sometimes be fibbing. Colleagues on Element still read plain sentences."
+  actions={[
+    { text: 'What SuperMessage is', link: '/start/what-it-is/' },
+    { text: 'Working with agents', link: '/use/agents/', variant: 'secondary' },
+  ]}
+  quickstart={{
+    command: 'curl -fL https://github.com/SuperJackfruitLabs/supermessage/releases/latest/download/supermessage_universal.app.tar.gz | tar xzf - && open supermessage.app',
+    label: 'Quick start: the macOS desktop preview',
+    note: "Fetches the latest release, v0.1.2, as one app for Apple silicon and Intel. It is a preview: ad-hoc signed and not notarised, so a copy downloaded in a browser gets a warning the first time it opens. Sign in with a username and password on your Matrix homeserver; the form suggests id.agentpod.dev, so change it to yours. Windows and Linux installers are on the same release page, and iOS is TestFlight by invitation.",
+  }}
+  agent={{ task: "Then explain how an agent's permission request or a board's gate reaches me in SuperMessage, how I answer it, and when it counts as resolved." }}
+  ask={{ examples: ['Why does my approved gate still say waiting for the board?', 'Can I answer a permission request from the Lock Screen?', "Will my teammates on Element see the agent's cards?", "Why isn't a room with an agent in it encrypted?"] }}
+  flowTitle="How a gate reaches you, and your answer gets back (step through it; it waits for you)"
+>
+  <FlowSteps
+    label="Gate step"
+    steps={[
+      { label: 'Posted', body: "The board posts dev.superpipeline.gate.v1 into the room: a card that needs a person's answer, sent beside a prose message asking the same question. An agent's turn (dev.agentpod.turn.v1) and its permission request (dev.agentpod.permission.v1) arrive the same way.", items: [{ text: 'gate.v1', card: true }] },
+      { label: 'Drawn', body: 'The Rust core decides what the event is, and the desktop app, iPhone and Android all draw that one decision: an Approval card in sequence with everything else said in the room. Element, which has never heard of a gate, shows the prose message.', items: [{ text: 'Approval card', win: true }, { text: 'Element: a sentence' }] },
+      { label: 'Pushed', body: 'You are somewhere else. The push names the room and the event and carries none of the content. On iPhone the app fetches and decrypts the event on the device and words the notification itself, offering Approve, Request changes and Reject when the gate has them.', items: [{ text: 'room + event id', card: true }] },
+      { label: 'Answered', body: 'You tap Approve on the Lock Screen. The decision that goes to the room is byte for byte the one the card would have sent. The card now shows your answer as waiting for the board: sent is not the same as resolved.', items: [{ text: 'waiting for the board', card: true }] },
+      { label: 'Receipt', body: "The board accepts the answer and its outcome, dev.superpipeline.gate.outcome.v1, lands in the room. Only an outcome from the identity that posted the gate counts, so a forged one closes nothing. The card becomes a receipt naming who decided; if the outcome later leaves the timeline, the card goes back to pending.", items: [{ text: 'forged outcome', out: true }, { text: 'receipt ✓', win: true }] },
+    ]}
+  />
+</BentoHome>
 
-<CardGrid stagger>
-  <Card title="Agents are participants" icon="comment-alt">
-    An agent's turn, a permission request, an approval gate — each renders as itself in the
-    timeline, not as a JSON blob and not in a side panel.
-  </Card>
-  <Card title="Still just Matrix" icon="approve-check">
-    Every custom event carries a plain-text fallback, so Element and Cinny stay usable against
-    the same rooms. Nothing here locks a room to this client.
-  </Card>
-  <Card title="One core, five platforms" icon="laptop">
-    iOS, Android, Windows, macOS and Linux. One Rust core does the Matrix work; SwiftUI on iOS,
-    Compose on Android and a Svelte desktop app each render it.
-  </Card>
-  <Card title="Answerable from the Lock Screen" icon="rocket">
-    A permission request arrives as a notification carrying its own Allow and Reject; a widget
-    answers a gate in place. A push carries ids only — the event is decrypted on your device.
-    [Notifications](/use/notifications/)
-  </Card>
-  <Card title="Answered is not resolved" icon="warning">
-    Approving a gate sends a decision; only the board's receipt closes it. Until then the card
-    says *waiting for the board*, because a card that claimed otherwise would sometimes be wrong.
-    [Gates](/use/agents/#answered-is-not-resolved)
-  </Card>
-  <Card title="Encrypted by default, with one exception" icon="seti:lock">
-    End-to-end encryption through the Matrix Rust SDK and vodozemac. A room you create with an
-    agent invited is left unencrypted so the agent can read it — see
-    [Encryption](/use/encryption/).
-  </Card>
-</CardGrid>
+## What it holds itself to
 
-For agents, the same docs are published as plain text: `/llms.txt` indexes them, and
-`/llms-full.txt` is every page in one file.
+**Agents are participants.** An agent's turn, a permission request and an approval gate each render
+as themselves in the timeline, not as a JSON blob and not in a side panel. See
+[Working with agents](/use/agents/).
+
+**Still just Matrix.** Every custom event carries a plain-text fallback, so Element and Cinny stay
+usable against the same rooms. Nothing here locks a room to this client. See
+[Concepts](/start/concepts/).
+
+**Answered is not resolved.** Approving a gate sends a decision; only the board's receipt closes
+it. Until then the card says *waiting for the board*. See
+[Answered is not resolved](/use/agents/#answered-is-not-resolved).
+
+**A push carries ids, not words.** The event is fetched and decrypted on your device, and the
+notification is worded there. See [Notifications](/use/notifications/).
+
+**Encrypted by default, with one exception.** End-to-end encryption through the Matrix Rust SDK
+and vodozemac. A room you create with an agent invited is left unencrypted so the agent can read
+it. See [Encryption](/use/encryption/).
+
+**One core, five platforms.** iOS, Android, Windows, macOS and Linux. One Rust core does the
+Matrix work; SwiftUI on iOS, Compose on Android and a Svelte desktop app each render it.
+
+<WetPaint>
+  SuperMessage is in development. The latest release, v0.1.2 (9 November 2026), is on
+  [GitHub Releases](https://github.com/SuperJackfruitLabs/supermessage/releases/latest) as unsigned
+  desktop previews for macOS, Windows and Linux. The newest Android build is v0.1.1's debug-signed
+  APKs, for sideloading. iOS is TestFlight by invitation only, and there is no app-store release.
+  These pages describe what is in the codebase today.
+</WetPaint>
+
+<JackAside>
+  I read these docs so you don't have to read all of them at once. Ask me in the box up top, and if
+  the answer isn't in here I'll say so rather than make one up.
+</JackAside>
+
+For agents, the same docs are plain text: `/llms.txt` indexes them, and `/llms-full.txt` is every
+page in one file.
