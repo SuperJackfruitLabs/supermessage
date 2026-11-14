@@ -2,10 +2,32 @@
 
 The user-facing documentation for `docs.supermessage.dev`. Astro + Starlight.
 
+## It wears the suite's docs theme
+
+`@superjackfruit/docs-theme`, vendored under `vendor/` with the frontdoor and vibekit tarballs it
+needs (the same three files SuperDispatch's and SuperExchange's docs sites carry). The whole design
+config is `sjlDocs({ product: 'supermessage', status: 'wet paint' })` in `astro.config.mjs`:
+vibekit's violet, the suite's faces (self-hosted, so no page fetches a font from Google), the
+street, status badges, Copy Markdown, the suite footer, the 404, the edit link and llms.txt. The
+home is the theme's `BentoHome`. `src/docs-theme.d.ts` declares the theme's schema module, which
+ships as plain JavaScript; without it `npm run check` fails with TS7016 under `strict`.
+
+The status is `wet paint` because the site's own "Early preview" notice says the same thing:
+unsigned desktop previews, TestFlight by invitation, no app-store release. Change both together.
+
+The sidebar uses the suite's group names. This site has pages for two of the five, Start and Use
+it; the theme allows a site to leave groups out, and warns at build time on any other name.
+
+`src/styles/tokens.css` and `public/favicon.svg` are still generated from `design/tokens.toml` by
+`scripts/generate-tokens.py`, and CI's tokens job still compares them. The favicon is served; the
+theme takes its colours from vibekit, so nothing imports `tokens.css` any more. Retiring it means
+changing the generator and `scripts/ci-plan.mjs` together, which is its own change.
+
 ```sh
-npm install
+npm ci
 npm run dev     # local preview
 npm run build   # -> dist/
+npm run check   # astro check
 ```
 
 ## How it deploys
@@ -48,6 +70,11 @@ in all three repos for the same reason.
 `crates/supermessage-core/tests/docs_claims.rs` reads these pages and fails if one names a suite
 event type no renderer handles, a roster state the roster does not produce, or an internal link
 that does not resolve — and if a page lacks a title or description.
+
+Its link check accepts `/llms.txt`, `/llms-full.txt` and `/llms-small.txt` only while
+`astro.config.mjs` imports `starlight-llms-txt` by name. The theme now registers that plugin, so the
+config no longer does, and a page that links those files in Markdown fails the test until it learns
+to read the theme's registration too. The home names them without linking them for that reason.
 
 This exists because the audit that produced this site found the alternative's cost.
 `docs/agentpod-events.md` named two event types that exist in neither this client nor agentpod's
