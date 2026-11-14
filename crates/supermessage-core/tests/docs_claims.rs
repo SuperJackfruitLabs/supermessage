@@ -187,6 +187,21 @@ fn ios_push_pages_keep_the_unverified_device_boundary_visible() {
 
     let notifications = read("docs-site/src/content/docs/use/notifications.md");
     assert!(!notifications.contains("notifications keep working after a force-quit"));
+
+    // The ordinary Matrix notification path and the fleet Live Activity have
+    // different privacy contracts. Do not flatten "message pushes carry ids"
+    // into "every push carries ids", and keep turn counts as a conditional
+    // client input rather than an assertion about a live hub deployment.
+    assert!(notifications.contains("message push with **ids only**"));
+    assert!(notifications.contains("fleet Live Activity"));
+    assert!(notifications.contains("client contract also accepts **counts**"));
+    assert!(!notifications.contains("hub adds to an answer's push"));
+
+    let widgets = read("docs-site/src/content/docs/use/widgets.md");
+    assert!(widgets.contains("When an answer notification includes turn counts"));
+    assert!(widgets.contains("Live Activity's pushes carry **agent names"));
+    assert!(widgets.contains("message pushes carry ids only"));
+    assert!(!widgets.contains("counts the hub adds"));
 }
 
 #[test]

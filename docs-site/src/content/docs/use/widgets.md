@@ -20,8 +20,8 @@ Open the Agents widget and you get one row per agent that **did something since 
 app**: failed first, then finished, then said. We leave quiet agents out, so the recap spends its
 small space on something that happened.
 
-"Finished · 7 steps" and "Failed at step 4 of 7" come from the counts the hub adds to an answer's
-push, not from anything the widget computed.
+When an answer notification includes turn counts, the client turns them into lines such as
+"Finished · 7 steps" and "Failed at step 4 of 7". The widget does not compute those counts.
 
 ## The Needs you widget, and answering from it
 

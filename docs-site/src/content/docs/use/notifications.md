@@ -36,8 +36,8 @@ The app's **Notification Service Extension** is built to fetch that event, decry
 device, and word the notification from the decrypted row. That design keeps message text out of
 the triggering push; Apple receives identifiers rather than the room's contents.
 
-One push carries slightly more: an agent's answer that ended a turn with tool calls adds **counts**
-— seven steps, one failed — which is what the Agents widget reads. Counts, not text.
+The client contract also accepts **counts** with an agent's answer — seven steps, one failed — and
+relays them into the Agents widget. The widget does not derive those numbers from message text.
 
 :::note
 The [fleet Live Activity](/use/widgets/#the-fleet-live-activity) is the one exception in the suite,
