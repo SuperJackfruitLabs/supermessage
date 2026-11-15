@@ -4,7 +4,7 @@ The user-facing documentation for `docs.supermessage.dev`. Astro + Starlight.
 
 ## It wears the suite's docs theme
 
-`@superjackfruit/docs-theme`, vendored under `vendor/` with the frontdoor and vibekit tarballs it
+`@superjackfruitlabs/vibekit-docs`, vendored under `vendor/` with the frontdoor and vibekit tarballs it
 needs (the same three files SuperDispatch's and SuperExchange's docs sites carry). The whole design
 config is `sjlDocs({ product: 'supermessage', status: 'wet paint' })` in `astro.config.mjs`:
 vibekit's violet, the suite's faces (self-hosted, so no page fetches a font from Google), the

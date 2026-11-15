@@ -1,7 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
-import sjlDocs from '@superjackfruit/docs-theme';
+import sjlDocs from '@superjackfruitlabs/vibekit-docs';
 
 export default defineConfig({
   site: 'https://docs.supermessage.dev',
@@ -31,7 +31,7 @@ export default defineConfig({
         'A Matrix client where the agents you work with are participants, not a panel. ' +
         'Docs for using it across five platforms.',
       // The suite's docs theme: vibekit's violet, the faces, the street, status badges, the footers,
-      // the 404, the edit link and llms.txt. See @superjackfruit/docs-theme's README.
+      // the 404, the edit link and llms.txt. See @superjackfruitlabs/vibekit-docs's README.
       plugins: [
         sjlDocs({
           product: 'supermessage',
