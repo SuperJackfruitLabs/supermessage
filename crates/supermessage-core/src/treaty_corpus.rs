@@ -148,17 +148,9 @@ const SENT: &[(&str, &str)] = &[
 ];
 
 /// AgentPod's chat activity (`agentpod.matrix-activity`): a station's turns, deltas, errors and
-/// voice, not board-room cards. The same corpus holds their cases; their readers are held to
-/// them separately.
-const ACTIVITY: &[&str] = &[
-    "dev.agentpod.stream.delta",
-    "dev.agentpod.thought.delta",
-    "dev.agentpod.tool.update",
-    "dev.agentpod.turn.v1",
-    "dev.agentpod.turn_error",
-    "dev.agentpod.voice_reply",
-    "dev.agentpod.voice_transcript",
-];
+/// voice, not board-room cards. The same corpus holds their cases; [`crate::treaty_activity`]
+/// runs each through this client's own readers.
+const ACTIVITY: [&str; 7] = crate::treaty_activity::ACTIVITY;
 
 /// Types this client does not read, and why.
 const NOT_READ: &[(&str, &str)] = &[(

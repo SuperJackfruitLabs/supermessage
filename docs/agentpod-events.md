@@ -311,6 +311,13 @@ receipt it reads must read every valid case and no case the schema refuses; an a
 must be one some valid card builds, and no invalid answer may ever be built. A type the corpus
 gains that this client neither reads, sends nor lists as not read fails the test.
 
+AgentPod's chat activity (`agentpod.matrix-activity`: the turn card, the three deltas, the turn
+error card and the two voice keys) and the Live Activity token requests (`agentpod.live-activity`)
+are held to treaty's cases the same way by `core::treaty_activity`: every valid case is read by the
+production reader, including a higher `schema_version` or a status or kind this build was not
+taught; a case the schema refuses is read only where the module says why that is honest; every
+valid token request is one this client builds and no invalid one ever is.
+
 - **Which card.** A message whose v2 fields validate is drawn from v2
   (`core::gate_v2`, registered as `dev.superpipeline.gate.v2`); anything the
   corpus refuses — an option with no `meaning`, a subject with no `digest`, no
