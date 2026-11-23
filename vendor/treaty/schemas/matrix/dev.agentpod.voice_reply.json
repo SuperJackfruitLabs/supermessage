@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/matrix/dev.agentpod.voice_reply.json",
+  "title": "voice reply (embedded)",
+  "description": "An agent's reply, spoken. The value under the `dev.agentpod.voice_reply` content key of the MSC3245 voice message (`m.audio`) the hub posts after the agent's text reply. It names that text (`text_event_id`) so a client can draw the voice note with the text it speaks; it is not an `m.in_reply_to`, which would make other clients quote the text twice. Mirrors AgentPod's `VoiceReply` and the hub's `voiceReplyContent` (`apps/hub/src/services/matrix-as/voice-reply.ts`). Readers ignore properties they do not know.",
+  "x-treaty-carrier": {
+    "kind": "content-key",
+    "key": "dev.agentpod.voice_reply",
+    "msgtype": "m.audio"
+  },
+  "type": "object",
+  "required": ["schema_version", "text_event_id", "voice"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The content's minor version. AgentPod sends 1. Additive changes raise it; a reader draws a higher version best-effort, never drops it."
+    },
+    "text_event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "description": "The event id of the agent's text message this voice note speaks."
+    },
+    "voice": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "The speech service's voice id, or a blend such as `af_heart:60+af_bella:40`."
+    },
+    "seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3600,
+      "description": "Length of the audio in whole seconds."
+    }
+  }
+}
