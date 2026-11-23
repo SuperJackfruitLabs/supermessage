@@ -46,6 +46,22 @@
     {
       "path": "vendor/treaty/schemas/matrix/dev.agentpod.turn_error.json",
       "source": "schemas/matrix/dev.agentpod.turn_error.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/matrix/dev.agentpod.stream.delta.json",
+      "source": "schemas/matrix/dev.agentpod.stream.delta.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/matrix/dev.agentpod.thought.delta.json",
+      "source": "schemas/matrix/dev.agentpod.thought.delta.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/matrix/dev.agentpod.voice_reply.json",
+      "source": "schemas/matrix/dev.agentpod.voice_reply.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/matrix/dev.agentpod.voice_transcript.json",
+      "source": "schemas/matrix/dev.agentpod.voice_transcript.json"
     }
   ]
 }
