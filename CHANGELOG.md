@@ -7,6 +7,11 @@ to v0.1.2 predate this file.
 
 ## Unreleased
 
+- A decision card the board cancelled — its card was moved by hand or archived before anyone
+  decided — closes as "Cancelled — the card was moved or archived before anyone decided, so this
+  gate can no longer be answered here." on every client, where it read "Decided". A decision this
+  build does not know still closes the card and reads "Decided".
+
 ## v0.1.3 — 2026-11-23
 
 - A turn that failed because the agent's gateway stopped answering reads "Agent disconnected"

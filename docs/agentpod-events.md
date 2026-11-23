@@ -912,6 +912,12 @@ decision ignores it. An `expired` gate reads as the hub's whole sentence and
 names nobody: "Expired — what this gate approves passed its expiry before
 anyone approved it, so it can no longer be approved here."
 (`gate_outcome::EXPIRED_SUMMARY`, the hub's `OUTCOME_SENTENCES`). It closes the gate's card, never a follow-up's.
+A `cancelled` gate — the board ended it without a decision because its card
+was moved by hand or archived while it was pending (treaty 0.0.18) — reads
+the same way, as treaty's whole sentence naming nobody: "Cancelled — the card
+was moved or archived before anyone decided, so this gate can no longer be
+answered here." (`gate_outcome::CANCELLED_SUMMARY`). It too closes the gate's
+card, never a follow-up's.
 
 **Order does not matter.** The pass runs over the whole materialised timeline
 after every batch, so a gate is a receipt whenever both events are loaded —
