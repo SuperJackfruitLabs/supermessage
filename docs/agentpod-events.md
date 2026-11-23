@@ -314,14 +314,13 @@ charter `decisions/2026-11-07-gate-v2-is-the-decision-envelope.md`. The hub
 also puts gate.v2 fields on the same prose message, beside the unchanged
 `dev.superpipeline.gate` card, marked `suite_event_type:
 "dev.superpipeline.gate.v2"`. The wire is pinned by
-`fixtures/ecosystem-identity/matrix_gate_events.json`, vendored from treaty
-unchanged and read by `core::gate_v2`'s tests. `scripts/check-treaty-corpus.sh` fails CI when
-the copy differs from the pinned treaty package.
+`vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json`, vendored from treaty
+unchanged and read by `core::gate_v2`'s tests. `treaty verify` (`scripts/treaty.sh verify`) fails CI
+when any copy under `vendor/treaty/` differs from the release `treaty.json` pins.
 
 Every board-room type is also held to treaty's per-type corpus,
-`fixtures/treaty-matrix-events/examples.json`: `@superjackfruitlabs/treaty-matrix-events`'s
-`examples.json` at the version the same script pins, beside the JSON Schemas it is checked
-against. `core::treaty_corpus` runs each case through this client's own code: a card, notice or
+`vendor/treaty/fixtures/matrix-events/examples.json`: treaty's `fixtures/matrix-events/examples.json`
+at the pinned release, beside the JSON Schemas it is checked against. `core::treaty_corpus` runs each case through this client's own code: a card, notice or
 receipt it reads must read every valid case and no case the schema refuses; an answer it sends
 must be one some valid card builds, and no invalid answer may ever be built. A type the corpus
 gains that this client neither reads, sends nor lists as not read fails the test.

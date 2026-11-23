@@ -938,7 +938,7 @@ pub const GATE_DECISION_SUITE_TYPE: &str = "dev.superpipeline.gate.decision.v1";
 ///
 /// Split out from the send so the wire shape can be asserted without a
 /// homeserver: this is the half that has to agree with two other codebases,
-/// and it is pinned by `fixtures/ecosystem-identity/matrix_gate_events.json`
+/// and it is pinned by `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json`
 /// in AgentPod.
 ///
 /// `comment` is omitted entirely when absent rather than sent as `null` — a
@@ -6777,7 +6777,7 @@ mod tests {
 /// it, and this client that sends the answer. A rename here is a gate that
 /// silently never resolves, which reads to the person who tapped as a button
 /// that did nothing. Pinned by
-/// `fixtures/ecosystem-identity/matrix_gate_events.json` in treaty.
+/// `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json` in treaty.
 #[cfg(test)]
 mod gate_decision_tests {
     use super::*;

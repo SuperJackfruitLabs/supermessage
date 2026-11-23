@@ -1,0 +1,2465 @@
+{
+  "corpus": "agentpod-live-activity",
+  "version": 1,
+  "howToRead": "schemas/<name>.valid holds bodies that must validate against schemas/agentpod/<name>.json, keyed by a label; schemas/<name>.invalid holds bodies that must not, each with why. The two fleet-content-state fixtures are AgentPod's packages/contract/fixtures/fleet-content-state.json and fleet-content-state-v2.json. The v2 fixture is corrected: its \"Coder Kai\" row carried \"completed\": 0, \"total\": 0, which the hub never emits; apps/hub/src/services/push/fleet/state.ts omits both while a working turn's total is 0, so the row here has neither.",
+  "schemas": {
+    "fleet-content-state.v1": {
+      "valid": {
+        "fleet-content-state.json, AgentPod's v1 fixture": {
+          "agents": [
+            {
+              "roomId": "!ray:hs",
+              "name": "Research Ray",
+              "state": "needs_you",
+              "step": "Waiting for you",
+              "since": 1790670000
+            },
+            {
+              "roomId": "!lyra:hs",
+              "name": "Artistic Lyra",
+              "state": "working",
+              "step": "Running the tests",
+              "completed": 3,
+              "total": 7,
+              "since": 1790669880
+            },
+            {
+              "roomId": "!quill:hs",
+              "name": "Writer Quill",
+              "state": "failed",
+              "step": "Failed at step 4 of 7",
+              "completed": 4,
+              "total": 7,
+              "since": 1790669500
+            }
+          ],
+          "more": 1,
+          "decision": {
+            "roomId": "!ray:hs",
+            "eventId": "$perm1",
+            "agent": "Research Ray",
+            "kind": "permission",
+            "question": "Run git push origin main?",
+            "options": [
+              {
+                "id": "Allow once",
+                "label": "Allow once",
+                "declines": false
+              },
+              {
+                "id": "Reject",
+                "label": "Reject",
+                "declines": true
+              }
+            ]
+          },
+          "needsYou": 1,
+          "working": 1,
+          "updatedAt": 1790670123
+        },
+        "fleet-content-state-v2.json, AgentPod's v2 fixture with the shape the hub emits": {
+          "agents": [
+            {
+              "roomId": "!lyra:hs",
+              "mxid": "@agent_artistic-lyra:hs",
+              "name": "Artistic Lyra",
+              "state": "working",
+              "phase": "tools",
+              "step": "Running the tests",
+              "completed": 3,
+              "total": 7,
+              "since": 1790669880
+            },
+            {
+              "roomId": "!kai:hs",
+              "mxid": "@agent_coder-kai:hs",
+              "name": "Coder Kai",
+              "state": "working",
+              "phase": "thinking",
+              "step": "Thinking",
+              "since": 1790670060
+            },
+            {
+              "roomId": "!quill:hs",
+              "mxid": "@agent_writer-quill:hs",
+              "name": "Writer Quill",
+              "state": "failed",
+              "step": "Failed at step 4 of 7",
+              "completed": 4,
+              "total": 7,
+              "since": 1790669400,
+              "endedAt": 1790669472
+            }
+          ],
+          "more": 1,
+          "decision": {
+            "roomId": "!ray:hs",
+            "eventId": "$perm1",
+            "agent": "Research Ray",
+            "kind": "permission",
+            "question": "Run git push origin main?",
+            "options": [
+              {
+                "id": "Allow once",
+                "label": "Allow once",
+                "declines": false
+              },
+              {
+                "id": "Reject",
+                "label": "Reject",
+                "declines": true
+              }
+            ]
+          },
+          "needsYou": 1,
+          "working": 2,
+          "updatedAt": 1790670123
+        },
+        "a card waiting on a person, with no options": {
+          "agents": [
+            {
+              "roomId": "!lyra:hs",
+              "mxid": "@agent_artistic-lyra:hs",
+              "name": "Artistic Lyra",
+              "state": "working",
+              "phase": "tools",
+              "step": "Running the tests",
+              "completed": 3,
+              "total": 7,
+              "since": 1790669880
+            },
+            {
+              "roomId": "!kai:hs",
+              "mxid": "@agent_coder-kai:hs",
+              "name": "Coder Kai",
+              "state": "working",
+              "phase": "thinking",
+              "step": "Thinking",
+              "since": 1790670060
+            },
+            {
+              "roomId": "!quill:hs",
+              "mxid": "@agent_writer-quill:hs",
+              "name": "Writer Quill",
+              "state": "failed",
+              "step": "Failed at step 4 of 7",
+              "completed": 4,
+              "total": 7,
+              "since": 1790669400,
+              "endedAt": 1790669472
+            }
+          ],
+          "more": 1,
+          "decision": {
+            "roomId": "!ada:hs",
+            "eventId": "$attn1",
+            "agent": "Ada",
+            "kind": "attention",
+            "question": "The card is waiting on you: which customer list?",
+            "options": []
+          },
+          "needsYou": 1,
+          "working": 2,
+          "updatedAt": 1790670123
+        },
+        "a quiet fleet": {
+          "agents": [],
+          "more": 0,
+          "needsYou": 0,
+          "working": 0,
+          "updatedAt": 1790670123
+        },
+        "a finished turn": {
+          "agents": [
+            {
+              "roomId": "!kai:hs",
+              "name": "Coder Kai",
+              "state": "done",
+              "completed": 5,
+              "total": 5,
+              "since": 1790669400,
+              "endedAt": 1790669637
+            }
+          ],
+          "more": 0,
+          "needsYou": 0,
+          "working": 0,
+          "updatedAt": 1790670123
+        },
+        "a step of exactly 60 characters, counted in code points": {
+          "agents": [
+            {
+              "roomId": "!kai:hs",
+              "name": "Coder Kai",
+              "state": "working",
+              "phase": "writing",
+              "step": "🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀",
+              "since": 1790669400
+            }
+          ],
+          "more": 0,
+          "needsYou": 0,
+          "working": 1,
+          "updatedAt": 1790670123
+        }
+      },
+      "invalid": [
+        {
+          "why": "a key the app has never heard of",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123,
+            "mood": "busy"
+          }
+        },
+        {
+          "why": "four agents: at most three are listed",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              },
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "a step over 60 characters",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀🚀",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "a question over 120 characters",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "three inline options",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                },
+                {
+                  "id": "Allow always",
+                  "label": "Always",
+                  "declines": false
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "an agent state the contract does not know",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "sleeping",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "a phase the contract does not know",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "Thinking",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "a decision kind the contract does not know",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "question",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "no updatedAt",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2
+          }
+        },
+        {
+          "why": "no needsYou",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "a negative count",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": -1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "a since that is not whole seconds",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880.5
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "an agent with an empty name",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "an agent without its room",
+          "body": {
+            "agents": [
+              {
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "an agent with a key the app has never heard of",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880,
+                "avatar": "mxc://hs/abc"
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "an option without declines",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once"
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "a decision without its options",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?"
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "a decision with a key the app has never heard of",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": 3,
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ],
+              "urgent": true
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        },
+        {
+          "why": "completed as a string",
+          "body": {
+            "agents": [
+              {
+                "roomId": "!lyra:hs",
+                "mxid": "@agent_artistic-lyra:hs",
+                "name": "Artistic Lyra",
+                "state": "working",
+                "phase": "tools",
+                "step": "Running the tests",
+                "completed": "3",
+                "total": 7,
+                "since": 1790669880
+              },
+              {
+                "roomId": "!kai:hs",
+                "mxid": "@agent_coder-kai:hs",
+                "name": "Coder Kai",
+                "state": "working",
+                "phase": "thinking",
+                "step": "Thinking",
+                "since": 1790670060
+              },
+              {
+                "roomId": "!quill:hs",
+                "mxid": "@agent_writer-quill:hs",
+                "name": "Writer Quill",
+                "state": "failed",
+                "step": "Failed at step 4 of 7",
+                "completed": 4,
+                "total": 7,
+                "since": 1790669400,
+                "endedAt": 1790669472
+              }
+            ],
+            "more": 1,
+            "decision": {
+              "roomId": "!ray:hs",
+              "eventId": "$perm1",
+              "agent": "Research Ray",
+              "kind": "permission",
+              "question": "Run git push origin main?",
+              "options": [
+                {
+                  "id": "Allow once",
+                  "label": "Allow once",
+                  "declines": false
+                },
+                {
+                  "id": "Reject",
+                  "label": "Reject",
+                  "declines": true
+                }
+              ]
+            },
+            "needsYou": 1,
+            "working": 2,
+            "updatedAt": 1790670123
+          }
+        }
+      ]
+    },
+    "live-activity-payload.v1": {
+      "valid": {
+        "a push-to-start": {
+          "aps": {
+            "timestamp": 1790670123,
+            "event": "start",
+            "attributes-type": "FleetActivityAttributes",
+            "attributes": {
+              "readerId": "@reader:hs"
+            },
+            "content-state": {
+              "agents": [
+                {
+                  "roomId": "!lyra:hs",
+                  "mxid": "@agent_artistic-lyra:hs",
+                  "name": "Artistic Lyra",
+                  "state": "working",
+                  "phase": "tools",
+                  "step": "Running the tests",
+                  "completed": 3,
+                  "total": 7,
+                  "since": 1790669880
+                },
+                {
+                  "roomId": "!kai:hs",
+                  "mxid": "@agent_coder-kai:hs",
+                  "name": "Coder Kai",
+                  "state": "working",
+                  "phase": "thinking",
+                  "step": "Thinking",
+                  "since": 1790670060
+                },
+                {
+                  "roomId": "!quill:hs",
+                  "mxid": "@agent_writer-quill:hs",
+                  "name": "Writer Quill",
+                  "state": "failed",
+                  "step": "Failed at step 4 of 7",
+                  "completed": 4,
+                  "total": 7,
+                  "since": 1790669400,
+                  "endedAt": 1790669472
+                }
+              ],
+              "more": 1,
+              "decision": {
+                "roomId": "!ray:hs",
+                "eventId": "$perm1",
+                "agent": "Research Ray",
+                "kind": "permission",
+                "question": "Run git push origin main?",
+                "options": [
+                  {
+                    "id": "Allow once",
+                    "label": "Allow once",
+                    "declines": false
+                  },
+                  {
+                    "id": "Reject",
+                    "label": "Reject",
+                    "declines": true
+                  }
+                ]
+              },
+              "needsYou": 1,
+              "working": 2,
+              "updatedAt": 1790670123
+            },
+            "alert": {
+              "title": "Artistic Lyra",
+              "body": "Running the tests"
+            },
+            "stale-date": 1790671023
+          }
+        },
+        "an update": {
+          "aps": {
+            "timestamp": 1790670126,
+            "event": "update",
+            "content-state": {
+              "agents": [
+                {
+                  "roomId": "!ray:hs",
+                  "name": "Research Ray",
+                  "state": "needs_you",
+                  "step": "Waiting for you",
+                  "since": 1790670000
+                },
+                {
+                  "roomId": "!lyra:hs",
+                  "name": "Artistic Lyra",
+                  "state": "working",
+                  "step": "Running the tests",
+                  "completed": 3,
+                  "total": 7,
+                  "since": 1790669880
+                },
+                {
+                  "roomId": "!quill:hs",
+                  "name": "Writer Quill",
+                  "state": "failed",
+                  "step": "Failed at step 4 of 7",
+                  "completed": 4,
+                  "total": 7,
+                  "since": 1790669500
+                }
+              ],
+              "more": 1,
+              "decision": {
+                "roomId": "!ray:hs",
+                "eventId": "$perm1",
+                "agent": "Research Ray",
+                "kind": "permission",
+                "question": "Run git push origin main?",
+                "options": [
+                  {
+                    "id": "Allow once",
+                    "label": "Allow once",
+                    "declines": false
+                  },
+                  {
+                    "id": "Reject",
+                    "label": "Reject",
+                    "declines": true
+                  }
+                ]
+              },
+              "needsYou": 1,
+              "working": 1,
+              "updatedAt": 1790670123
+            },
+            "stale-date": 1790671026
+          }
+        },
+        "an end": {
+          "aps": {
+            "timestamp": 1790670200,
+            "event": "end",
+            "content-state": {
+              "agents": [
+                {
+                  "roomId": "!kai:hs",
+                  "name": "Coder Kai",
+                  "state": "done",
+                  "completed": 5,
+                  "total": 5,
+                  "since": 1790669400,
+                  "endedAt": 1790669637
+                }
+              ],
+              "more": 0,
+              "needsYou": 0,
+              "working": 0,
+              "updatedAt": 1790670123
+            },
+            "dismissal-date": 1790670320
+          }
+        }
+      },
+      "invalid": [
+        {
+          "why": "a key beside aps",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": 1790671023
+            },
+            "priority": 10
+          }
+        },
+        {
+          "why": "a key in aps the hub never sends",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": 1790671023,
+              "sound": "default"
+            }
+          }
+        },
+        {
+          "why": "an attributes type the app does not register",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "start",
+              "attributes-type": "ActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": 1790671023
+            }
+          }
+        },
+        {
+          "why": "attributes without a reader",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {},
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": 1790671023
+            }
+          }
+        },
+        {
+          "why": "attributes with a key beside the reader",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs",
+                "roomId": "!ray:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": 1790671023
+            }
+          }
+        },
+        {
+          "why": "an event other than start, update or end",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "stop",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": 1790671023
+            }
+          }
+        },
+        {
+          "why": "no content-state",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": 1790671023
+            }
+          }
+        },
+        {
+          "why": "no timestamp",
+          "body": {
+            "aps": {
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": 1790671023
+            }
+          }
+        },
+        {
+          "why": "a timestamp that is not whole seconds",
+          "body": {
+            "aps": {
+              "timestamp": "1790670123",
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": 1790671023
+            }
+          }
+        },
+        {
+          "why": "an alert without a body",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra"
+              },
+              "stale-date": 1790671023
+            }
+          }
+        },
+        {
+          "why": "an alert with a sound",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests",
+                "sound": "default"
+              },
+              "stale-date": 1790671023
+            }
+          }
+        },
+        {
+          "why": "a content-state the producer schema refuses",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123,
+                "mood": "busy"
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": 1790671023
+            }
+          }
+        },
+        {
+          "why": "a negative stale-date",
+          "body": {
+            "aps": {
+              "timestamp": 1790670123,
+              "event": "start",
+              "attributes-type": "FleetActivityAttributes",
+              "attributes": {
+                "readerId": "@reader:hs"
+              },
+              "content-state": {
+                "agents": [
+                  {
+                    "roomId": "!lyra:hs",
+                    "mxid": "@agent_artistic-lyra:hs",
+                    "name": "Artistic Lyra",
+                    "state": "working",
+                    "phase": "tools",
+                    "step": "Running the tests",
+                    "completed": 3,
+                    "total": 7,
+                    "since": 1790669880
+                  },
+                  {
+                    "roomId": "!kai:hs",
+                    "mxid": "@agent_coder-kai:hs",
+                    "name": "Coder Kai",
+                    "state": "working",
+                    "phase": "thinking",
+                    "step": "Thinking",
+                    "since": 1790670060
+                  },
+                  {
+                    "roomId": "!quill:hs",
+                    "mxid": "@agent_writer-quill:hs",
+                    "name": "Writer Quill",
+                    "state": "failed",
+                    "step": "Failed at step 4 of 7",
+                    "completed": 4,
+                    "total": 7,
+                    "since": 1790669400,
+                    "endedAt": 1790669472
+                  }
+                ],
+                "more": 1,
+                "decision": {
+                  "roomId": "!ray:hs",
+                  "eventId": "$perm1",
+                  "agent": "Research Ray",
+                  "kind": "permission",
+                  "question": "Run git push origin main?",
+                  "options": [
+                    {
+                      "id": "Allow once",
+                      "label": "Allow once",
+                      "declines": false
+                    },
+                    {
+                      "id": "Reject",
+                      "label": "Reject",
+                      "declines": true
+                    }
+                  ]
+                },
+                "needsYou": 1,
+                "working": 2,
+                "updatedAt": 1790670123
+              },
+              "alert": {
+                "title": "Artistic Lyra",
+                "body": "Running the tests"
+              },
+              "stale-date": -1
+            }
+          }
+        }
+      ]
+    }
+  }
+}

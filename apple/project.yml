@@ -236,15 +236,12 @@ targets:
     platform: iOS
     sources:
       - path: SupermessageKitTests
-      # The hub's Live Activity ContentState, the same file agentpod's
-      # contract test holds (spec 2026-09-29, A6): decoded by
-      # FleetActivityAttributesTests, so the two sides are pinned to one
-      # sample rather than to each other's reading of the spec.
-      - path: ../fixtures/fleet-content-state.json
-        buildPhase: resources
-      # The same state with spec 2026-09-30's additions (mxid, phase,
-      # endedAt), which agentpod's contract test round-trips too.
-      - path: ../fixtures/fleet-content-state-v2.json
+      # The hub's Live Activity ContentState: treaty's cases for
+      # fleet-content-state.v1, vendored byte for byte and held to the pinned
+      # release by `treaty verify`. Decoded by FleetActivityAttributesTests,
+      # so this app and the hub are pinned to one contract rather than to
+      # each other's reading of it.
+      - path: ../vendor/treaty/fixtures/agentpod-live-activity/examples.json
         buildPhase: resources
       # The core's CAF remux of an agent's spoken reply, pinned to the core
       # by `the_ios_player_fixture_is_what_the_remuxer_writes`, so

@@ -959,7 +959,7 @@ impl CustomEventRenderer for PermissionRequestRenderer {
 pub const GATE_EVENT_TYPE: &str = "dev.superpipeline.gate.v1";
 
 /// The only option ids superpipeline resolves against — its `GateDecision` union,
-/// mirrored here and pinned by `fixtures/ecosystem-identity/matrix_gate_events.json`
+/// mirrored here and pinned by `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json`
 /// in AgentPod, which both repos validate against.
 pub const GATE_OPTION_IDS: [&str; 3] = ["approve", "request_changes", "reject"];
 
@@ -2264,7 +2264,7 @@ mod tool_title_tests {
 
 /// The gate renderer, checked against the shared corpus.
 ///
-/// These cases mirror `fixtures/ecosystem-identity/matrix_gate_events.json` in
+/// These cases mirror `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json` in
 /// treaty. They are hand-written rather than loaded, which is the same
 /// arrangement superpipeline uses: the corpus is plain JSON depending on no type
 /// from any repo, and each repo reimplements against it. A published package

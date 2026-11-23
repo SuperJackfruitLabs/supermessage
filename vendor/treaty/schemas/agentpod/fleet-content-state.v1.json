@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/agentpod/fleet-content-state.v1.json",
+  "title": "The fleet Live Activity's content state",
+  "description": "What the AgentPod hub puts in a fleet Live Activity push's `aps.content-state`: one card for a reader's whole fleet, what needs them and what is happening now. This is the producer's shape, as strict as AgentPod's zod `FleetContentState` (packages/contract/src/fleet-live.ts): no key the app has never heard of may leave the hub, and every bound is applied before a push. Readers are lenient: SuperMessage's Swift decoder (`FleetActivityAttributes.ContentState`) ignores unknown keys, reads a missing optional key as none, skips an agent or option it cannot read, and reads an unknown agent state as `active`. A reader checks against this schema only to test what it is sent, never to refuse a push. Keys are camelCase; times are Unix seconds. The text here (agent names, the step, a decision's question and options) reaches Apple in plaintext, by operator decision of 2026-09-29.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agents", "more", "needsYou", "working", "updatedAt"],
+  "properties": {
+    "agents": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/agent"
+      },
+      "description": "At most three: needs_you first, then working, then the most recent."
+    },
+    "more": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Active agents not listed."
+    },
+    "decision": {
+      "$ref": "#/$defs/decision",
+      "description": "The oldest pending decision."
+    },
+    "needsYou": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Pending decisions in all."
+    },
+    "working": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Agents working now."
+    },
+    "updatedAt": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Unix seconds."
+    }
+  },
+  "$defs": {
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roomId", "name", "state", "since"],
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mxid": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The agent's Matrix id; the app keys its cached avatar by it."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "state": {
+          "enum": ["working", "needs_you", "active", "done", "failed"]
+        },
+        "phase": {
+          "enum": ["thinking", "tools", "writing"],
+          "description": "Where a working turn is on the card's track. Only while state is working."
+        },
+        "step": {
+          "type": "string",
+          "maxLength": 60,
+          "description": "The step it is on, or how its turn ended. At most 60 characters (code points)."
+        },
+        "completed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Tool calls done. The hub omits it, and total, while a working turn has made none."
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Tool calls made so far."
+        },
+        "since": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix seconds: when the turn started (also for a finished row), or the last activity."
+        },
+        "endedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix seconds: when the turn finished. Only while state is done or failed."
+        }
+      }
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "declines"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What the app sends back to answer: a permission option's name, or a gate option's id."
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "declines": {
+          "type": "boolean",
+          "description": "It refuses rather than grants."
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roomId", "eventId", "agent", "kind", "question", "options"],
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": ["permission", "gate", "attention"],
+          "description": "`attention` (2026-11-08) is a card waiting on a person; it is sent with no options. A reader that predates a kind may read it as a permission, which is why a new kind offers nothing it could not send."
+        },
+        "question": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "At most 120 characters (code points)."
+        },
+        "options": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/option"
+          },
+          "description": "Inline options only: at most two. Never an \"always\" grant."
+        }
+      }
+    }
+  }
+}

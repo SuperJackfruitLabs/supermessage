@@ -1,0 +1,51 @@
+{
+  "$schema": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/treaty/product-manifest.v1.json",
+  "product": "supermessage",
+  "treaty": "0.0.17",
+  "produces": [],
+  "consumes": [
+    "superexchange.board-room",
+    "agentpod.harness-permission",
+    "accounts.identity-corpus",
+    "agentpod.matrix-activity",
+    "agentpod.live-activity"
+  ],
+  "vendored": [
+    {
+      "path": "vendor/treaty/fixtures/matrix-events/examples.json",
+      "source": "fixtures/matrix-events/examples.json"
+    },
+    {
+      "path": "vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json",
+      "source": "fixtures/ecosystem-identity/matrix_gate_events.json"
+    },
+    {
+      "path": "vendor/treaty/fixtures/agentpod-live-activity/examples.json",
+      "source": "fixtures/agentpod-live-activity/examples.json"
+    },
+    {
+      "path": "vendor/treaty/fixtures/http/agentpod/live-activity.v1.cases.json",
+      "source": "fixtures/http/agentpod/live-activity.v1.cases.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/http/agentpod/live-activity.v1.openapi.json",
+      "source": "schemas/http/agentpod/live-activity.v1.openapi.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/agentpod/fleet-content-state.v1.json",
+      "source": "schemas/agentpod/fleet-content-state.v1.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/matrix/dev.agentpod.turn.v1.json",
+      "source": "schemas/matrix/dev.agentpod.turn.v1.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/matrix/dev.agentpod.tool.update.json",
+      "source": "schemas/matrix/dev.agentpod.tool.update.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/matrix/dev.agentpod.turn_error.json",
+      "source": "schemas/matrix/dev.agentpod.turn_error.json"
+    }
+  ]
+}

@@ -55,7 +55,8 @@ void describe('classifier', () => {
     ['pnpm lock', ['pnpm-lock.yaml']],
     ['design tokens source', ['design/tokens.toml']],
     ['generated product artifact (Swift tokens)', ['apple/Supermessage/Generated/ThemeTokens.swift']],
-    ['vendored treaty corpus', ['fixtures/ecosystem-identity/identity.json']],
+    ['vendored treaty data', ['vendor/treaty/fixtures/matrix-events/examples.json']],
+    ['the treaty manifest', ['treaty.json']],
     ['landing', ['landing/src/pages/index.astro']],
     ['unknown path', ['CHANGELOG.md']],
     ['agent notes', ['CLAUDE.md']],
@@ -246,7 +247,7 @@ const expected = (plan, event) => {
     'android-instrumented': want(p.android),
     android: want(p.android),
     licences: want(p.licences),
-    'treaty-corpus': want(!p.docs_only),
+    treaty: want(!p.docs_only),
     'docs-claims': want(p.docs_only),
   };
 };
@@ -407,7 +408,7 @@ void describe('the workflow keeps its contract', () => {
       'android-instrumented': "    needs: [changes, android-libs, android-avd]\n    if: needs.changes.outputs.android == 'true'\n",
       android: "    if: always() && needs.changes.outputs.android == 'true'\n",
       licences: "    needs: changes\n    if: needs.changes.outputs.licences == 'true'\n",
-      'treaty-corpus': "    needs: changes\n    # Every change but a docs-only pull request, including when `changes`\n    # itself failed.\n    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}\n",
+      treaty: "    needs: changes\n    # Every change but a docs-only pull request, including when `changes`\n    # itself failed.\n    if: ${{ !cancelled() && needs.changes.outputs.docs_only != 'true' }}\n",
       'docs-claims': "    needs: changes\n    if: needs.changes.outputs.docs_only == 'true'\n",
     };
     assert.deepEqual(Object.keys(gates).sort(), Object.keys(JOBS).sort());

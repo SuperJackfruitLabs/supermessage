@@ -1,8 +1,8 @@
 //! Treaty's board-room corpus, read by this client's own code.
 //!
-//! `fixtures/treaty-matrix-events/examples.json` is
-//! `@superjackfruitlabs/treaty-matrix-events`'s `examples.json` at the version
-//! `scripts/check-treaty-corpus.sh` pins: for every board-room event type, content a sender may
+//! `vendor/treaty/fixtures/matrix-events/examples.json` is treaty's
+//! `fixtures/matrix-events/examples.json` at the release `treaty.json` pins (`treaty verify`
+//! holds the copy to it): for every board-room event type, content a sender may
 //! emit (`valid`) and content a sender must not emit and a carrier must not act on (`invalid`,
 //! each saying what refuses it). treaty's JSON Schemas are the contract; this is the contract held
 //! to this client, with no dependency on treaty at run time.
@@ -32,7 +32,7 @@ use crate::custom_events::{
 use crate::dto::TimelineItemDto;
 use crate::embedded::{embedded_suite_event, EMBEDDED_GATE_KEY, EMBEDDED_PERMISSION_KEY};
 
-const EXAMPLES: &str = include_str!("../../../fixtures/treaty-matrix-events/examples.json");
+const EXAMPLES: &str = include_str!("../../../vendor/treaty/fixtures/matrix-events/examples.json");
 
 /// The key a v1 question card rides under on its prose message. Named here only: this client
 /// does not read it (see [`NOT_READ`]).
@@ -145,6 +145,19 @@ const SENT: &[(&str, &str)] = &[
         crate::gate_checks::CHECK_OVERRIDE_SUITE_TYPE,
         crate::gate_checks::CHECKS_WAITING_TYPE,
     ),
+];
+
+/// AgentPod's chat activity (`agentpod.matrix-activity`): a station's turns, deltas, errors and
+/// voice, not board-room cards. The same corpus holds their cases; their readers are held to
+/// them separately.
+const ACTIVITY: &[&str] = &[
+    "dev.agentpod.stream.delta",
+    "dev.agentpod.thought.delta",
+    "dev.agentpod.tool.update",
+    "dev.agentpod.turn.v1",
+    "dev.agentpod.turn_error",
+    "dev.agentpod.voice_reply",
+    "dev.agentpod.voice_transcript",
 ];
 
 /// Types this client does not read, and why.
@@ -422,6 +435,7 @@ fn every_type_in_the_corpus_is_accounted_for() {
         .map(|(t, _)| *t)
         .chain(SENT.iter().map(|(t, _)| *t))
         .chain(NOT_READ.iter().map(|(t, _)| *t))
+        .chain(ACTIVITY.iter().copied())
         .map(str::to_string)
         .collect();
     assert_eq!(

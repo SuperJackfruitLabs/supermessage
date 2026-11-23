@@ -7,7 +7,7 @@
 //
 // A pull request is docs-only when every path it changes is a root README / README.*, or sits
 // under docs/ or docs-site/, and is not one of the PRODUCT_INPUTS below. Then every component job
-// (tokens, frontend, rust, ios, android, licences) and treaty-corpus are skipped and only the
+// (tokens, frontend, rust, ios, android, licences) and treaty are skipped and only the
 // docs lane runs: the docs-site build and the Rust docs_claims test. Anything else (any other path, a mixed change, an empty diff, a missing
 // merge base, a failed diff, an error, any event but pull_request) keeps the plan `changes`
 // already made. A doubt is never docs-only.
@@ -104,7 +104,7 @@ export const JOBS = {
   'android-instrumented': (plan) => plan.android,
   android: (plan) => plan.android,
   licences: (plan) => plan.licences,
-  'treaty-corpus': (plan) => !plan.docs_only,
+  treaty: (plan) => !plan.docs_only,
   'docs-claims': (plan) => plan.docs_only,
 };
 

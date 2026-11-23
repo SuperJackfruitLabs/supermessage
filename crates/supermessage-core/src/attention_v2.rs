@@ -7,7 +7,7 @@
 //! board's room, marked `suite_event_type: "dev.superpipeline.attention.v2"`.
 //! There is no v1 card for a waiting card: a message whose v2 fields do not
 //! validate stays the prose it is. The wire is pinned by
-//! `fixtures/ecosystem-identity/matrix_gate_events.json`.
+//! `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json`.
 //!
 //! What chat may offer, and nothing else (§2):
 //!
@@ -603,7 +603,7 @@ mod tests {
     use serde_json::json;
 
     const CORPUS: &str =
-        include_str!("../../../fixtures/ecosystem-identity/matrix_gate_events.json");
+        include_str!("../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json");
 
     fn cases(suite_type: &str, which: &str) -> Vec<(String, Value)> {
         let corpus: Value = serde_json::from_str(CORPUS).expect("the corpus is JSON");

@@ -7,7 +7,7 @@
 //! clients. This client never drew that v1 card — a question without valid v2
 //! fields stays the prose it is, answerable by replying a number or a label,
 //! exactly as before. The wire is pinned by
-//! `fixtures/ecosystem-identity/matrix_gate_events.json`.
+//! `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json`.
 //!
 //! A question is drawn by the same rules as a gate.v2 (`crate::gate_v2`):
 //! options by **meaning** (`choose` for an ordinary answer, `approve` /
@@ -513,7 +513,7 @@ mod tests {
     use serde_json::json;
 
     const CORPUS: &str =
-        include_str!("../../../fixtures/ecosystem-identity/matrix_gate_events.json");
+        include_str!("../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json");
 
     fn cases(suite_type: &str, which: &str) -> Vec<(String, Value)> {
         let corpus: Value = serde_json::from_str(CORPUS).expect("the corpus is JSON");

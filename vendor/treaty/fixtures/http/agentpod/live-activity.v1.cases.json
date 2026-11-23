@@ -1,0 +1,229 @@
+{
+  "operations": {
+    "registerLiveActivityToken": {
+      "request": {
+        "valid": {
+          "a push-to-start token": {
+            "kind": "start",
+            "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+            "environment": "production",
+            "device_id": "ABCDEFGHIJ"
+          },
+          "an update token for one activity": {
+            "kind": "update",
+            "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+            "environment": "sandbox",
+            "device_id": "ABCDEFGHIJ",
+            "activity_id": "5E1A3F2C-8B7D-4C6A-9E3F-1A2B3C4D5E6F"
+          },
+          "a long push-to-start token in upper-case hex": {
+            "kind": "start",
+            "token": "0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F0F",
+            "environment": "production",
+            "device_id": "ABCDEFGHIJ"
+          },
+          "a start token with an activity id, which the hub ignores": {
+            "kind": "start",
+            "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+            "environment": "production",
+            "device_id": "ABCDEFGHIJ",
+            "activity_id": "5E1A3F2C"
+          },
+          "an unknown key beside the shape, which the hub drops": {
+            "kind": "start",
+            "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+            "environment": "production",
+            "device_id": "ABCDEFGHIJ",
+            "user_id": "@someone:hs"
+          }
+        },
+        "invalid": [
+          {
+            "why": "an update token without its activity (M_BAD_JSON)",
+            "body": {
+              "kind": "update",
+              "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "environment": "production",
+              "device_id": "ABCDEFGHIJ"
+            }
+          },
+          {
+            "why": "a kind the hub does not know (M_BAD_JSON)",
+            "body": {
+              "kind": "end",
+              "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "environment": "production",
+              "device_id": "ABCDEFGHIJ"
+            }
+          },
+          {
+            "why": "a token shorter than 32 hex digits (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "environment": "production",
+              "device_id": "ABCDEFGHIJ"
+            }
+          },
+          {
+            "why": "a token longer than 512 hex digits (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "token": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "environment": "production",
+              "device_id": "ABCDEFGHIJ"
+            }
+          },
+          {
+            "why": "a token that is not hex (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "token": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+              "environment": "production",
+              "device_id": "ABCDEFGHIJ"
+            }
+          },
+          {
+            "why": "an environment other than production or sandbox (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "environment": "development",
+              "device_id": "ABCDEFGHIJ"
+            }
+          },
+          {
+            "why": "no environment (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "device_id": "ABCDEFGHIJ"
+            }
+          },
+          {
+            "why": "no device (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "environment": "production"
+            }
+          },
+          {
+            "why": "an empty device id (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "environment": "production",
+              "device_id": ""
+            }
+          },
+          {
+            "why": "a device id over 255 characters (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "environment": "production",
+              "device_id": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+            }
+          },
+          {
+            "why": "an empty activity id (M_BAD_JSON)",
+            "body": {
+              "kind": "update",
+              "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "environment": "production",
+              "device_id": "ABCDEFGHIJ",
+              "activity_id": ""
+            }
+          },
+          {
+            "why": "an activity id over 255 characters (M_BAD_JSON)",
+            "body": {
+              "kind": "update",
+              "token": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+              "environment": "production",
+              "device_id": "ABCDEFGHIJ",
+              "activity_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            }
+          },
+          {
+            "why": "no token (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "environment": "production",
+              "device_id": "ABCDEFGHIJ"
+            }
+          },
+          {
+            "why": "a body that is not an object (M_BAD_JSON)",
+            "body": [
+              "start"
+            ]
+          }
+        ]
+      }
+    },
+    "removeLiveActivityToken": {
+      "request": {
+        "valid": {
+          "the device's push-to-start token": {
+            "kind": "start",
+            "device_id": "ABCDEFGHIJ"
+          },
+          "every update token of the device": {
+            "kind": "update",
+            "device_id": "ABCDEFGHIJ"
+          },
+          "one activity's update token": {
+            "kind": "update",
+            "device_id": "ABCDEFGHIJ",
+            "activity_id": "5E1A3F2C-8B7D-4C6A-9E3F-1A2B3C4D5E6F"
+          }
+        },
+        "invalid": [
+          {
+            "why": "no kind (M_BAD_JSON)",
+            "body": {
+              "device_id": "ABCDEFGHIJ"
+            }
+          },
+          {
+            "why": "a kind the hub does not know (M_BAD_JSON)",
+            "body": {
+              "kind": "all",
+              "device_id": "ABCDEFGHIJ"
+            }
+          },
+          {
+            "why": "no device (M_BAD_JSON)",
+            "body": {
+              "kind": "start"
+            }
+          },
+          {
+            "why": "an empty device id (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "device_id": ""
+            }
+          },
+          {
+            "why": "a device id over 255 characters (M_BAD_JSON)",
+            "body": {
+              "kind": "start",
+              "device_id": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+            }
+          },
+          {
+            "why": "an empty activity id (M_BAD_JSON)",
+            "body": {
+              "kind": "update",
+              "device_id": "ABCDEFGHIJ",
+              "activity_id": ""
+            }
+          }
+        ]
+      }
+    }
+  }
+}

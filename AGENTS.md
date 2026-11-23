@@ -52,6 +52,11 @@ Remaining follow-ups:
 
 ```
 README.md            — current capabilities, validation/release caveats and build entry point
+treaty.json          — the treaty release this client pins and the crossings it consumes;
+                       `./scripts/treaty.sh verify` checks it (CI's `treaty` job)
+vendor/treaty/       — copies of treaty's data, byte for byte, written by
+                       `./scripts/treaty.sh sync`; Rust reads them with include_str!
+                       and the iOS kit tests as resources. Never edit one by hand.
 docs/tech-stack.md   — full stack decision record: choices, rationale, risks, protocol choices, milestones
 docs/positioning.md  — suite context, boundaries (hard rules), near-term wedge, milestone adjustments
                        NOT IN THIS REPOSITORY. Internal strategy notes, git-ignored and unpublished.
@@ -345,8 +350,9 @@ the core, which sends them to the hub's
 the session's access token (`core::live_activity`; the token never reaches
 Swift), and deletes them on sign-out. `FleetActivityAttributes` mirrors the
 hub's `ContentState` (the contract; decoded leniently, times in Unix
-seconds) and `fixtures/fleet-content-state.json` pins it, shared with
-agentpod. **This is the one place a person's words reach Apple:** agent
+seconds), and treaty's `fleet-content-state.v1` cases
+(`vendor/treaty/fixtures/agentpod-live-activity/examples.json`) pin it for both
+sides. **This is the one place a person's words reach Apple:** agent
 names, steps and a decision's question and options travel in plaintext in
 the Live Activity pushes, by operator decision of 2026-09-29. Message pushes
 stay `event_id_only`. The card's layout is `FleetActivityCard`

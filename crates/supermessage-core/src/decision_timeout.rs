@@ -4,7 +4,7 @@
 //! charter → `decisions/2026-11-08-unanswered-decisions-remind-then-escalate.md`.
 //! superpipeline owns the clock; this client only shows it. Three things
 //! cross the wire, all pinned by
-//! `fixtures/ecosystem-identity/matrix_gate_events.json` (version 7):
+//! `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json` (version 7):
 //!
 //! - **The deadline** (§5). gate.v2, question.v2, delivery.v2 and attention.v2
 //!   may carry `deadline { remind_at?, escalate_at? }`, ISO 8601 times. Read
@@ -347,7 +347,7 @@ mod tests {
     use serde_json::json;
 
     const CORPUS: &str =
-        include_str!("../../../fixtures/ecosystem-identity/matrix_gate_events.json");
+        include_str!("../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json");
 
     /// Whether a corpus entry is `variant`, or the entry without one.
     fn is_variant(entry: &Value, variant: Option<&str>) -> bool {

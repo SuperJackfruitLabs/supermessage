@@ -25,14 +25,14 @@
 # FFI surface changes) and Android instrumented tests (need an emulator; pass
 # --instrumented with one running).
 #
-# Usage:  ./scripts/ci-local.sh [--only tokens,rust,frontend,stories,ios,android]
+# Usage:  ./scripts/ci-local.sh [--only treaty,tokens,rust,frontend,stories,ios,android]
 #                               [--instrumented]
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
 ROOT_DIR="$(pwd)"
 BUILD_ROOT="${SM_BUILD_ROOT:-/Volumes/SMBuild}"
-ONLY="tokens,rust,frontend,stories,ios,android"
+ONLY="treaty,tokens,rust,frontend,stories,ios,android"
 INSTRUMENTED=no
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -74,6 +74,12 @@ run() {
     echo "FAIL  ($log)"; results+=("FAIL  $name")
   fi
 }
+
+# ---- Treaty ----------------------------------------------------------------
+if want treaty; then
+  run "treaty: the vendored copies match the pinned release" ./scripts/treaty.sh verify
+  run "ci plan: the planner and the workflow agree" node --test scripts/tests/test_ci_plan.mjs
+fi
 
 # ---- Design tokens -------------------------------------------------------
 if want tokens; then

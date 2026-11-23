@@ -316,7 +316,7 @@ mod tests {
 
     fn corpus() -> Value {
         serde_json::from_str(include_str!(
-            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+            "../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json"
         ))
         .unwrap()
     }
