@@ -184,7 +184,7 @@ class LiveTurnTest {
     fun theStepsOpenOntoTheirDetail() {
         val steps = listOf(
             turnStep("a", title = "Read a.rs"),
-            turnStep("b", title = "Run tests", hasDetail = true, input = "cargo test", output = "ok", locations = listOf("src/a.rs", "src/b.rs")),
+            turnStep("b", title = "Run tests", hasDetail = true, locations = listOf("src/a.rs", "src/b.rs")),
             turnStep("c", title = "Write c.rs"),
         )
         show(summary = inProgress(totalSteps = 3, completedSteps = 3), steps = steps)
@@ -197,10 +197,8 @@ class LiveTurnTest {
         compose.onAllNodesWithTag("tool-row")[1].performClick()
         compose.waitForIdle()
         compose.onNodeWithTag("tool-detail").assertIsDisplayed()
-        compose.onNodeWithText("Input").assertIsDisplayed()
-        compose.onNodeWithText("cargo test").assertIsDisplayed()
         compose.onNodeWithText("Touched").assertIsDisplayed()
-        compose.onNodeWithText("Output").assertIsDisplayed()
+        compose.onNodeWithText("src/a.rs", substring = true).assertIsDisplayed()
     }
 
     @Test

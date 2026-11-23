@@ -11,7 +11,7 @@ extension TurnStep {
     /// A tool call's step, with the status words the core would give it.
     public static func fixture(
         id: String, title: String, phase: ToolPhase, seq: UInt64, kind: String? = nil,
-        locations: [String] = [], input: String? = nil, output: String? = nil
+        locations: [String] = []
     ) -> TurnStep {
         let words: (status: String, label: String)
         switch phase {
@@ -23,8 +23,7 @@ extension TurnStep {
         }
         return TurnStep(
             id: id, title: title, kind: kind, status: words.status, phase: phase, statusLabel: words.label,
-            locations: locations, input: input, output: output, seq: seq,
-            hasDetail: input != nil || output != nil || !locations.isEmpty)
+            locations: locations, seq: seq, hasDetail: !locations.isEmpty)
     }
 }
 #endif

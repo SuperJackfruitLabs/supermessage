@@ -943,7 +943,7 @@ class SessionTest {
                     uniffi.supermessage_core.TurnStep(
                         id = "c1", title = "Read a file", kind = null, status = "in_progress",
                         phase = uniffi.supermessage_core.ToolPhase.RUNNING, statusLabel = "Running",
-                        locations = emptyList(), input = null, output = null, seq = 1uL, hasDetail = false,
+                        locations = emptyList(), seq = 1uL, hasDetail = false,
                     ),
                     1_000uL,
                 ),
@@ -984,7 +984,7 @@ class SessionTest {
             FfiEvent.Tool(
                 roomId = turnRoom, seq = 1uL, toolCallId = "c1", title = "Read a file", kind = null,
                 status = "in_progress", phase = uniffi.supermessage_core.ToolPhase.RUNNING,
-                statusLabel = "Running", locations = emptyList(), input = null, output = null,
+                statusLabel = "Running", locations = emptyList(),
             ),
         )
         advanceUntilIdle()

@@ -1488,8 +1488,11 @@ impl Session {
             .device_id()
             .ok_or_else(|| CoreError::Protocol("no device id".into()))?
             .to_string();
-        let body = crate::live_activity::register_body(token, &device_id)
-            .ok_or_else(|| CoreError::Protocol("an update token needs its activity".into()))?;
+        let body = crate::live_activity::register_body(token, &device_id).ok_or_else(|| {
+            CoreError::Protocol(
+                "not a token the hub accepts (an update token needs its activity)".into(),
+            )
+        })?;
         self.live_activity_call(&client, TokenVerb::Register, &endpoint, &body)
             .await?;
         let stored = self.stored_live_activity_tokens().added(
@@ -1515,7 +1518,8 @@ impl Session {
             .device_id()
             .ok_or_else(|| CoreError::Protocol("no device id".into()))?
             .to_string();
-        let body = crate::live_activity::delete_body(kind, &device_id, activity_id.as_deref());
+        let body = crate::live_activity::delete_body(kind, &device_id, activity_id.as_deref())
+            .ok_or_else(|| CoreError::Protocol("not an id the hub accepts".into()))?;
         self.live_activity_call(&client, TokenVerb::Delete, &endpoint, &body)
             .await?;
         let stored = self
@@ -1573,11 +1577,13 @@ impl Session {
         };
         let removals = async {
             for entry in &stored.entries {
-                let body = crate::live_activity::delete_body(
+                let Some(body) = crate::live_activity::delete_body(
                     entry.kind,
                     &device_id,
                     entry.activity_id.as_deref(),
-                );
+                ) else {
+                    continue;
+                };
                 if let Err(e) = self
                     .live_activity_call(client, TokenVerb::Delete, &stored.endpoint, &body)
                     .await
@@ -3373,7 +3379,7 @@ mod tests {
     ) -> crate::live_activity::LiveActivityToken {
         crate::live_activity::LiveActivityToken {
             kind,
-            token: "beef".into(),
+            token: "beef".repeat(16),
             sandbox: true,
             activity_id: activity_id.map(str::to_string),
         }
@@ -3400,7 +3406,7 @@ mod tests {
         assert_eq!(
             body,
             &serde_json::json!({
-                "kind": "start", "token": "beef", "environment": "sandbox",
+                "kind": "start", "token": "beef".repeat(16), "environment": "sandbox",
                 "device_id": "GHTYAJCE",
             })
         );

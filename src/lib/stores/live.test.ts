@@ -53,8 +53,6 @@ function stepOf(id: string): TurnSnapshot["steps"][number] {
     phase: "done",
     statusLabel: "Done",
     locations: [],
-    input: null,
-    output: null,
     seq: 1,
     hasDetail: false,
   };

@@ -43,7 +43,7 @@ class LiveStoreTest {
     private fun step(id: String, seq: ULong = 1uL, phase: ToolPhase = ToolPhase.RUNNING, title: String = id) =
         TurnStep(
             id = id, title = title, kind = null, status = "in_progress", phase = phase, statusLabel = "Running",
-            locations = emptyList(), input = null, output = null, seq = seq, hasDetail = false,
+            locations = emptyList(), seq = seq, hasDetail = false,
         )
 
     /** The core's fold of a turn that has run `inputs`. */

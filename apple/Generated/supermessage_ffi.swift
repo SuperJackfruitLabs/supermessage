@@ -3450,11 +3450,7 @@ public enum FfiEvent {
          */statusLabel: String, 
         /**
          * What the call touched — paths, mostly.
-         */locations: [String], 
-        /**
-         * What it was given, and what it produced, bounded by the core.
-         * `None` from a harness that does not report them.
-         */input: String?, output: String?
+         */locations: [String]
     )
     /**
      * A room's agent turn moved: a summary, and at most one step that
@@ -3503,7 +3499,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
         case 6: return .thought(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), text: try FfiConverterString.read(from: &buf), done: try FfiConverterBool.read(from: &buf)
         )
         
-        case 7: return .tool(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), toolCallId: try FfiConverterString.read(from: &buf), title: try FfiConverterString.read(from: &buf), kind: try FfiConverterOptionString.read(from: &buf), status: try FfiConverterString.read(from: &buf), phase: try FfiConverterTypeToolPhase.read(from: &buf), statusLabel: try FfiConverterString.read(from: &buf), locations: try FfiConverterSequenceString.read(from: &buf), input: try FfiConverterOptionString.read(from: &buf), output: try FfiConverterOptionString.read(from: &buf)
+        case 7: return .tool(roomId: try FfiConverterString.read(from: &buf), seq: try FfiConverterUInt64.read(from: &buf), toolCallId: try FfiConverterString.read(from: &buf), title: try FfiConverterString.read(from: &buf), kind: try FfiConverterOptionString.read(from: &buf), status: try FfiConverterString.read(from: &buf), phase: try FfiConverterTypeToolPhase.read(from: &buf), statusLabel: try FfiConverterString.read(from: &buf), locations: try FfiConverterSequenceString.read(from: &buf)
         )
         
         case 8: return .turn(update: try FfiConverterTypeTurnUpdate.read(from: &buf)
@@ -3560,7 +3556,7 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterBool.write(done, into: &buf)
             
         
-        case let .tool(roomId,seq,toolCallId,title,kind,status,phase,statusLabel,locations,input,output):
+        case let .tool(roomId,seq,toolCallId,title,kind,status,phase,statusLabel,locations):
             writeInt(&buf, Int32(7))
             FfiConverterString.write(roomId, into: &buf)
             FfiConverterUInt64.write(seq, into: &buf)
@@ -3571,8 +3567,6 @@ public struct FfiConverterTypeFfiEvent: FfiConverterRustBuffer {
             FfiConverterTypeToolPhase.write(phase, into: &buf)
             FfiConverterString.write(statusLabel, into: &buf)
             FfiConverterSequenceString.write(locations, into: &buf)
-            FfiConverterOptionString.write(input, into: &buf)
-            FfiConverterOptionString.write(output, into: &buf)
             
         
         case let .turn(update):

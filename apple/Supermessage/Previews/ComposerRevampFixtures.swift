@@ -49,12 +49,12 @@ enum ComposerRevampFixtures {
             .tool(
                 step: .fixture(
                     id: "t2", title: "run pytest scripts/tests", phase: .done, seq: 3,
-                    kind: "execute", output: "41 passed"),
+                    kind: "execute", locations: ["scripts/tests"]),
                 atMs: at(22)),
             .tool(
                 step: .fixture(
                     id: "t3", title: "write design/tokens.toml", phase: .failed, seq: 4,
-                    kind: "edit", locations: ["design/tokens.toml"], output: "permission denied"),
+                    kind: "edit", locations: ["design/tokens.toml"]),
                 atMs: at(40)),
             .tool(step: regenerate, atMs: at(64)),
         ]

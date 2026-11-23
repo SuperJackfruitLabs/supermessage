@@ -11,7 +11,7 @@
 //! kind, the command or raw input, each diff, the locations. The namespace
 //! follows the judge: AgentPod judges a harness permission, so the event is
 //! AgentPod's, not superpipeline's. The wire is pinned by
-//! `fixtures/ecosystem-identity/matrix_gate_events.json`.
+//! `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json`.
 //!
 //! What this module does, and where each rule lives:
 //!
@@ -579,7 +579,7 @@ mod tests {
     use serde_json::json;
 
     const CORPUS: &str =
-        include_str!("../../../fixtures/ecosystem-identity/matrix_gate_events.json");
+        include_str!("../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json");
 
     fn cases(suite_type: &str, which: &str) -> Vec<(String, Value)> {
         let corpus: Value = serde_json::from_str(CORPUS).expect("the corpus is JSON");

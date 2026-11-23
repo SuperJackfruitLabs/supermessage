@@ -298,7 +298,7 @@ mod tests {
     use serde_json::json;
 
     const CORPUS: &str =
-        include_str!("../../../fixtures/ecosystem-identity/matrix_gate_events.json");
+        include_str!("../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json");
 
     /// The first `accept` content the corpus pins for `suite_type`.
     fn corpus_accept(suite_type: &str) -> Value {

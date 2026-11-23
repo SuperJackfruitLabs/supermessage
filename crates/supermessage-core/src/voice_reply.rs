@@ -52,8 +52,8 @@
 //! requires the voice message and the text to share a sender: nobody can fold
 //! a message of someone else's into their own audio. And the payload is read
 //! as strictly as `crate::voice_transcript` reads its own: `schema_version`
-//! exactly `1`, and every field within the contract (agentpod
-//! `packages/contract/src/matrix-events.ts`, `VoiceReply`):
+//! a whole number of at least `1` (a higher one read best-effort, as treaty's
+//! `dev.agentpod.voice_reply` asks), and every field within the contract:
 //!
 //! | Field | Contract |
 //! |---|---|
@@ -83,7 +83,8 @@ use crate::item_view::ItemView;
 /// The `content` key the AgentPod hub writes the voice reply under.
 pub const VOICE_REPLY_KEY: &str = "dev.agentpod.voice_reply";
 
-/// The only `schema_version` this parser reads.
+/// The `schema_version` this parser was written against. A higher one is
+/// read best-effort: the fields this build knows, anything new ignored.
 pub const SCHEMA_VERSION: u64 = 1;
 
 /// `text_event_id`, in code points. Matches the contract.
@@ -132,8 +133,11 @@ pub struct VoiceReplyPlayer {
 pub fn parse_voice_reply(value: &Value) -> Option<VoiceReplyLink> {
     let object = value.as_object()?;
 
-    // Exactly 1: `as_u64` also refuses `1.5`, `"1"` and a negative.
-    if object.get("schema_version")?.as_u64()? != SCHEMA_VERSION {
+    // A whole number, 1 or more: `as_u64` also refuses `1.5`, `"1"` and a
+    // negative. A version above SCHEMA_VERSION is an additive change (treaty:
+    // drawn best-effort, never dropped); one that dropped or retyped a field
+    // this reads fails below and falls back to the plain message.
+    if object.get("schema_version")?.as_u64()? < SCHEMA_VERSION {
         return None;
     }
 
@@ -313,6 +317,17 @@ mod tests {
     // --- parsing ---------------------------------------------------------
 
     #[test]
+    fn a_newer_version_is_drawn_best_effort_never_dropped() {
+        // treaty: "a reader draws a higher version best-effort, never drops it".
+        let mut payload = hub();
+        payload["schema_version"] = json!(2);
+        payload["speed"] = json!(1.1);
+        assert_eq!(parse_voice_reply(&payload), parse_voice_reply(&hub()));
+        payload["schema_version"] = json!(17);
+        assert!(parse_voice_reply(&payload).is_some());
+    }
+
+    #[test]
     fn the_hubs_payload_reads_whole() {
         assert_eq!(
             parse_voice_reply(&hub()),
@@ -369,7 +384,6 @@ mod tests {
             ("schema_version", Value::Null),
             ("schema_version", json!("1")),
             ("schema_version", json!(0)),
-            ("schema_version", json!(2)),
             ("schema_version", json!(1.5)),
             ("text_event_id", Value::Null),
             ("text_event_id", json!(7)),

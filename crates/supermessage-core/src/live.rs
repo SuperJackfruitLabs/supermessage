@@ -117,17 +117,8 @@ pub struct ToolUpdateToDeviceEventContent {
     pub status: String,
     #[serde(default)]
     pub locations: Vec<String>,
-    /// What the call was given, as text a reader can look at.
-    ///
-    /// Optional because AgentPod does not send it yet — a harness that starts
-    /// to will land here without a schema change, and one that never does
-    /// leaves the row exactly as it is today. Never parsed or interpreted:
-    /// it is a sender-controlled string, bounded before it is shown.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub input: Option<String>,
-    /// What the call produced, under the same rules as [`Self::input`].
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub output: Option<String>,
+    // No `input` or `output`: treaty's dev.agentpod.tool.update has neither,
+    // and no producer sends them. A sender that adds one is ignored.
 }
 
 /// Where one tool call is, in the reader's terms.
@@ -191,35 +182,25 @@ pub struct ToolPayload {
     /// spelling its own.
     pub status_label: String,
     pub locations: Vec<String>,
-    /// Bounded for display — see [`bound_tool_text`].
-    pub input: Option<String>,
-    pub output: Option<String>,
 }
 
-/// How much of a tool's input or output crosses to a host.
-///
-/// A tool can return a whole file. The row that shows it is a disclosure
-/// inside a turn card, and past a few thousand characters nobody is reading
-/// it there — they are looking for whether it worked and roughly what it
-/// touched. Bounding here rather than in a host is the same rule every other
-/// sender-controlled string in this crate follows: the boundary is where the
-/// guarantee is made.
-const TOOL_TEXT_MAX_CHARS: usize = 4_000;
-
-/// Trim `value` to [`TOOL_TEXT_MAX_CHARS`], appending an ellipsis when it
-/// bites. `None` and empty both come back as `None` — a disclosure that opens
-/// on nothing is worse than no disclosure.
-pub fn bound_tool_text(value: Option<String>) -> Option<String> {
-    let value = value?;
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return None;
+impl ToolPayload {
+    /// What a host is told for a tool update as it arrived: the phase and its
+    /// word decided here.
+    pub fn from_wire(content: ToolUpdateToDeviceEventContent) -> Self {
+        let phase = ToolPhase::from_status(&content.status);
+        Self {
+            room_id: content.room_id,
+            seq: content.seq,
+            tool_call_id: content.tool_call_id,
+            title: content.title,
+            kind: content.kind,
+            phase,
+            status_label: phase.label().to_string(),
+            status: content.status,
+            locations: content.locations,
+        }
     }
-    if trimmed.chars().count() <= TOOL_TEXT_MAX_CHARS {
-        return Some(trimmed.to_string());
-    }
-    let head: String = trimmed.chars().take(TOOL_TEXT_MAX_CHARS).collect();
-    Some(format!("{head}…"))
 }
 
 /// Tauri event channel carrying an agent's reasoning to the webview.
@@ -465,20 +446,7 @@ pub fn listen(
         |ev: ToolUpdateToDeviceEvent,
          sink: Ctx<Arc<dyn EventSink>>,
          feed: Ctx<TurnFeed>| async move {
-            let content = ev.content;
-            let payload = ToolPayload {
-                room_id: content.room_id,
-                seq: content.seq,
-                tool_call_id: content.tool_call_id,
-                title: content.title,
-                kind: content.kind,
-                phase: ToolPhase::from_status(&content.status),
-                status_label: ToolPhase::from_status(&content.status).label().to_string(),
-                status: content.status,
-                locations: content.locations,
-                input: bound_tool_text(content.input),
-                output: bound_tool_text(content.output),
-            };
+            let payload = ToolPayload::from_wire(ev.content);
             let input = TurnInput::Tool {
                 step: TurnStep::from_payload(&payload),
                 at_ms: now_ms(),
@@ -649,41 +617,25 @@ mod tests {
 }
 
 #[cfg(test)]
-mod tool_text_tests {
-    use super::{bound_tool_text, TOOL_TEXT_MAX_CHARS};
+mod tool_wire_tests {
+    use super::{ToolPayload, ToolUpdateToDeviceEventContent};
+    use crate::turns::TurnStep;
+    use serde_json::json;
 
+    /// treaty's dev.agentpod.tool.update has no `input` or `output`, and no
+    /// producer sends either: a sender that adds them is not drawn.
     #[test]
-    fn nothing_stays_nothing() {
-        assert_eq!(bound_tool_text(None), None);
-    }
-
-    #[test]
-    fn whitespace_is_nothing_too() {
-        // A disclosure that opens on an empty box is worse than no
-        // disclosure: it says there is something to see.
-        assert_eq!(bound_tool_text(Some("   \n  ".into())), None);
-    }
-
-    #[test]
-    fn ordinary_output_crosses_intact() {
-        assert_eq!(
-            bound_tool_text(Some("  exit 0\n2 files changed  ".into())),
-            Some("exit 0\n2 files changed".to_string())
-        );
-    }
-
-    #[test]
-    fn a_whole_file_is_cut_and_says_so() {
-        let huge = "x".repeat(TOOL_TEXT_MAX_CHARS + 500);
-        let bounded = bound_tool_text(Some(huge)).expect("bounded text");
-        assert_eq!(bounded.chars().count(), TOOL_TEXT_MAX_CHARS + 1);
-        assert!(bounded.ends_with('…'), "the cut was silent");
-    }
-
-    #[test]
-    fn text_exactly_at_the_bound_is_left_alone() {
-        let exact = "y".repeat(TOOL_TEXT_MAX_CHARS);
-        assert_eq!(bound_tool_text(Some(exact.clone())), Some(exact));
+    fn a_tools_input_and_output_are_not_read() {
+        let content: ToolUpdateToDeviceEventContent = serde_json::from_value(json!({
+            "room_id": "!r:x", "session_id": "s", "seq": 1, "tool_call_id": "t1",
+            "title": "Run tests", "status": "completed", "locations": [],
+            "input": "cargo test", "output": "ok",
+        }))
+        .expect("unknown keys are ignored");
+        let payload = ToolPayload::from_wire(content);
+        let wire = serde_json::to_value(&payload).unwrap();
+        assert!(wire.get("input").is_none() && wire.get("output").is_none());
+        assert!(!TurnStep::from_payload(&payload).has_detail);
     }
 }
 
@@ -736,8 +688,6 @@ mod deliver_tests {
             phase,
             status_label: String::new(),
             locations: Vec::new(),
-            input: None,
-            output: None,
         }
     }
 

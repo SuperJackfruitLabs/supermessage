@@ -87,6 +87,9 @@ jobs:
               - 'crates/**'
               - 'Cargo.toml'
               - 'Cargo.lock'
+              # treaty's data, read by the core's tests and the iOS kit's.
+              - 'vendor/treaty/**'
+              - 'treaty.json'
             snapshots: &snapshots
               - 'scripts/snapshot-index.py'
               - 'scripts/png_decode.py'
@@ -1217,11 +1220,12 @@ jobs:
           manifest-path: src-tauri/Cargo.toml
           command: check licenses bans sources
 
-  # fixtures/ecosystem-identity/ holds copies of treaty's corpus, which Rust reads with
-  # include_str!. A copy that drifts from the pinned treaty version fails here, not in a
+  # vendor/treaty/ holds copies of treaty's data, which Rust reads with include_str! and the iOS
+  # kit tests as resources. `treaty verify` checks treaty.json against the release it pins: the
+  # crossings it consumes, and every copy byte for byte. A copy that drifts fails here, not in a
   # conversation with another product. Cheap, so it runs on every change.
-  treaty-corpus:
-    name: Treaty corpus copies
+  treaty:
+    name: Treaty verify
     needs: changes
     # Every change but a docs-only pull request, including when `changes`
     # itself failed.
@@ -1229,8 +1233,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: The vendored corpus matches the pinned treaty package
-        run: ./scripts/check-treaty-corpus.sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: treaty.json and the vendored copies match the pinned treaty release
+        run: ./scripts/treaty.sh verify
 
   # The docs claims test (crates/supermessage-core/tests/docs_claims.rs): every
   # name the docs-site pages use must exist in the code. `rust` runs it inside
@@ -1254,7 +1261,7 @@ jobs:
   # or unplanned job fails it. The release workflow does not read it.
   check:
     name: check
-    needs: [changes, tokens, docs, frontend, rust, ios, android-libs, android-unit, android-apks, android-avd, android-instrumented, android, licences, treaty-corpus, docs-claims]
+    needs: [changes, tokens, docs, frontend, rust, ios, android-libs, android-unit, android-apks, android-avd, android-instrumented, android, licences, treaty, docs-claims]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:

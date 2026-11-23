@@ -475,8 +475,6 @@ private fun ToolRow(step: TurnStep, still: Boolean, reduce: Boolean) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 if (step.locations.isNotEmpty()) StepDetail("Touched", step.locations.joinToString("\n"))
-                step.input?.let { StepDetail("Input", it) }
-                step.output?.let { StepDetail("Output", it) }
             }
         }
     }

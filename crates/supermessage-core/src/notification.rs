@@ -1274,7 +1274,7 @@ mod tests {
     /// contract: only the hub's voice reply is quiet.
     #[test]
     fn an_ordinary_voice_note_still_notifies() {
-        let broken = json!({ "schema_version": 2, "text_event_id": "$t", "voice": "v" });
+        let broken = json!({ "schema_version": 0, "text_event_id": "$t", "voice": "v" });
         for key in [None, Some(broken)] {
             let note = notify(voice_note(key.clone()));
             assert_eq!(note.suppress, None, "{key:?}");
@@ -1632,7 +1632,7 @@ mod tests {
 
     fn corpus_accept(suite_type: &str, index: usize) -> serde_json::Value {
         let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+            "../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json"
         ))
         .unwrap();
         corpus["events"]
@@ -1731,7 +1731,7 @@ mod tests {
     /// The first corpus entry with this suite type and `variant`.
     fn corpus_variant(suite_type: &str, variant: &str) -> serde_json::Value {
         let corpus: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+            "../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json"
         ))
         .unwrap();
         corpus["events"]

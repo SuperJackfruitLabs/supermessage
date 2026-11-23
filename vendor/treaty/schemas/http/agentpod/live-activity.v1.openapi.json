@@ -1,0 +1,273 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AgentPod Live Activity tokens",
+    "version": "1",
+    "description": "Where the AgentPod hub pushes a reader's fleet Live Activity. The SuperMessage app registers the APNs tokens ActivityKit gives it (a push-to-start token per device, an update token per running activity) and removes them when an activity ends or the person signs out. Written from AgentPod's routes on main (apps/hub/src/routes/live-activity.ts, mounted at /_supermessage/v1/live-activity in apps/hub/src/index.ts) and its zod schemas (packages/contract/src/fleet-live.ts). Every refusal is matrix-error.v1, the Matrix client-server error body, because the caller is a Matrix client. The checks run in this order: the push gateway is configured (503 M_UNRECOGNIZED), a bearer token is present (401 M_MISSING_TOKEN), the homeserver's whoami answers (502 M_UNKNOWN) and accepts it (401 M_UNKNOWN_TOKEN), the body is at most 4 KiB (413 M_TOO_LARGE), and the body parses as the route's shape (400 M_BAD_JSON). What the hub then pushes to Apple is schemas/agentpod/live-activity-payload.v1.json."
+  },
+  "x-treaty-error-envelope": "matrix-error.v1",
+  "servers": [
+    {
+      "url": "https://hub.agentpod.dev",
+      "description": "An AgentPod hub. The app calls it on its push gateway's origin, outside /api/*."
+    }
+  ],
+  "paths": {
+    "/_supermessage/v1/live-activity/tokens": {
+      "post": {
+        "operationId": "registerLiveActivityToken",
+        "summary": "Register an APNs token for the caller's fleet Live Activity",
+        "description": "The row's owner is the user id the homeserver's whoami returns for the access token; a body cannot name one. A `start` token is the device's push-to-start token, one per device; an `update` token belongs to one running activity, named by `activity_id`, which a `start` token's row ignores. Registering again for the same device (and, for an update token, the same activity) replaces the token. A `device_id` other than the session's device is accepted and logged. The hub stores the token lower-cased.",
+        "security": [
+          {
+            "matrixAccessToken": []
+          }
+        ],
+        "x-treaty-error-codes": [
+          "M_UNRECOGNIZED",
+          "M_MISSING_TOKEN",
+          "M_UNKNOWN_TOKEN",
+          "M_UNKNOWN",
+          "M_TOO_LARGE",
+          "M_BAD_JSON"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRegistration"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadJson"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "502": {
+            "$ref": "#/components/responses/HomeserverUnreachable"
+          },
+          "503": {
+            "$ref": "#/components/responses/NotConfigured"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "removeLiveActivityToken",
+        "summary": "Remove the caller's APNs tokens of a kind from a device",
+        "description": "Removes the caller's `start` token from `device_id`, or its `update` tokens: the one activity's when `activity_id` is given, every one the device has when it is not (the app signing out). A `start` removal ignores `activity_id`. Removing a token that is not there is still 204.",
+        "security": [
+          {
+            "matrixAccessToken": []
+          }
+        ],
+        "x-treaty-error-codes": [
+          "M_UNRECOGNIZED",
+          "M_MISSING_TOKEN",
+          "M_UNKNOWN_TOKEN",
+          "M_UNKNOWN",
+          "M_TOO_LARGE",
+          "M_BAD_JSON"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenRemoval"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Done. No body."
+          },
+          "400": {
+            "$ref": "#/components/responses/BadJson"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "413": {
+            "$ref": "#/components/responses/TooLarge"
+          },
+          "502": {
+            "$ref": "#/components/responses/HomeserverUnreachable"
+          },
+          "503": {
+            "$ref": "#/components/responses/NotConfigured"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "matrixAccessToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "The SuperMessage session's Matrix access token, `Authorization: Bearer <token>`. The hub checks it with the homeserver's `GET /_matrix/client/v3/account/whoami` and caches a success for 60 seconds, keyed by a hash of the token. A whoami that answers other than 200 with an `@` user id is M_UNKNOWN_TOKEN; one that cannot be reached, or answers 5xx, is M_UNKNOWN."
+      }
+    },
+    "responses": {
+      "BadJson": {
+        "description": "M_BAD_JSON: the body is not JSON, or not the route's shape",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../common/matrix-error.v1.json",
+              "properties": {
+                "errcode": {
+                  "enum": ["M_BAD_JSON"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "M_MISSING_TOKEN: no bearer token; M_UNKNOWN_TOKEN: the homeserver does not know it",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../common/matrix-error.v1.json",
+              "properties": {
+                "errcode": {
+                  "enum": ["M_MISSING_TOKEN", "M_UNKNOWN_TOKEN"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "TooLarge": {
+        "description": "M_TOO_LARGE: the body is over 4 KiB",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../common/matrix-error.v1.json",
+              "properties": {
+                "errcode": {
+                  "enum": ["M_TOO_LARGE"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "HomeserverUnreachable": {
+        "description": "M_UNKNOWN: the homeserver's whoami could not be reached",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../common/matrix-error.v1.json",
+              "properties": {
+                "errcode": {
+                  "enum": ["M_UNKNOWN"]
+                }
+              }
+            }
+          }
+        }
+      },
+      "NotConfigured": {
+        "description": "M_UNRECOGNIZED: the hub's push gateway is not configured, so it stores no tokens",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../common/matrix-error.v1.json",
+              "properties": {
+                "errcode": {
+                  "enum": ["M_UNRECOGNIZED"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "TokenKind": {
+        "type": "string",
+        "enum": ["start", "update"],
+        "description": "`start`: the device's push-to-start token. `update`: one running activity's token."
+      },
+      "DeviceId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255,
+        "description": "The Matrix device id of the app's session."
+      },
+      "ActivityId": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255,
+        "description": "ActivityKit's id for the activity."
+      },
+      "TokenRegistration": {
+        "type": "object",
+        "description": "LiveActivityTokenRegistration. Unknown keys are dropped, not refused, as zod's default object does.",
+        "required": ["kind", "token", "environment", "device_id"],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TokenKind"
+          },
+          "token": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{32,512}$",
+            "description": "The APNs token, hex. Push-to-start tokens run longer than device tokens."
+          },
+          "environment": {
+            "type": "string",
+            "enum": ["production", "sandbox"],
+            "description": "The APNs environment the token is for: the signing profile's `aps-environment`."
+          },
+          "device_id": {
+            "$ref": "#/components/schemas/DeviceId"
+          },
+          "activity_id": {
+            "$ref": "#/components/schemas/ActivityId"
+          }
+        },
+        "if": {
+          "properties": {
+            "kind": {
+              "const": "update"
+            }
+          },
+          "required": ["kind"]
+        },
+        "then": {
+          "required": ["activity_id"]
+        }
+      },
+      "TokenRemoval": {
+        "type": "object",
+        "description": "LiveActivityTokenRemoval. Unknown keys are dropped, not refused.",
+        "required": ["kind", "device_id"],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TokenKind"
+          },
+          "device_id": {
+            "$ref": "#/components/schemas/DeviceId"
+          },
+          "activity_id": {
+            "$ref": "#/components/schemas/ActivityId"
+          }
+        }
+      }
+    }
+  }
+}

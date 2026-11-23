@@ -97,4 +97,6 @@ pub mod voice_transcript;
 pub mod widget;
 
 #[cfg(test)]
+mod treaty_activity;
+#[cfg(test)]
 mod treaty_corpus;

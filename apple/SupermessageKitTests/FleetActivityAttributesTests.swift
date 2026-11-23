@@ -5,16 +5,88 @@ import Testing
 
 /// The hub's Live Activity state (spec 2026-09-29, A4), as this app reads it.
 ///
-/// The fixture is the one agentpod's contract test round-trips through its
-/// own schema, so a key renamed on either side fails a test on that side.
+/// The fixtures are treaty's cases for `fleet-content-state.v1`
+/// (`vendor/treaty/fixtures/agentpod-live-activity/examples.json`, held to
+/// the pinned release by `treaty verify`): the hub's producer tests validate
+/// what it pushes against the same schema, so a key renamed on either side
+/// fails a test on that side.
 struct FleetActivityAttributesTests {
     typealias State = FleetActivityAttributes.ContentState
 
     private final class BundleToken {}
 
-    static func fixture(_ name: String = "fleet-content-state") throws -> Data {
-        let url = try #require(Bundle(for: BundleToken.self).url(forResource: name, withExtension: "json"))
-        return try Data(contentsOf: url)
+    /// AgentPod's v1 and v2 fixtures, as treaty labels them.
+    static let v1 = "fleet-content-state.json, AgentPod's v1 fixture"
+    static let v2 = "fleet-content-state-v2.json, AgentPod's v2 fixture with the shape the hub emits"
+
+    /// treaty's cases for the content state: `valid` keyed by label,
+    /// `invalid` as `(why, body)`.
+    static func cases() throws -> (valid: [String: Data], invalid: [(String, Data)]) {
+        let url = try #require(
+            Bundle(for: BundleToken.self).url(forResource: "examples", withExtension: "json"))
+        let corpus = try #require(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let schemas = try #require(corpus["schemas"] as? [String: Any])
+        let state = try #require(schemas["fleet-content-state.v1"] as? [String: Any])
+        let valid = try #require(state["valid"] as? [String: Any])
+        let invalid = try #require(state["invalid"] as? [[String: Any]])
+        return (
+            try valid.mapValues { try JSONSerialization.data(withJSONObject: $0) },
+            try invalid.map { entry in
+                (entry["why"] as? String ?? "", try JSONSerialization.data(withJSONObject: entry["body"] ?? NSNull()))
+            }
+        )
+    }
+
+    /// One valid case, by its label.
+    static func fixture(_ label: String = v1) throws -> Data {
+        try #require(try cases().valid[label], "treaty has no case \(label)")
+    }
+
+    @Test("every case treaty says the hub may send decodes")
+    func everyValidCase() throws {
+        let valid = try Self.cases().valid
+        #expect(valid.count >= 6)
+        for (label, body) in valid {
+            #expect(throws: Never.self, "\(label)") { try JSONDecoder().decode(State.self, from: body) }
+        }
+    }
+
+    /// The producer's schema is strict; this reader is lenient on purpose
+    /// (see `ContentState`). So a case the schema refuses must still never
+    /// fail the update.
+    @Test("every case the schema refuses is still read, leniently")
+    func everyInvalidCase() throws {
+        let invalid = try Self.cases().invalid
+        #expect(invalid.count >= 10)
+        for (why, body) in invalid {
+            let state = try JSONDecoder().decode(State.self, from: body)
+            if let decision = state.decision, decision.kind == .unknown {
+                #expect(decision.widgetKind == .open, "\(why): read in the app, not answered")
+            }
+        }
+    }
+
+    @Test("a card waiting on a person is attention, opened in the app, not a permission")
+    func attention() throws {
+        let state = try JSONDecoder().decode(
+            State.self, from: Self.fixture("a card waiting on a person, with no options"))
+        let decision = try #require(state.decision)
+        #expect(decision.kind == .attention)
+        #expect(decision.widgetKind == .open)
+        #expect(decision.options.isEmpty)
+    }
+
+    @Test("only a permission or a gate is answered from the widget")
+    func widgetKinds() throws {
+        func kind(_ raw: String) throws -> WidgetSnapshot.DecisionKind {
+            let json = #"{"roomId": "!r", "eventId": "$e", "kind": "\#(raw)", "options": []}"#
+            return try JSONDecoder().decode(State.Decision.self, from: Data(json.utf8)).widgetKind
+        }
+        #expect(try kind("permission") == .permission)
+        #expect(try kind("gate") == .gate)
+        #expect(try kind("attention") == .open)
+        #expect(try kind("vote") == .open)
     }
 
     @Test("the v1 fixture has none of the 2026-09-30 additions, and says so as none")
@@ -25,7 +97,7 @@ struct FleetActivityAttributesTests {
 
     @Test("the v2 fixture decodes, with each agent's user id, phase and finish")
     func decodesTheV2Fixture() throws {
-        let state = try JSONDecoder().decode(State.self, from: Self.fixture("fleet-content-state-v2"))
+        let state = try JSONDecoder().decode(State.self, from: Self.fixture(Self.v2))
         #expect(state.agents.map(\.name) == ["Artistic Lyra", "Coder Kai", "Writer Quill"])
         #expect(
             state.agents.map(\.mxid) == [
@@ -110,7 +182,7 @@ struct FleetActivityAttributesTests {
         #expect(state.needsYou == 0)
         #expect(state.updatedAt == 0)
         let decision = try #require(state.decision)
-        #expect(decision.kind == .permission)
+        #expect(decision.kind == .unknown, "never guessed to be a permission")
         #expect(decision.options.map(\.label) == ["Allow once"])
         #expect(decision.question == "")
     }

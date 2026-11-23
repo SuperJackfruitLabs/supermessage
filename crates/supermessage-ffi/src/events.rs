@@ -73,10 +73,6 @@ pub enum FfiEvent {
         status_label: String,
         /// What the call touched — paths, mostly.
         locations: Vec<String>,
-        /// What it was given, and what it produced, bounded by the core.
-        /// `None` from a harness that does not report them.
-        input: Option<String>,
-        output: Option<String>,
     },
     /// A room's agent turn moved: a summary, and at most one step that
     /// changed. Sent **before** the text event that caused it. Discard an
@@ -141,8 +137,6 @@ impl CoreSink for HostSink {
                 phase: p.phase,
                 status_label: p.status_label,
                 locations: p.locations,
-                input: p.input,
-                output: p.output,
             },
             CoreEvent::Turn(update) => FfiEvent::Turn { update },
             CoreEvent::AttachmentStaged(m) => FfiEvent::AttachmentStaged {

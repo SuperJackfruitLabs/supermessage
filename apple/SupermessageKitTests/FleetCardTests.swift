@@ -193,7 +193,7 @@ struct FleetCardTests {
     @Test("the v2 fixture's card: a decision on top, over two working agents")
     func v2Card() throws {
         let state = try JSONDecoder().decode(
-            State.self, from: FleetActivityAttributesTests.fixture("fleet-content-state-v2"))
+            State.self, from: FleetActivityAttributesTests.fixture(FleetActivityAttributesTests.v2))
         let card = FleetCard(state)
         guard case .decision(let decision) = card.hero else {
             Issue.record("expected the decision on top")

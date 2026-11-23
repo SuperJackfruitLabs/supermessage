@@ -46,18 +46,13 @@ What the client does with it:
 
 Turn state itself (start, steps, end, the record kept after) is `core::turns`, fed from these events, from the agent's reply landing on the timeline, and from a 30-minute time limit. Hosts read it from `CoreEvent::Turn` and `Session::turn`; they do not rebuild it.
 
-### Tool calls: two fields AgentPod does not send yet
+### Tool calls: what is read
 
-`ToolUpdateToDeviceEventContent` accepts `input` and `output`, both optional
-strings, bounded by the core at 4000 characters (`live::bound_tool_text`) and
-rendered as a disclosure under the tool's row.
+treaty's `dev.agentpod.tool.update` is the wire: there is no `input` or
+`output`, and this client reads neither. A row opens onto its detail only when
+the call touched something.
 
-**No harness fills them in today.** A row with neither stays a plain row rather
-than a disclosure that opens onto an empty box, so adding them is additive: a
-harness that starts sending them needs no client change, and one that never
-does loses nothing.
-
-`kind` and `locations` *are* sent and are rendered — `locations` as "Touched".
+`kind` and `locations` are sent and are rendered — `locations` as "Touched".
 
 ## 2. The turn card — a room event, and therefore permanent
 
@@ -71,19 +66,10 @@ and every client in the room sees it.
 | `schema_version` | Above `1.0` renders best-effort and is flagged "shown from a newer version". |
 | `counts.total` / `.failed` / `.omitted` | The headline row — "7 things, 1 failed" — because a reader scanning a room wants that before the list. |
 | `tools[].title` / `.status` | One row each. `title` goes through `custom_events::tool_title`, which unwraps `bash -lc`, folds continuation lines, and shortens deep absolute paths from the front so the filename survives the field cap. |
-| `reasoning` | **New, and not sent yet.** Long-form prose, bounded at 4000 characters, rendered as a collapsed disclosure on the card. |
 
-### Why `reasoning` belongs here and not on the live channel
-
-Both channels can carry reasoning; only this one keeps it. A reader who asks
-"why did it do that?" an hour later, or on another device, or by scrolling back
-— which is when the question is usually asked — is looking at the turn card,
-because the to-device stream that produced the answer no longer exists
-anywhere.
-
-The client renders it on both hosts today. **Until AgentPod includes it, the
-card looks exactly as it does now.** The live card's reasoning is the stopgap,
-and it is bounded by the next turn.
+treaty's `dev.agentpod.turn.v1` has no `reasoning`, and no producer sends one,
+so the card reads none: a turn's reasoning is the live card's, bounded by the
+next turn.
 
 ## 3. The turn error card — a key on an ordinary message
 
@@ -314,17 +300,23 @@ charter `decisions/2026-11-07-gate-v2-is-the-decision-envelope.md`. The hub
 also puts gate.v2 fields on the same prose message, beside the unchanged
 `dev.superpipeline.gate` card, marked `suite_event_type:
 "dev.superpipeline.gate.v2"`. The wire is pinned by
-`fixtures/ecosystem-identity/matrix_gate_events.json`, vendored from treaty
-unchanged and read by `core::gate_v2`'s tests. `scripts/check-treaty-corpus.sh` fails CI when
-the copy differs from the pinned treaty package.
+`vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json`, vendored from treaty
+unchanged and read by `core::gate_v2`'s tests. `treaty verify` (`scripts/treaty.sh verify`) fails CI
+when any copy under `vendor/treaty/` differs from the release `treaty.json` pins.
 
 Every board-room type is also held to treaty's per-type corpus,
-`fixtures/treaty-matrix-events/examples.json`: `@superjackfruitlabs/treaty-matrix-events`'s
-`examples.json` at the version the same script pins, beside the JSON Schemas it is checked
-against. `core::treaty_corpus` runs each case through this client's own code: a card, notice or
+`vendor/treaty/fixtures/matrix-events/examples.json`: treaty's `fixtures/matrix-events/examples.json`
+at the pinned release, beside the JSON Schemas it is checked against. `core::treaty_corpus` runs each case through this client's own code: a card, notice or
 receipt it reads must read every valid case and no case the schema refuses; an answer it sends
 must be one some valid card builds, and no invalid answer may ever be built. A type the corpus
 gains that this client neither reads, sends nor lists as not read fails the test.
+
+AgentPod's chat activity (`agentpod.matrix-activity`: the turn card, the three deltas, the turn
+error card and the two voice keys) and the Live Activity token requests (`agentpod.live-activity`)
+are held to treaty's cases the same way by `core::treaty_activity`: every valid case is read by the
+production reader, including a higher `schema_version` or a status or kind this build was not
+taught; a case the schema refuses is read only where the module says why that is honest; every
+valid token request is one this client builds and no invalid one ever is.
 
 - **Which card.** A message whose v2 fields validate is drawn from v2
   (`core::gate_v2`, registered as `dev.superpipeline.gate.v2`); anything the

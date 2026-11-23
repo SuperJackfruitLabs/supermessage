@@ -551,7 +551,7 @@ mod tests {
     /// carries beside it.
     fn v2_message() -> Value {
         let corpus: Value = serde_json::from_str(include_str!(
-            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+            "../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json"
         ))
         .unwrap();
         let mut content = corpus["events"][2]["accept"][0]["content"].clone();
@@ -615,7 +615,7 @@ mod tests {
 
     fn corpus_accept(suite_type: &str, index: usize) -> Value {
         let corpus: Value = serde_json::from_str(include_str!(
-            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+            "../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json"
         ))
         .unwrap();
         corpus["events"]

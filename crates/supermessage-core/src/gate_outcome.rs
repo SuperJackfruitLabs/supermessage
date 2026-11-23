@@ -744,7 +744,7 @@ mod tests {
     #[test]
     fn every_corpus_outcome_is_read_and_every_reject_closes_nothing() {
         let corpus: Value = serde_json::from_str(include_str!(
-            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+            "../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json"
         ))
         .unwrap();
         let entry = corpus["events"]
@@ -1099,7 +1099,7 @@ mod tests {
     /// The corpus's expired outcome (`variant: "expired"`).
     fn corpus_expired() -> Value {
         let corpus: Value = serde_json::from_str(include_str!(
-            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+            "../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json"
         ))
         .unwrap();
         corpus["events"]
@@ -1161,7 +1161,7 @@ mod tests {
     /// The corpus's outcome of a choice (`variant: "choice"`).
     fn corpus_choice() -> Value {
         let corpus: Value = serde_json::from_str(include_str!(
-            "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+            "../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json"
         ))
         .unwrap();
         corpus["events"]

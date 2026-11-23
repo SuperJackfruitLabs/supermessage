@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/matrix/dev.agentpod.turn_error.json",
+  "title": "turn error card (embedded)",
+  "description": "A failed turn, structured so a client can draw it: what failed, which model, and each model the harness fell back to. The value under the `dev.agentpod.turn_error` content key of the room's error notice (`m.text`), whose `body` stays the readable fallback. The hub clips every string to its bound rather than drop the card, and omits a field it has no text for. Mirrors AgentPod's `TurnErrorCard` and the hub's `turnErrorCard` (`apps/hub/src/services/acp/turn-error.ts`). Readers ignore properties they do not know.",
+  "x-treaty-carrier": {
+    "kind": "content-key",
+    "key": "dev.agentpod.turn_error",
+    "msgtype": "m.text"
+  },
+  "type": "object",
+  "required": ["schema_version", "kind", "message", "harness"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The content's minor version. AgentPod sends 1. Additive changes raise it; a reader draws a higher version best-effort, never drops it."
+    },
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "x-treaty-known-values": [
+        "quota",
+        "rate_limit",
+        "auth",
+        "bad_request",
+        "context_exhausted",
+        "timeout",
+        "provider_unavailable",
+        "refusal",
+        "max_tokens",
+        "cancelled",
+        "node_offline",
+        "harness_exited",
+        "harness_disconnected",
+        "unknown"
+      ],
+      "description": "What kind of failure ended the turn, from AgentPod's TurnErrorKind (the hub sends only the listed values). Open to readers: a value not listed in x-treaty-known-values is valid and is drawn generically, never dropped."
+    },
+    "message": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000,
+      "description": "The provider's or harness's own words."
+    },
+    "harness": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100,
+      "description": "Which harness ran the turn."
+    },
+    "provider": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "The provider of the model that failed, when known."
+    },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "description": "The model that failed, when known."
+    },
+    "retryable": {
+      "type": "boolean",
+      "description": "Whether trying again may work, when the harness said."
+    },
+    "attempts": {
+      "type": "array",
+      "maxItems": 16,
+      "description": "Each model tried, in order: the first is the one asked for, the rest what the harness fell back to. Omitted rather than sent empty.",
+      "items": {
+        "type": "object",
+        "required": ["provider", "model", "kind", "message"],
+        "properties": {
+          "provider": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The attempt's provider; `unknown` when the harness did not say."
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "The attempt's model; `unknown` when the harness did not say."
+          },
+          "kind": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "x-treaty-known-values": [
+              "quota",
+              "rate_limit",
+              "auth",
+              "bad_request",
+              "context_exhausted",
+              "timeout",
+              "provider_unavailable",
+              "refusal",
+              "max_tokens",
+              "cancelled",
+              "node_offline",
+              "harness_exited",
+              "harness_disconnected",
+              "unknown"
+            ],
+            "description": "What kind of failure ended this attempt, from AgentPod's TurnErrorKind (the hub sends only the listed values). Open to readers: a value not listed in x-treaty-known-values is valid and is drawn generically, never dropped."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "The attempt's own error text."
+          }
+        }
+      }
+    }
+  }
+}

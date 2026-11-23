@@ -938,7 +938,7 @@ pub const GATE_DECISION_SUITE_TYPE: &str = "dev.superpipeline.gate.decision.v1";
 ///
 /// Split out from the send so the wire shape can be asserted without a
 /// homeserver: this is the half that has to agree with two other codebases,
-/// and it is pinned by `fixtures/ecosystem-identity/matrix_gate_events.json`
+/// and it is pinned by `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json`
 /// in AgentPod.
 ///
 /// `comment` is omitted entirely when absent rather than sent as `null` — a
@@ -4562,7 +4562,7 @@ mod tests {
     #[test]
     fn a_malformed_voice_reply_is_an_ordinary_voice_note() {
         let raw = hub_voice_reply(
-            serde_json::json!({ "schema_version": 2, "text_event_id": "$text", "voice": "bf_emma" }),
+            serde_json::json!({ "schema_version": 0, "text_event_id": "$text", "voice": "bf_emma" }),
             false,
         );
         let row = voice_row(&raw);
@@ -4655,7 +4655,7 @@ mod tests {
 
     #[test]
     fn voice_transcript_from_raw_is_none_for_a_malformed_key_and_the_row_stays_a_notice() {
-        let raw = hub_transcript(serde_json::json!({ "schema_version": 2, "text": "hi" }));
+        let raw = hub_transcript(serde_json::json!({ "schema_version": 0, "text": "hi" }));
         let transcript = voice_transcript_from_raw(Some(&raw));
         assert_eq!(transcript, None);
         let row = TimelineRow::with_voice_transcript(
@@ -6777,7 +6777,7 @@ mod tests {
 /// it, and this client that sends the answer. A rename here is a gate that
 /// silently never resolves, which reads to the person who tapped as a button
 /// that did nothing. Pinned by
-/// `fixtures/ecosystem-identity/matrix_gate_events.json` in treaty.
+/// `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json` in treaty.
 #[cfg(test)]
 mod gate_decision_tests {
     use super::*;

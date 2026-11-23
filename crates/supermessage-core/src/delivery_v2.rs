@@ -290,7 +290,7 @@ mod tests {
     use serde_json::json;
 
     const CORPUS: &str =
-        include_str!("../../../fixtures/ecosystem-identity/matrix_gate_events.json");
+        include_str!("../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json");
 
     fn cases(suite_type: &str, which: &str) -> Vec<(String, Value)> {
         let corpus: Value = serde_json::from_str(CORPUS).expect("the corpus is JSON");

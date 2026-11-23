@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/matrix/dev.agentpod.turn.v1.json",
+  "title": "dev.agentpod.turn.v1",
+  "description": "What an agent did during one turn: the durable record, one room event per turn that used a tool, sent before the answer. `tools` is capped at 20 (the hub's TURN_TOOLS_MAX) in the order the calls were first made; `counts` describes the whole turn regardless, so a capped list is never mistaken for a complete one. An empty `tools` is valid. Mirrors AgentPod's `TurnActivity` and the hub's `turnActivityContent` (`apps/hub/src/services/matrix-as/activity.ts`). Readers ignore properties they do not know.",
+  "x-treaty-carrier": {
+    "kind": "room-event"
+  },
+  "type": "object",
+  "required": ["schema_version", "session_id", "tools", "counts"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The content's minor version. AgentPod sends 1. Additive changes raise it; a reader draws a higher version best-effort, never drops it."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "A turn-scoped id: a new value starts a new turn. The AgentPod hub sends the ACP session id of the turn it is streaming; the Hermes plugin sends the turn's own id (falling back to Hermes's session id), so a straggler from an earlier turn is never mistaken for this one."
+    },
+    "tools": {
+      "type": "array",
+      "maxItems": 20,
+      "description": "The turn's tool calls, the first 20 by first use.",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "status", "locations"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The call's id, as its tool updates carried it."
+          },
+          "title": {
+            "type": "string",
+            "description": "What the call did, as display text. The hub falls back to the id rather than send a nameless row."
+          },
+          "kind": {
+            "type": "string",
+            "description": "ACP's tool kind (read, edit, execute, ...), passed through from the harness unvalidated. Opaque display text: never switched on. Absent when the harness did not say; never sent empty.",
+            "x-treaty-known-values": [
+              "read",
+              "edit",
+              "delete",
+              "move",
+              "search",
+              "execute",
+              "think",
+              "fetch",
+              "switch_mode",
+              "other"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "x-treaty-known-values": [
+              "pending",
+              "in_progress",
+              "completed",
+              "failed"
+            ],
+            "description": "ACP's tool lifecycle. The hub sends one of pending, in_progress, completed, failed; the Hermes plugin never sends pending (a call starts at in_progress). Open to readers: a value not listed in x-treaty-known-values is valid and is drawn generically, never dropped."
+          },
+          "locations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The paths the call touched."
+          }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "required": ["total", "failed", "omitted"],
+      "description": "The whole turn, not just the listed tools.",
+      "properties": {
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Every tool call the turn made."
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many of them failed."
+        },
+        "omitted": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many are not in `tools` because of the cap."
+        }
+      }
+    }
+  }
+}

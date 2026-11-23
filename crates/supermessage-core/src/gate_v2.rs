@@ -4,7 +4,7 @@
 //! hub puts these fields on the same prose `m.room.message` that carries the
 //! v1 card under `dev.superpipeline.gate` (`crate::embedded`), marked with
 //! `suite_event_type: "dev.superpipeline.gate.v2"`. The wire is pinned by
-//! `fixtures/ecosystem-identity/matrix_gate_events.json`, vendored from
+//! `vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json`, vendored from
 //! treaty byte for byte and read by the tests below.
 //!
 //! What v2 changes for this client, and where each rule lives:
@@ -505,10 +505,34 @@ fn parse_block(raw: &Value) -> Option<GatePreviewBlock> {
     }
 }
 
+/// `subject.expires_at`: `Ok(None)` when absent or null, `Err(())` when it is
+/// not what treaty's schemas allow — an RFC 3339 date-time with seconds and
+/// an explicit offset, naming a real instant (`2030-01-02T03:04:05Z`,
+/// `2030-01-02T08:34:05.5+05:30`). A date alone, a time without seconds or
+/// offset, a space for the `T`, lower case, `+0530` or 30 February are each a
+/// producer bug, and a card that says when its answer lapses must say it
+/// exactly or not be read.
+fn parse_expiry(raw: &Value) -> Result<Option<String>, ()> {
+    match raw.get("expires_at") {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => {
+            let text = value.as_str().ok_or(())?;
+            let with_seconds = text.as_bytes().get(16) == Some(&b':');
+            let fits = text.chars().count() <= EXPIRES_AT_MAX_CHARS;
+            if fits && with_seconds && crate::decision_timeout::iso_ms(text).is_some() {
+                Ok(Some(text.to_string()))
+            } else {
+                Err(())
+            }
+        }
+    }
+}
+
 /// `content.subject`: `Ok(None)` when absent, `Err(())` when present and not
-/// a subject an answer could be bound to (no id or no digest, or a
-/// `revision` that is not a whole number: it counts versions of the frozen
-/// subject, and treaty refuses any other).
+/// a subject an answer could be bound to (no id or no digest, a `revision`
+/// that is not a whole number: it counts versions of the frozen subject, and
+/// treaty refuses any other, or an `expires_at` that is not an exact time:
+/// [`parse_expiry`]).
 pub(crate) fn parse_subject(content: &Value) -> Result<Option<Subject>, ()> {
     let raw = match content.get("subject") {
         None | Some(Value::Null) => return Ok(None),
@@ -520,6 +544,7 @@ pub(crate) fn parse_subject(content: &Value) -> Result<Option<Subject>, ()> {
     if raw.get("revision").is_some_and(|r| r.as_u64().is_none()) {
         return Err(());
     }
+    let expires_at = parse_expiry(raw)?;
     // Only an explicit `true` counts. Absent is a board that did not say.
     let mut complete = raw.get("preview_complete").and_then(Value::as_bool) == Some(true);
     let mut preview = Vec::new();
@@ -550,7 +575,7 @@ pub(crate) fn parse_subject(content: &Value) -> Result<Option<Subject>, ()> {
             .get("schema")
             .and_then(Value::as_str)
             .map(str::to_string),
-        expires_at: safe_string_field(raw, "expires_at", EXPIRES_AT_MAX_CHARS),
+        expires_at,
     }))
 }
 
@@ -1157,7 +1182,7 @@ mod tests {
     use serde_json::json;
 
     const CORPUS: &str =
-        include_str!("../../../fixtures/ecosystem-identity/matrix_gate_events.json");
+        include_str!("../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json");
 
     fn corpus() -> Value {
         serde_json::from_str(CORPUS).expect("the corpus is JSON")
@@ -1180,6 +1205,38 @@ mod tests {
             .iter()
             .map(|c| (c["why"].as_str().unwrap().to_string(), c["content"].clone()))
             .collect()
+    }
+
+    #[test]
+    fn an_expiry_is_read_only_as_an_exact_time() {
+        let subject =
+            |expires_at: Value| json!({"id": "s", "digest": "d", "expires_at": expires_at});
+        for good in [
+            "2030-01-02T03:04:05Z",
+            "2030-01-02T08:34:05.5+05:30",
+            "2026-11-07T10:30:00.000Z",
+        ] {
+            assert_eq!(
+                parse_expiry(&subject(json!(good))),
+                Ok(Some(good.into())),
+                "{good}"
+            );
+        }
+        assert_eq!(parse_expiry(&json!({"id": "s"})), Ok(None));
+        assert_eq!(parse_expiry(&subject(Value::Null)), Ok(None));
+        for bad in [
+            json!("2030-01-02"),
+            json!("Jan 2 2030"),
+            json!("2030-01-02T03:04:05"),
+            json!("2030-01-02T03:04Z"),
+            json!("2030-01-02 03:04:05Z"),
+            json!("2030-01-02T03:04:05+0530"),
+            json!("2030-01-02t03:04:05z"),
+            json!("2030-02-30T03:04:05Z"),
+            json!(1_893_553_445),
+        ] {
+            assert_eq!(parse_expiry(&subject(bad.clone())), Err(()), "{bad}");
+        }
     }
 
     /// The publishing gate: subject-bound, four options.

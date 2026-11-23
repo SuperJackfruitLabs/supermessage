@@ -202,7 +202,7 @@ async fn the_prose_arriving_after_the_card_takes_its_place() {
 /// gate.v2 fields and the v1 card beside them, then the legacy v1 event.
 fn gate_v2_prose(event_id: &str) -> Raw<AnySyncTimelineEvent> {
     let corpus: Value = serde_json::from_str(include_str!(
-        "../../../fixtures/ecosystem-identity/matrix_gate_events.json"
+        "../../../vendor/treaty/fixtures/ecosystem-identity/matrix_gate_events.json"
     ))
     .unwrap();
     let mut content = corpus["events"][2]["accept"][0]["content"].clone();

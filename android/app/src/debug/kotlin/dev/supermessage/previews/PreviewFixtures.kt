@@ -976,8 +976,7 @@ object PreviewFixtures {
             TurnStep(
                 id = "c1", title = "read docs/tech-stack.md", status = "completed",
                 phase = ToolPhase.DONE, statusLabel = "Done", kind = "read",
-                locations = listOf("docs/tech-stack.md"), input = null,
-                output = null, seq = 1uL, hasDetail = true,
+                locations = listOf("docs/tech-stack.md"), seq = 1uL, hasDetail = true,
             ),
             // The web's LiveActivity names the *last failed* tool ahead of any
             // running one, because a failure is the only state there that still
@@ -986,16 +985,14 @@ object PreviewFixtures {
             TurnStep(
                 id = "c2", title = "write src/lib/tokens.css", status = "failed",
                 phase = ToolPhase.FAILED, statusLabel = "Failed", kind = "write",
-                locations = listOf("src/lib/tokens.css"), input = null,
-                output = "permission denied", seq = 1uL, hasDetail = true,
+                locations = listOf("src/lib/tokens.css"), seq = 1uL, hasDetail = true,
             ),
             TurnStep(
                 id = "c3",
                 title = "regenerate every design-token target and diff the checked-in " +
                     "output against the source that produces it",
                 status = "in_progress", phase = ToolPhase.RUNNING, statusLabel = "Running", kind = "run",
-                locations = emptyList(), input = null,
-                output = null, seq = 1uL, hasDetail = false,
+                locations = emptyList(), seq = 1uL, hasDetail = false,
             ),
         )
 

@@ -85,6 +85,9 @@ pub enum TurnErrorKind {
     Cancelled,
     NodeOffline,
     HarnessExited,
+    /// The harness's gateway stopped answering mid-turn. The conversation is
+    /// intact and trying again may work, unlike [`Self::HarnessExited`].
+    HarnessDisconnected,
     Unknown,
 }
 
@@ -104,6 +107,7 @@ impl TurnErrorKind {
             "cancelled" => Self::Cancelled,
             "node_offline" => Self::NodeOffline,
             "harness_exited" => Self::HarnessExited,
+            "harness_disconnected" => Self::HarnessDisconnected,
             _ => Self::Unknown,
         }
     }
@@ -124,6 +128,7 @@ impl TurnErrorKind {
             Self::Cancelled => "Stopped",
             Self::NodeOffline => "Machine offline",
             Self::HarnessExited => "Agent process exited",
+            Self::HarnessDisconnected => "Agent disconnected",
             Self::Unknown => "Error",
         }
     }
@@ -432,6 +437,11 @@ mod tests {
                 TurnErrorKind::HarnessExited,
                 "Agent process exited",
             ),
+            (
+                "harness_disconnected",
+                TurnErrorKind::HarnessDisconnected,
+                "Agent disconnected",
+            ),
             ("unknown", TurnErrorKind::Unknown, "Error"),
         ];
         for (wire, kind, label) in table {
@@ -440,6 +450,31 @@ mod tests {
             let card = parse_turn_error(&payload).unwrap();
             assert_eq!(card.kind, kind, "{wire}");
             assert_eq!(card.label, label, "{wire}");
+        }
+    }
+
+    /// treaty's schema for the card, vendored at the pinned release.
+    const SCHEMA: &str =
+        include_str!("../../../vendor/treaty/schemas/matrix/dev.agentpod.turn_error.json");
+
+    #[test]
+    fn every_kind_treaty_knows_is_one_this_build_names() {
+        let schema: Value = serde_json::from_str(SCHEMA).unwrap();
+        for known in [
+            &schema["properties"]["kind"]["x-treaty-known-values"],
+            &schema["properties"]["attempts"]["items"]["properties"]["kind"]
+                ["x-treaty-known-values"],
+        ] {
+            let known = known.as_array().expect("the schema lists its known kinds");
+            assert!(known.len() >= 14);
+            for wire in known.iter().filter_map(Value::as_str) {
+                let kind = TurnErrorKind::from_wire(wire);
+                assert_eq!(
+                    kind == TurnErrorKind::Unknown,
+                    wire == "unknown",
+                    "{wire} is a kind treaty knows and this build does not"
+                );
+            }
         }
     }
 

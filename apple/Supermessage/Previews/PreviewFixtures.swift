@@ -931,8 +931,7 @@ enum PreviewFixtures {
                 .tool(
                     step: .fixture(
                         id: "c2", title: "write src/lib/tokens.css", phase: .failed, seq: seq,
-                        kind: "write", locations: ["src/lib/tokens.css"],
-                        output: "permission denied"),
+                        kind: "write", locations: ["src/lib/tokens.css"]),
                     atMs: now))
             seq += 1
             inputs.append(

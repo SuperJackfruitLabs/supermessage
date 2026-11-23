@@ -14,10 +14,11 @@
 //!
 //! ## Untrusted input, read strictly
 //!
-//! Anyone who can send to a room can put this key on a message. Unlike the
-//! turn error card, which reads a newer version best-effort, this parser is
-//! **strict**: `schema_version` must be exactly `1`, and every field must be
-//! what the contract says it is —
+//! Anyone who can send to a room can put this key on a message. The parser is
+//! **strict** about every field it reads: `schema_version` must be a whole
+//! number of at least `1` (a higher one is read best-effort, as treaty's
+//! `dev.agentpod.voice_transcript` asks: the fields below, anything new
+//! ignored), and every field must be what the contract says it is —
 //!
 //! | Field | Contract |
 //! |---|---|
@@ -76,7 +77,8 @@ use crate::item_view::ItemView;
 /// The `content` key the AgentPod hub writes the structured transcript under.
 pub const VOICE_TRANSCRIPT_KEY: &str = "dev.agentpod.voice_transcript";
 
-/// The only `schema_version` this parser reads.
+/// The `schema_version` this parser was written against. A higher one is
+/// read best-effort: the fields this build knows, anything new ignored.
 pub const SCHEMA_VERSION: u64 = 1;
 
 /// `text`, in code points. Matches the contract.
@@ -115,8 +117,11 @@ pub struct VoiceNoteTranscript {
 pub fn parse_voice_transcript(value: &Value) -> Option<VoiceNoteTranscript> {
     let object = value.as_object()?;
 
-    // Exactly 1: `as_u64` also refuses `1.5`, `"1"` and a negative.
-    if object.get("schema_version")?.as_u64()? != SCHEMA_VERSION {
+    // A whole number, 1 or more: `as_u64` also refuses `1.5`, `"1"` and a
+    // negative. A version above SCHEMA_VERSION is an additive change (treaty:
+    // drawn best-effort, never dropped); one that dropped or retyped a field
+    // this reads fails below and falls back to the plain message.
+    if object.get("schema_version")?.as_u64()? < SCHEMA_VERSION {
         return None;
     }
 
@@ -316,6 +321,20 @@ mod tests {
     }
 
     #[test]
+    fn a_newer_version_is_drawn_best_effort_never_dropped() {
+        // treaty: "a reader draws a higher version best-effort, never drops it".
+        let mut payload = hub();
+        payload["schema_version"] = json!(2);
+        payload["confidence"] = json!(0.93);
+        assert_eq!(
+            parse_voice_transcript(&payload),
+            parse_voice_transcript(&hub())
+        );
+        payload["schema_version"] = json!(17);
+        assert!(parse_voice_transcript(&payload).is_some());
+    }
+
+    #[test]
     fn the_hubs_transcript_reads_with_its_language_and_length() {
         let t = parse_voice_transcript(&hub()).expect("the hub's own payload must parse");
         assert_eq!(t.text, "Can you move the review to Thursday?");
@@ -416,7 +435,6 @@ mod tests {
             ("schema_version", Value::Null),
             ("schema_version", json!("1")),
             ("schema_version", json!(0)),
-            ("schema_version", json!(2)),
             ("schema_version", json!(1.5)),
             ("text", Value::Null),
             ("text", json!(7)),
