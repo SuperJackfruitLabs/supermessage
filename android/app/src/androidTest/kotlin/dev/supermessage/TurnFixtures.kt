@@ -13,12 +13,10 @@ internal fun turnStep(
     phase: ToolPhase = ToolPhase.DONE,
     statusLabel: String = "Done",
     hasDetail: Boolean = false,
-    input: String? = null,
-    output: String? = null,
     locations: List<String> = emptyList(),
 ) = TurnStep(
     id = id, title = title, kind = null, status = "completed", phase = phase, statusLabel = statusLabel,
-    locations = locations, input = input, output = output, seq = 1uL, hasDetail = hasDetail,
+    locations = locations, seq = 1uL, hasDetail = hasDetail,
 )
 
 internal fun inProgress(

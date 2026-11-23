@@ -35,8 +35,6 @@ function step(id: string, over: Partial<TurnStep> = {}): TurnStep {
     phase: "running",
     statusLabel: "Running",
     locations: [],
-    input: null,
-    output: null,
     seq: 1,
     hasDetail: false,
     ...over,

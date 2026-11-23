@@ -80,9 +80,33 @@ pub fn endpoint_for(gateway_url: &str) -> Option<String> {
     Some(format!("{origin}{TOKENS_PATH}"))
 }
 
-/// The `POST` body for `token` from `device_id`, or `None` for an update
-/// token without its activity's id, which the hub cannot key.
+/// The shortest APNs token the hub accepts, in hex digits.
+pub const TOKEN_HEX_MIN: usize = 32;
+/// The longest: push-to-start tokens run longer than device tokens.
+pub const TOKEN_HEX_MAX: usize = 512;
+/// A `device_id` or `activity_id`, in code points.
+pub const ID_MAX_CHARS: usize = 255;
+
+/// The bounds treaty's `live-activity.v1` gives the hub's routes, checked
+/// here so a request the hub would refuse with `M_BAD_JSON` is never sent:
+/// a token of 32 to 512 hex digits, and ids of 1 to 255 characters.
+fn token_in_bounds(token: &str) -> bool {
+    (TOKEN_HEX_MIN..=TOKEN_HEX_MAX).contains(&token.len())
+        && token.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn id_in_bounds(id: &str) -> bool {
+    (1..=ID_MAX_CHARS).contains(&id.chars().count())
+}
+
+/// The `POST` body for `token` from `device_id`, or `None` when the hub would
+/// refuse it: an update token without its activity's id, which the hub cannot
+/// key, or a token or id outside the bounds above.
 pub fn register_body(token: &LiveActivityToken, device_id: &str) -> Option<serde_json::Value> {
+    let ids_fit = id_in_bounds(device_id) && token.activity_id.as_deref().is_none_or(id_in_bounds);
+    if !(token_in_bounds(&token.token) && ids_fit) {
+        return None;
+    }
     let mut body = serde_json::json!({
         "kind": token.kind.wire(),
         "token": token.token,
@@ -100,17 +124,20 @@ pub fn register_body(token: &LiveActivityToken, device_id: &str) -> Option<serde
 }
 
 /// The `DELETE` body for this device's token of `kind` (and, for an update
-/// token, the activity's).
+/// token, the activity's), or `None` when an id is outside the hub's bounds.
 pub fn delete_body(
     kind: LiveActivityTokenKind,
     device_id: &str,
     activity_id: Option<&str>,
-) -> serde_json::Value {
+) -> Option<serde_json::Value> {
+    if !(id_in_bounds(device_id) && activity_id.is_none_or(id_in_bounds)) {
+        return None;
+    }
     let mut body = serde_json::json!({ "kind": kind.wire(), "device_id": device_id });
     if let Some(id) = activity_id {
         body["activity_id"] = serde_json::Value::String(id.to_string());
     }
-    body
+    Some(body)
 }
 
 /// The tokens this device registered, remembered with the session so signing
@@ -173,10 +200,13 @@ impl StoredTokens {
 mod tests {
     use super::*;
 
+    /// A device token's length: 32 bytes, 64 hex digits.
+    const HEX: &str = "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12";
+
     fn token(kind: LiveActivityTokenKind, activity_id: Option<&str>) -> LiveActivityToken {
         LiveActivityToken {
             kind,
-            token: "ab12".into(),
+            token: HEX.into(),
             sandbox: false,
             activity_id: activity_id.map(str::to_string),
         }
@@ -212,7 +242,7 @@ mod tests {
         assert_eq!(
             start,
             serde_json::json!({
-                "kind": "start", "token": "ab12", "environment": "production",
+                "kind": "start", "token": HEX, "environment": "production",
                 "device_id": "DEV",
             })
         );
@@ -237,12 +267,58 @@ mod tests {
     fn a_deletion_names_the_device_and_the_activity() {
         assert_eq!(
             delete_body(LiveActivityTokenKind::Update, "DEV", Some("act-1")),
-            serde_json::json!({"kind": "update", "device_id": "DEV", "activity_id": "act-1"})
+            Some(serde_json::json!({"kind": "update", "device_id": "DEV", "activity_id": "act-1"}))
         );
         assert_eq!(
             delete_body(LiveActivityTokenKind::Start, "DEV", None),
-            serde_json::json!({"kind": "start", "device_id": "DEV"})
+            Some(serde_json::json!({"kind": "start", "device_id": "DEV"}))
         );
+    }
+
+    #[test]
+    fn nothing_the_hub_would_refuse_is_sent() {
+        let start = |hex: String, device: &str| {
+            let t = LiveActivityToken {
+                token: hex,
+                ..token(LiveActivityTokenKind::Start, None)
+            };
+            register_body(&t, device)
+        };
+        assert!(start("a".repeat(TOKEN_HEX_MIN), "DEV").is_some());
+        assert!(start("A".repeat(TOKEN_HEX_MAX), "DEV").is_some());
+        assert!(start("a".repeat(TOKEN_HEX_MIN - 1), "DEV").is_none());
+        assert!(start("a".repeat(TOKEN_HEX_MAX + 1), "DEV").is_none());
+        assert!(start("z".repeat(64), "DEV").is_none(), "not hex");
+        assert!(start(HEX.into(), "").is_none(), "no device");
+        assert!(start(HEX.into(), &"d".repeat(ID_MAX_CHARS + 1)).is_none());
+        assert!(
+            start(HEX.into(), &"é".repeat(ID_MAX_CHARS)).is_some(),
+            "code points"
+        );
+        let long = "a".repeat(ID_MAX_CHARS + 1);
+        let update = token(LiveActivityTokenKind::Update, Some(&long));
+        assert!(register_body(&update, "DEV").is_none());
+        assert!(register_body(&token(LiveActivityTokenKind::Update, Some("")), "DEV").is_none());
+        assert!(delete_body(LiveActivityTokenKind::Start, "", None).is_none());
+        assert!(delete_body(LiveActivityTokenKind::Update, "DEV", Some(&long)).is_none());
+    }
+
+    /// treaty's OpenAPI document for the hub's routes, at the pinned release.
+    const OPENAPI: &str =
+        include_str!("../../../vendor/treaty/schemas/http/agentpod/live-activity.v1.openapi.json");
+
+    #[test]
+    fn the_bounds_are_the_ones_the_hub_enforces() {
+        let doc: serde_json::Value = serde_json::from_str(OPENAPI).unwrap();
+        let schemas = &doc["components"]["schemas"];
+        assert_eq!(
+            schemas["TokenRegistration"]["properties"]["token"]["pattern"],
+            format!("^[0-9a-fA-F]{{{TOKEN_HEX_MIN},{TOKEN_HEX_MAX}}}$")
+        );
+        for id in ["DeviceId", "ActivityId"] {
+            assert_eq!(schemas[id]["minLength"], 1, "{id}");
+            assert_eq!(schemas[id]["maxLength"], ID_MAX_CHARS, "{id}");
+        }
     }
 
     #[test]

@@ -7,6 +7,15 @@ to v0.1.2 predate this file.
 
 ## Unreleased
 
+- A turn that failed because the agent's gateway stopped answering reads "Agent disconnected"
+  rather than a plain error.
+- On iOS, a Lock Screen decision for a card waiting on a person (or of a kind this build does not
+  know) opens the app instead of offering a permission's buttons.
+- A voice note's transcript and an agent's spoken reply from a newer hub are drawn rather than
+  shown as the plain message.
+- A tool row in a live turn opens onto the files it touched; the Input and Output sections, which
+  no agent ever sent, are gone.
+
 - Desktop releases are published, with `SHA256SUMS` and a build-provenance attestation for each
   installer, from the installers main's CI built and tested for the tagged commit.
 - Every release carries the four Android debug APKs again

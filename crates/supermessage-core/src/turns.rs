@@ -51,8 +51,6 @@ pub struct TurnStep {
     pub phase: ToolPhase,
     pub status_label: String,
     pub locations: Vec<String>,
-    pub input: Option<String>,
-    pub output: Option<String>,
     /// The call's sequence; a report at or below the last one is dropped.
     pub seq: u64,
     /// Whether there is anything to open the row onto.
@@ -69,10 +67,8 @@ impl TurnStep {
             phase: p.phase,
             status_label: p.status_label.clone(),
             locations: p.locations.clone(),
-            input: p.input.clone(),
-            output: p.output.clone(),
             seq: p.seq,
-            has_detail: p.input.is_some() || p.output.is_some() || !p.locations.is_empty(),
+            has_detail: !p.locations.is_empty(),
         }
     }
 }
@@ -711,8 +707,6 @@ mod tests {
             phase,
             status_label: phase.label().into(),
             locations: vec![],
-            input: None,
-            output: None,
             seq,
             has_detail: false,
         }
@@ -902,8 +896,6 @@ mod tests {
             phase: ToolPhase::Done,
             status_label: "Done".into(),
             locations,
-            input: None,
-            output: None,
         };
         assert!(!TurnStep::from_payload(&payload(vec![])).has_detail);
         assert!(TurnStep::from_payload(&payload(vec!["src/a.rs".into()])).has_detail);
@@ -921,7 +913,7 @@ mod tests {
             .update
             .unwrap();
         let mut done = step("a", "Test", ToolPhase::Done, 2);
-        done.output = Some("3 passed".into());
+        done.locations = vec!["src/a.rs".into()];
         let second = book
             .apply(
                 ROOM,
@@ -937,7 +929,7 @@ mod tests {
         let snap = book.snapshot(ROOM).unwrap();
         assert_eq!(snap.steps.len(), 1);
         assert_eq!(snap.steps[0].status, "completed");
-        assert_eq!(snap.steps[0].output.as_deref(), Some("3 passed"));
+        assert_eq!(snap.steps[0].locations, ["src/a.rs"]);
     }
 
     /// Ported from `LiveStoreTests.swift`.

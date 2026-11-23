@@ -6059,8 +6059,6 @@ data class TurnStep (
     var `phase`: ToolPhase, 
     var `statusLabel`: kotlin.String, 
     var `locations`: List<kotlin.String>, 
-    var `input`: kotlin.String?, 
-    var `output`: kotlin.String?, 
     /**
      * The call's sequence; a report at or below the last one is dropped.
      */
@@ -6087,8 +6085,6 @@ public object FfiConverterTypeTurnStep: FfiConverterRustBuffer<TurnStep> {
             FfiConverterTypeToolPhase.read(buf),
             FfiConverterString.read(buf),
             FfiConverterSequenceString.read(buf),
-            FfiConverterOptionalString.read(buf),
-            FfiConverterOptionalString.read(buf),
             FfiConverterULong.read(buf),
             FfiConverterBoolean.read(buf),
         )
@@ -6102,8 +6098,6 @@ public object FfiConverterTypeTurnStep: FfiConverterRustBuffer<TurnStep> {
             FfiConverterTypeToolPhase.allocationSize(value.`phase`) +
             FfiConverterString.allocationSize(value.`statusLabel`) +
             FfiConverterSequenceString.allocationSize(value.`locations`) +
-            FfiConverterOptionalString.allocationSize(value.`input`) +
-            FfiConverterOptionalString.allocationSize(value.`output`) +
             FfiConverterULong.allocationSize(value.`seq`) +
             FfiConverterBoolean.allocationSize(value.`hasDetail`)
     )
@@ -6116,8 +6110,6 @@ public object FfiConverterTypeTurnStep: FfiConverterRustBuffer<TurnStep> {
             FfiConverterTypeToolPhase.write(value.`phase`, buf)
             FfiConverterString.write(value.`statusLabel`, buf)
             FfiConverterSequenceString.write(value.`locations`, buf)
-            FfiConverterOptionalString.write(value.`input`, buf)
-            FfiConverterOptionalString.write(value.`output`, buf)
             FfiConverterULong.write(value.`seq`, buf)
             FfiConverterBoolean.write(value.`hasDetail`, buf)
     }
@@ -7712,14 +7704,8 @@ sealed class CustomEventView {
     data class Rendered(
         val `fields`: List<CustomEventField>, 
         /**
-         * How the agent reached this, when it said — see
+         * Long-form prose beside the rows, when the card carries some — see
          * [`CustomEventRenderResult::reasoning`].
-         *
-         * **This is where reasoning persists.** The live channel carries it
-         * on to-device messages, which are not room history and are gone the
-         * moment the turn ends; a turn card is a real room event, so
-         * reasoning that arrives here is still there tomorrow, on every
-         * client, in its place in the conversation.
          */
         val `reasoning`: kotlin.String?, 
         /**
@@ -10495,6 +10481,11 @@ enum class TurnErrorKind {
     CANCELLED,
     NODE_OFFLINE,
     HARNESS_EXITED,
+    /**
+     * The harness's gateway stopped answering mid-turn. The conversation is
+     * intact and trying again may work, unlike [`Self::HarnessExited`].
+     */
+    HARNESS_DISCONNECTED,
     UNKNOWN;
     companion object
 }

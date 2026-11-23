@@ -149,7 +149,7 @@ struct FleetActivityCard: View {
         -> WidgetSnapshot.Decision
     {
         WidgetSnapshot.Decision(
-            kind: decision.kind == .gate ? .gate : .permission, roomId: decision.roomId,
+            kind: decision.widgetKind, roomId: decision.roomId,
             eventId: decision.eventId, agent: decision.agent, question: decision.question,
             options: decision.options.map {
                 .init(id: $0.id, label: $0.label, inline: true, declines: $0.declines)

@@ -172,8 +172,6 @@ export function turnStep(overrides: Partial<TurnStep> = {}): TurnStep {
     phase: "done",
     statusLabel: "Done",
     locations: [],
-    input: null,
-    output: null,
     seq: 1,
     hasDetail: false,
     ...overrides,
@@ -209,7 +207,7 @@ export function turnSummary(overrides: Partial<TurnSummary> = {}): TurnSummary {
 export function longTurn(finished = false): { summary: TurnSummary; steps: TurnStep[]; thought: string } {
   const steps = [
     turnStep({ id: "t1", title: "read scripts/tokens/model.py", kind: "read", seq: 2, locations: ["scripts/tokens/model.py"], hasDetail: true }),
-    turnStep({ id: "t2", title: "run pytest scripts/tests", kind: "execute", seq: 3, output: "41 passed", hasDetail: true }),
+    turnStep({ id: "t2", title: "run pytest scripts/tests", kind: "execute", seq: 3, locations: ["scripts/tests"], hasDetail: true }),
     turnStep({
       id: "t3",
       title: "write design/tokens.toml",
@@ -219,7 +217,6 @@ export function longTurn(finished = false): { summary: TurnSummary; steps: TurnS
       phase: "failed",
       statusLabel: "Failed",
       locations: ["design/tokens.toml"],
-      output: "permission denied",
       hasDetail: true,
     }),
     turnStep({

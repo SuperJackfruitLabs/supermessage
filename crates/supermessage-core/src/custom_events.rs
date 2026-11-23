@@ -282,8 +282,8 @@ pub struct CustomEventRenderResult {
     /// printed at a reader who then has to retype it. That is worse than not
     /// sending it, because it looks like an affordance and is not.
     pub link: Option<String>,
-    /// Long-form prose the card carries beside its rows — an agent's
-    /// reasoning, today.
+    /// Long-form prose the card carries beside its rows — a gate's handoff
+    /// summary, today.
     ///
     /// Separate from [`Self::fields`] because a field is a label and a short
     /// value (300 characters), and reasoning is neither: it is paragraphs,
@@ -303,14 +303,8 @@ pub struct CustomEventRenderResult {
 pub enum CustomEventView {
     Rendered {
         fields: Vec<CustomEventField>,
-        /// How the agent reached this, when it said — see
+        /// Long-form prose beside the rows, when the card carries some — see
         /// [`CustomEventRenderResult::reasoning`].
-        ///
-        /// **This is where reasoning persists.** The live channel carries it
-        /// on to-device messages, which are not room history and are gone the
-        /// moment the turn ends; a turn card is a real room event, so
-        /// reasoning that arrives here is still there tomorrow, on every
-        /// client, in its place in the conversation.
         reasoning: Option<String>,
         /// The payload declared a `schema_version` above what this renderer
         /// knows. Rendered anyway, best effort, and flagged.
@@ -787,19 +781,6 @@ impl CustomEventRenderer for TurnActivityRenderer {
             .and_then(Value::as_array)
             .unwrap_or(&empty);
 
-        // **Where reasoning becomes permanent.** The live channel carries it
-        // on to-device messages, which are not room history — they are gone
-        // the moment the turn ends. A turn card is a real room event, so
-        // reasoning an agent puts here is still there tomorrow, on every
-        // client, in its place in the conversation.
-        //
-        // Read with the same discipline as everything else in this module:
-        // check the shape, take the value, never coerce, never recurse.
-        let reasoning = content
-            .get("reasoning")
-            .and_then(Value::as_str)
-            .map(str::to_string);
-
         let mut fields = Vec::new();
         // The headline first: a reader scanning a conversation wants "it did
         // seven things and one failed" before it wants to know which seven.
@@ -841,9 +822,11 @@ impl CustomEventRenderer for TurnActivityRenderer {
                 value: format!("{} more not listed", omitted as i64),
             });
         }
+        // No `reasoning`: treaty's dev.agentpod.turn.v1 has none, and no
+        // producer sends one.
         CustomEventRenderResult {
             fields,
-            reasoning,
+            reasoning: None,
             link: None,
             decision: None,
         }
@@ -1924,69 +1907,33 @@ mod tests {
     }
 
     #[test]
-    fn a_turn_carries_the_reasoning_that_produced_it() {
-        // The point of putting it here: the live channel delivers reasoning
-        // on to-device messages, which are not room history and are gone the
-        // moment the turn ends. A turn card is a real room event.
+    fn a_turns_reasoning_is_not_read_because_no_producer_sends_it() {
+        // treaty's dev.agentpod.turn.v1 has no `reasoning`: neither the hub
+        // nor the Hermes plugin sends one, so a reader that drew it would be
+        // drawing words anyone in the room could put there.
         let mut turn = a_turn();
         turn["reasoning"] = json!("Checked the logs before touching anything.");
         let view = render_with(Box::new(TurnActivityRenderer), turn);
         let CustomEventView::Rendered { reasoning, .. } = view else {
             panic!("expected a rendered card");
         };
-        assert_eq!(
-            reasoning.as_deref(),
-            Some("Checked the logs before touching anything.")
+        assert!(
+            reasoning.is_none(),
+            "a field the contract does not have was read"
         );
-    }
-
-    #[test]
-    fn a_turn_that_said_nothing_about_its_reasoning_carries_none() {
-        let view = render_with(Box::new(TurnActivityRenderer), a_turn());
-        let CustomEventView::Rendered { reasoning, .. } = view else {
-            panic!("expected a rendered card");
-        };
-        assert!(reasoning.is_none(), "reasoning was invented");
-    }
-
-    #[test]
-    fn reasoning_that_is_not_prose_is_not_reasoning() {
-        // Arbitrary JSON from anyone who can send to the room. A number, an
-        // object or an array is not a thought, and coercing one into a string
-        // would put `{"a":1}` where a paragraph belongs.
-        for shape in [json!(42), json!({ "a": 1 }), json!(["a"]), json!(null)] {
-            let mut turn = a_turn();
-            turn["reasoning"] = shape.clone();
-            let view = render_with(Box::new(TurnActivityRenderer), turn);
-            let CustomEventView::Rendered { reasoning, .. } = view else {
-                panic!("expected a rendered card");
-            };
-            assert!(reasoning.is_none(), "{shape} was read as reasoning");
-        }
     }
 
     #[test]
     fn empty_reasoning_is_the_same_as_none() {
         // A disclosure that opens onto an empty box says there is something
         // to read.
-        let mut turn = a_turn();
-        turn["reasoning"] = json!("   \n  ");
-        let view = render_with(Box::new(TurnActivityRenderer), turn);
-        let CustomEventView::Rendered { reasoning, .. } = view else {
-            panic!("expected a rendered card");
-        };
-        assert!(reasoning.is_none());
+        assert!(bound_reasoning(Some("   \n  ".into())).is_none());
+        assert!(bound_reasoning(None).is_none());
     }
 
     #[test]
     fn a_very_long_thought_is_cut_and_says_so() {
-        let mut turn = a_turn();
-        turn["reasoning"] = json!("z".repeat(REASONING_MAX_CHARS + 200));
-        let view = render_with(Box::new(TurnActivityRenderer), turn);
-        let CustomEventView::Rendered { reasoning, .. } = view else {
-            panic!("expected a rendered card");
-        };
-        let text = reasoning.expect("reasoning");
+        let text = bound_reasoning(Some("z".repeat(REASONING_MAX_CHARS + 200))).expect("reasoning");
         assert_eq!(text.chars().count(), REASONING_MAX_CHARS + 1);
         assert!(text.ends_with('…'), "the cut was silent");
     }

@@ -1274,7 +1274,7 @@ mod tests {
     /// contract: only the hub's voice reply is quiet.
     #[test]
     fn an_ordinary_voice_note_still_notifies() {
-        let broken = json!({ "schema_version": 2, "text_event_id": "$t", "voice": "v" });
+        let broken = json!({ "schema_version": 0, "text_event_id": "$t", "voice": "v" });
         for key in [None, Some(broken)] {
             let note = notify(voice_note(key.clone()));
             assert_eq!(note.suppress, None, "{key:?}");

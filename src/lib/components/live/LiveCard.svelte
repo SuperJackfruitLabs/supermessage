@@ -253,14 +253,10 @@
                   <span class="min-w-0 flex-1">{@render row()}</span>
                 </summary>
                 <div class="selectable mt-1 flex flex-col gap-2">
-                  {#each [["Touched", step.locations.join("\n")], ["Input", step.input], ["Output", step.output]] as [label, text] (label)}
-                    {#if text}
-                      <div>
-                        <p class="text-meta text-content-faint">{label}</p>
-                        <pre class="font-mono text-meta whitespace-pre-wrap break-words text-content-muted">{text}</pre>
-                      </div>
-                    {/if}
-                  {/each}
+                  <div>
+                    <p class="text-meta text-content-faint">Touched</p>
+                    <pre class="font-mono text-meta whitespace-pre-wrap break-words text-content-muted">{step.locations.join("\n")}</pre>
+                  </div>
                 </div>
               </details>
             {:else}

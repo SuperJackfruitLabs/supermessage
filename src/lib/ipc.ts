@@ -1008,6 +1008,7 @@ export type TurnErrorKind =
   | "cancelled"
   | "nodeOffline"
   | "harnessExited"
+  | "harnessDisconnected"
   | "unknown";
 
 /**
@@ -2532,14 +2533,6 @@ export interface ToolPayload {
   /** The word to show beside the call ("Queued", "Running", "Done", "Failed", "Working"). */
   statusLabel: string;
   locations: string[];
-  /**
-   * What the call was given and what it produced, bounded by the core
-   * (`live::bound_tool_text`). `null` from a harness that does not report
-   * them — which is every harness today; the field exists so one that starts
-   * to needs no schema change.
-   */
-  input: string | null;
-  output: string | null;
 }
 
 /** Subscribes to tool-call state on {@link TOOL_EVENT}. */
@@ -2556,8 +2549,6 @@ export interface TurnStep {
   phase: ToolPhase;
   statusLabel: string;
   locations: string[];
-  input: string | null;
-  output: string | null;
   seq: number;
   hasDetail: boolean;
 }

@@ -46,18 +46,13 @@ What the client does with it:
 
 Turn state itself (start, steps, end, the record kept after) is `core::turns`, fed from these events, from the agent's reply landing on the timeline, and from a 30-minute time limit. Hosts read it from `CoreEvent::Turn` and `Session::turn`; they do not rebuild it.
 
-### Tool calls: two fields AgentPod does not send yet
+### Tool calls: what is read
 
-`ToolUpdateToDeviceEventContent` accepts `input` and `output`, both optional
-strings, bounded by the core at 4000 characters (`live::bound_tool_text`) and
-rendered as a disclosure under the tool's row.
+treaty's `dev.agentpod.tool.update` is the wire: there is no `input` or
+`output`, and this client reads neither. A row opens onto its detail only when
+the call touched something.
 
-**No harness fills them in today.** A row with neither stays a plain row rather
-than a disclosure that opens onto an empty box, so adding them is additive: a
-harness that starts sending them needs no client change, and one that never
-does loses nothing.
-
-`kind` and `locations` *are* sent and are rendered — `locations` as "Touched".
+`kind` and `locations` are sent and are rendered — `locations` as "Touched".
 
 ## 2. The turn card — a room event, and therefore permanent
 
@@ -71,19 +66,10 @@ and every client in the room sees it.
 | `schema_version` | Above `1.0` renders best-effort and is flagged "shown from a newer version". |
 | `counts.total` / `.failed` / `.omitted` | The headline row — "7 things, 1 failed" — because a reader scanning a room wants that before the list. |
 | `tools[].title` / `.status` | One row each. `title` goes through `custom_events::tool_title`, which unwraps `bash -lc`, folds continuation lines, and shortens deep absolute paths from the front so the filename survives the field cap. |
-| `reasoning` | **New, and not sent yet.** Long-form prose, bounded at 4000 characters, rendered as a collapsed disclosure on the card. |
 
-### Why `reasoning` belongs here and not on the live channel
-
-Both channels can carry reasoning; only this one keeps it. A reader who asks
-"why did it do that?" an hour later, or on another device, or by scrolling back
-— which is when the question is usually asked — is looking at the turn card,
-because the to-device stream that produced the answer no longer exists
-anywhere.
-
-The client renders it on both hosts today. **Until AgentPod includes it, the
-card looks exactly as it does now.** The live card's reasoning is the stopgap,
-and it is bounded by the next turn.
+treaty's `dev.agentpod.turn.v1` has no `reasoning`, and no producer sends one,
+so the card reads none: a turn's reasoning is the live card's, bounded by the
+next turn.
 
 ## 3. The turn error card — a key on an ordinary message
 

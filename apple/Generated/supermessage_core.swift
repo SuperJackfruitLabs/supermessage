@@ -10296,8 +10296,6 @@ public struct TurnStep {
     public var phase: ToolPhase
     public var statusLabel: String
     public var locations: [String]
-    public var input: String?
-    public var output: String?
     /**
      * The call's sequence; a report at or below the last one is dropped.
      */
@@ -10312,7 +10310,7 @@ public struct TurnStep {
     public init(id: String, title: String, kind: String?, 
         /**
          * ACP's raw status. Not for display; see `phase` and `status_label`.
-         */status: String, phase: ToolPhase, statusLabel: String, locations: [String], input: String?, output: String?, 
+         */status: String, phase: ToolPhase, statusLabel: String, locations: [String], 
         /**
          * The call's sequence; a report at or below the last one is dropped.
          */seq: UInt64, 
@@ -10326,8 +10324,6 @@ public struct TurnStep {
         self.phase = phase
         self.statusLabel = statusLabel
         self.locations = locations
-        self.input = input
-        self.output = output
         self.seq = seq
         self.hasDetail = hasDetail
     }
@@ -10358,12 +10354,6 @@ extension TurnStep: Equatable, Hashable {
         if lhs.locations != rhs.locations {
             return false
         }
-        if lhs.input != rhs.input {
-            return false
-        }
-        if lhs.output != rhs.output {
-            return false
-        }
         if lhs.seq != rhs.seq {
             return false
         }
@@ -10381,8 +10371,6 @@ extension TurnStep: Equatable, Hashable {
         hasher.combine(phase)
         hasher.combine(statusLabel)
         hasher.combine(locations)
-        hasher.combine(input)
-        hasher.combine(output)
         hasher.combine(seq)
         hasher.combine(hasDetail)
     }
@@ -10403,8 +10391,6 @@ public struct FfiConverterTypeTurnStep: FfiConverterRustBuffer {
                 phase: FfiConverterTypeToolPhase.read(from: &buf), 
                 statusLabel: FfiConverterString.read(from: &buf), 
                 locations: FfiConverterSequenceString.read(from: &buf), 
-                input: FfiConverterOptionString.read(from: &buf), 
-                output: FfiConverterOptionString.read(from: &buf), 
                 seq: FfiConverterUInt64.read(from: &buf), 
                 hasDetail: FfiConverterBool.read(from: &buf)
         )
@@ -10418,8 +10404,6 @@ public struct FfiConverterTypeTurnStep: FfiConverterRustBuffer {
         FfiConverterTypeToolPhase.write(value.phase, into: &buf)
         FfiConverterString.write(value.statusLabel, into: &buf)
         FfiConverterSequenceString.write(value.locations, into: &buf)
-        FfiConverterOptionString.write(value.input, into: &buf)
-        FfiConverterOptionString.write(value.output, into: &buf)
         FfiConverterUInt64.write(value.seq, into: &buf)
         FfiConverterBool.write(value.hasDetail, into: &buf)
     }
@@ -13578,14 +13562,8 @@ public enum CustomEventView {
     
     case rendered(fields: [CustomEventField], 
         /**
-         * How the agent reached this, when it said — see
+         * Long-form prose beside the rows, when the card carries some — see
          * [`CustomEventRenderResult::reasoning`].
-         *
-         * **This is where reasoning persists.** The live channel carries it
-         * on to-device messages, which are not room history and are gone the
-         * moment the turn ends; a turn card is a real room event, so
-         * reasoning that arrives here is still there tomorrow, on every
-         * client, in its place in the conversation.
          */reasoning: String?, 
         /**
          * The payload declared a `schema_version` above what this renderer
@@ -16742,6 +16720,11 @@ public enum TurnErrorKind {
     case cancelled
     case nodeOffline
     case harnessExited
+    /**
+     * The harness's gateway stopped answering mid-turn. The conversation is
+     * intact and trying again may work, unlike [`Self::HarnessExited`].
+     */
+    case harnessDisconnected
     case unknown
 }
 
@@ -16780,7 +16763,9 @@ public struct FfiConverterTypeTurnErrorKind: FfiConverterRustBuffer {
         
         case 12: return .harnessExited
         
-        case 13: return .unknown
+        case 13: return .harnessDisconnected
+        
+        case 14: return .unknown
         
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -16838,8 +16823,12 @@ public struct FfiConverterTypeTurnErrorKind: FfiConverterRustBuffer {
             writeInt(&buf, Int32(12))
         
         
-        case .unknown:
+        case .harnessDisconnected:
             writeInt(&buf, Int32(13))
+        
+        
+        case .unknown:
+            writeInt(&buf, Int32(14))
         
         }
     }

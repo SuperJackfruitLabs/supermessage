@@ -131,12 +131,29 @@ public struct FleetActivityAttributes: ActivityAttributes {
 
         /// The oldest decision the reader owes.
         public struct Decision: Codable, Hashable, Sendable {
+            /// treaty's `fleet-content-state.v1` decision kinds. Open to
+            /// this reader: a kind it was not taught is `unknown`, drawn and
+            /// answered in the app, never guessed to be a permission.
             public enum Kind: String, Codable, Hashable, Sendable {
                 case permission, gate
+                /// A card waiting on a person. The hub sends it with no
+                /// options: resuming needs typed words.
+                case attention
+                case unknown
 
                 public init(from decoder: Decoder) throws {
                     let raw = try decoder.singleValueContainer().decode(String.self)
-                    self = Kind(rawValue: raw) ?? .permission
+                    self = Kind(rawValue: raw) ?? .unknown
+                }
+            }
+
+            /// How the widgets hold it: a permission or a gate a button may
+            /// answer, and anything else something to open the app for.
+            public var widgetKind: WidgetSnapshot.DecisionKind {
+                switch kind {
+                case .permission: .permission
+                case .gate: .gate
+                case .attention, .unknown: .open
                 }
             }
 
@@ -170,7 +187,7 @@ public struct FleetActivityAttributes: ActivityAttributes {
                 roomId = try c.decode(String.self, forKey: .roomId)
                 eventId = try c.decode(String.self, forKey: .eventId)
                 agent = (try? c.decodeIfPresent(String.self, forKey: .agent)) ?? ""
-                kind = (try? c.decodeIfPresent(Kind.self, forKey: .kind)) ?? .permission
+                kind = (try? c.decodeIfPresent(Kind.self, forKey: .kind)) ?? .unknown
                 question = (try? c.decodeIfPresent(String.self, forKey: .question)) ?? ""
                 options = Lossy.decode([Option].self, from: c, forKey: .options)
             }

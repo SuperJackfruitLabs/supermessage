@@ -4562,7 +4562,7 @@ mod tests {
     #[test]
     fn a_malformed_voice_reply_is_an_ordinary_voice_note() {
         let raw = hub_voice_reply(
-            serde_json::json!({ "schema_version": 2, "text_event_id": "$text", "voice": "bf_emma" }),
+            serde_json::json!({ "schema_version": 0, "text_event_id": "$text", "voice": "bf_emma" }),
             false,
         );
         let row = voice_row(&raw);
@@ -4655,7 +4655,7 @@ mod tests {
 
     #[test]
     fn voice_transcript_from_raw_is_none_for_a_malformed_key_and_the_row_stays_a_notice() {
-        let raw = hub_transcript(serde_json::json!({ "schema_version": 2, "text": "hi" }));
+        let raw = hub_transcript(serde_json::json!({ "schema_version": 0, "text": "hi" }));
         let transcript = voice_transcript_from_raw(Some(&raw));
         assert_eq!(transcript, None);
         let row = TimelineRow::with_voice_transcript(

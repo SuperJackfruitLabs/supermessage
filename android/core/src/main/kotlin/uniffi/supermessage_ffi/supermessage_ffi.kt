@@ -6020,13 +6020,7 @@ sealed class FfiEvent {
         /**
          * What the call touched — paths, mostly.
          */
-        val `locations`: List<kotlin.String>, 
-        /**
-         * What it was given, and what it produced, bounded by the core.
-         * `None` from a harness that does not report them.
-         */
-        val `input`: kotlin.String?, 
-        val `output`: kotlin.String?) : FfiEvent() {
+        val `locations`: List<kotlin.String>) : FfiEvent() {
         companion object
     }
     
@@ -6104,8 +6098,6 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 FfiConverterTypeToolPhase.read(buf),
                 FfiConverterString.read(buf),
                 FfiConverterSequenceString.read(buf),
-                FfiConverterOptionalString.read(buf),
-                FfiConverterOptionalString.read(buf),
                 )
             8 -> FfiEvent.Turn(
                 FfiConverterTypeTurnUpdate.read(buf),
@@ -6186,8 +6178,6 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 + FfiConverterTypeToolPhase.allocationSize(value.`phase`)
                 + FfiConverterString.allocationSize(value.`statusLabel`)
                 + FfiConverterSequenceString.allocationSize(value.`locations`)
-                + FfiConverterOptionalString.allocationSize(value.`input`)
-                + FfiConverterOptionalString.allocationSize(value.`output`)
             )
         }
         is FfiEvent.Turn -> {
@@ -6266,8 +6256,6 @@ public object FfiConverterTypeFfiEvent : FfiConverterRustBuffer<FfiEvent>{
                 FfiConverterTypeToolPhase.write(value.`phase`, buf)
                 FfiConverterString.write(value.`statusLabel`, buf)
                 FfiConverterSequenceString.write(value.`locations`, buf)
-                FfiConverterOptionalString.write(value.`input`, buf)
-                FfiConverterOptionalString.write(value.`output`, buf)
                 Unit
             }
             is FfiEvent.Turn -> {

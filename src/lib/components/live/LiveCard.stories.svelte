@@ -116,7 +116,7 @@
     await settled(() => has(canvasElement, "Running") && has(canvasElement, "Failed"), "the steps' words");
     const failedRow = [...canvasElement.querySelectorAll("details details summary")].find((s) => s.textContent?.includes("write design/tokens.toml")) as HTMLElement;
     failedRow.click();
-    await settled(() => has(canvasElement, "permission denied") && has(canvasElement, "Touched"), "the step's detail");
+    await settled(() => has(canvasElement, "Touched"), "the step's detail");
   }}
 />
 

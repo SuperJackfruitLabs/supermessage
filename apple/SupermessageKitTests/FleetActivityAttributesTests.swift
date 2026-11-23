@@ -60,8 +60,33 @@ struct FleetActivityAttributesTests {
         let invalid = try Self.cases().invalid
         #expect(invalid.count >= 10)
         for (why, body) in invalid {
-            #expect(throws: Never.self, "\(why)") { try JSONDecoder().decode(State.self, from: body) }
+            let state = try JSONDecoder().decode(State.self, from: body)
+            if let decision = state.decision, decision.kind == .unknown {
+                #expect(decision.widgetKind == .open, "\(why): read in the app, not answered")
+            }
         }
+    }
+
+    @Test("a card waiting on a person is attention, opened in the app, not a permission")
+    func attention() throws {
+        let state = try JSONDecoder().decode(
+            State.self, from: Self.fixture("a card waiting on a person, with no options"))
+        let decision = try #require(state.decision)
+        #expect(decision.kind == .attention)
+        #expect(decision.widgetKind == .open)
+        #expect(decision.options.isEmpty)
+    }
+
+    @Test("only a permission or a gate is answered from the widget")
+    func widgetKinds() throws {
+        func kind(_ raw: String) throws -> WidgetSnapshot.DecisionKind {
+            let json = #"{"roomId": "!r", "eventId": "$e", "kind": "\#(raw)", "options": []}"#
+            return try JSONDecoder().decode(State.Decision.self, from: Data(json.utf8)).widgetKind
+        }
+        #expect(try kind("permission") == .permission)
+        #expect(try kind("gate") == .gate)
+        #expect(try kind("attention") == .open)
+        #expect(try kind("vote") == .open)
     }
 
     @Test("the v1 fixture has none of the 2026-09-30 additions, and says so as none")
@@ -157,7 +182,7 @@ struct FleetActivityAttributesTests {
         #expect(state.needsYou == 0)
         #expect(state.updatedAt == 0)
         let decision = try #require(state.decision)
-        #expect(decision.kind == .permission)
+        #expect(decision.kind == .unknown, "never guessed to be a permission")
         #expect(decision.options.map(\.label) == ["Allow once"])
         #expect(decision.question == "")
     }

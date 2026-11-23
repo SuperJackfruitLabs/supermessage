@@ -231,10 +231,9 @@ struct LiveTurnView: View {
 
 /// One tool call, openable when there is something behind it.
 ///
-/// A row that says `Read src/main.ts · completed` answers *what* and *whether*
-/// and nothing else. What it was given and what it returned are the two
-/// questions anyone debugging an agent actually has, so they live one tap
-/// away rather than nowhere.
+/// A row that says `Read src/main.ts · completed` answers *what* and *whether*;
+/// what it touched lives one tap away. A tool's input and output are not on
+/// the wire (treaty's `dev.agentpod.tool.update` has neither).
 ///
 /// A row with nothing behind it stays a plain row: a disclosure triangle that
 /// opens onto an empty box says there is something to see.
@@ -249,12 +248,6 @@ private struct ToolRow: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if !tool.locations.isEmpty {
                         Detail(label: "Touched", text: tool.locations.joined(separator: "\n"))
-                    }
-                    if let input = tool.input {
-                        Detail(label: "Input", text: input)
-                    }
-                    if let output = tool.output {
-                        Detail(label: "Output", text: output)
                     }
                 }
                 .padding(.top, 4)
