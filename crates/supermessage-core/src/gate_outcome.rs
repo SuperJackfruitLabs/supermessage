@@ -1168,17 +1168,27 @@ mod tests {
         assert_eq!(summary("expired", Some("rakesh")), EXPIRED_SUMMARY);
     }
 
-    /// A gate the board cancelled: its card was moved by hand or archived
-    /// while the gate was pending (treaty 0.0.18). Nobody decided it.
+    /// Treaty's cancelled outcome (`fixtures/matrix-events/examples.json`,
+    /// since 0.0.18): a gate the board cancelled because its card was moved by
+    /// hand or archived while it was pending. Nobody decided it. Pointed at
+    /// our gate (`gate_1` on `brd_1`, referencing `$g`).
     fn cancelled_outcome() -> Value {
-        json!({
-            "suite_event_type": GATE_OUTCOME_EVENT_TYPE,
-            "gate_id": "gate_1",
-            "board_id": "brd_1",
-            "decision": "cancelled",
-            "decided_by": null,
-            "m.relates_to": { "rel_type": "m.reference", "event_id": "$g" }
-        })
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../../vendor/treaty/fixtures/matrix-events/examples.json"
+        ))
+        .unwrap();
+        let mut content = corpus["schemas"][GATE_OUTCOME_EVENT_TYPE]["valid"]
+            ["built: a gate cancelled when its card was moved or archived: nobody decided it"]
+            .clone();
+        assert_eq!(
+            content["decision"], "cancelled",
+            "the corpus pins the cancelled outcome"
+        );
+        assert_eq!(content["decided_by"], Value::Null);
+        content["gate_id"] = json!("gate_1");
+        content["board_id"] = json!("brd_1");
+        content["m.relates_to"]["event_id"] = json!("$g");
+        content
     }
 
     #[test]
