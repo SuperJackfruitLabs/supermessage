@@ -7,6 +7,11 @@ to v0.1.2 predate this file.
 
 ## Unreleased
 
+- Linking a Super Jackfruit account follows treaty's URL shapes for the Accounts link page and its
+  `supermessage://linked` callback (`accounts.matrix-link`, treaty 0.0.19): every vendored case
+  runs through the address this client builds and the callback it reads. The callback is now
+  refused when it has a path (`supermessage://linked/done?mxid=…`), a second `mxid`, or a user
+  name, where before only its scheme and host were checked.
 - A decision card the board cancelled — its card was moved by hand or archived before anyone
   decided — closes as "Cancelled — the card was moved or archived before anyone decided, so this
   gate can no longer be answered here." on every client, where it read "Decided". A decision this
