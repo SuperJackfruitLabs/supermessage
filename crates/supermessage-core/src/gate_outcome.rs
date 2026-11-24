@@ -266,6 +266,14 @@ fn closes(outcome: &Outcome, gate: &Gate<'_>) -> bool {
 pub const EXPIRED_SUMMARY: &str = "Expired — what this gate approves passed its expiry before \
                                    anyone approved it, so it can no longer be approved here.";
 
+/// What a gate closed as `cancelled` says: the board ended it without a
+/// decision because its card was moved by hand or archived while the gate was
+/// pending (treaty 0.0.18, `gate.outcome.v1`). In treaty's own words
+/// (`OUTCOME_SENTENCES`, `@superjackfruitlabs/treaty-matrix-events`), and,
+/// like [`EXPIRED_SUMMARY`], never "by" anyone: nobody decided it.
+pub const CANCELLED_SUMMARY: &str = "Cancelled — the card was moved or archived before anyone \
+                                     decided, so this gate can no longer be answered here.";
+
 /// [`summary_choosing`] for a receipt that chose no version.
 #[cfg(test)]
 fn summary(decision: &str, decided_by: Option<&str>) -> String {
@@ -279,8 +287,10 @@ fn summary(decision: &str, decided_by: Option<&str>) -> String {
 /// `gate-decision.ts`): `Approved "With the thread" for automatic delivery
 /// by rakesh`.
 fn summary_choosing(decision: &str, decided_by: Option<&str>, chosen: Option<&str>) -> String {
-    if decision == "expired" {
-        return EXPIRED_SUMMARY.to_string();
+    match decision {
+        "expired" => return EXPIRED_SUMMARY.to_string(),
+        "cancelled" => return CANCELLED_SUMMARY.to_string(),
+        _ => {}
     }
     let verb = match decision {
         "approve" => "Approved",
@@ -1156,6 +1166,81 @@ mod tests {
     fn an_expired_summary_ignores_who_the_hub_names() {
         assert_eq!(summary("expired", None), EXPIRED_SUMMARY);
         assert_eq!(summary("expired", Some("rakesh")), EXPIRED_SUMMARY);
+    }
+
+    /// Treaty's cancelled outcome (`fixtures/matrix-events/examples.json`,
+    /// since 0.0.18): a gate the board cancelled because its card was moved by
+    /// hand or archived while it was pending. Nobody decided it. Pointed at
+    /// our gate (`gate_1` on `brd_1`, referencing `$g`).
+    fn cancelled_outcome() -> Value {
+        let corpus: Value = serde_json::from_str(include_str!(
+            "../../../vendor/treaty/fixtures/matrix-events/examples.json"
+        ))
+        .unwrap();
+        let mut content = corpus["schemas"][GATE_OUTCOME_EVENT_TYPE]["valid"]
+            ["built: a gate cancelled when its card was moved or archived: nobody decided it"]
+            .clone();
+        assert_eq!(
+            content["decision"], "cancelled",
+            "the corpus pins the cancelled outcome"
+        );
+        assert_eq!(content["decided_by"], Value::Null);
+        content["gate_id"] = json!("gate_1");
+        content["board_id"] = json!("brd_1");
+        content["m.relates_to"]["event_id"] = json!("$g");
+        content
+    }
+
+    #[test]
+    fn a_cancelled_outcome_closes_the_gate_card_in_the_boards_words() {
+        let mut rows = vec![
+            row(
+                "g",
+                "message",
+                Some("m.text"),
+                HUB,
+                crate::gate_v2::GATE_V2_EVENT_TYPE,
+                v2_gate("gate_1"),
+            ),
+            outcome_event("o", HUB, cancelled_outcome()),
+        ];
+        assert!(is_pending(&rows[0]));
+        reconcile(&mut rows);
+        assert!(is_receipt(&rows[0]), "a cancelled gate offers no buttons");
+        let receipt = state(&rows[0]).1.unwrap();
+        assert_eq!(receipt.decision, "cancelled");
+        assert_eq!(receipt.decided_by, None);
+        // treaty `gateOutcomeBody`, word for word.
+        assert_eq!(
+            receipt.summary,
+            "Cancelled — the card was moved or archived before anyone decided, \
+             so this gate can no longer be answered here."
+        );
+        assert!(!receipt.summary.contains(" by "), "nobody decided it");
+        assert_eq!(receipt.prompt.as_deref(), Some("Approve \"Launch post\"?"));
+    }
+
+    #[test]
+    fn a_cancelled_outcome_never_closes_a_follow_up() {
+        let mut rows = vec![
+            follow_up("f", "gate_1"),
+            outcome_event("o", HUB, cancelled_outcome()),
+        ];
+        reconcile(&mut rows);
+        assert!(is_pending(&rows[0]));
+    }
+
+    #[test]
+    fn a_cancelled_summary_names_nobody_and_no_version() {
+        let said = summary("cancelled", None);
+        assert!(said.starts_with("Cancelled — "), "{said}");
+        assert_eq!(summary("cancelled", Some("rakesh")), said);
+        assert_eq!(summary_choosing("cancelled", None, Some("Short")), said);
+        // An unknown decision still closes the card, said generically.
+        assert_eq!(
+            summary("something_new", Some("rakesh")),
+            "Decided by rakesh"
+        );
     }
 
     /// The corpus's outcome of a choice (`variant: "choice"`).
