@@ -145,6 +145,9 @@ matrix-sdk = { version = "0.18", features = ["testing"] }
 wiremock = "0.6"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
 matrix-sdk-test = "0.18"
+# treaty_urls checks the vendored URL shapes' patterns. Already in the tree (see
+# `cargo tree -i regex`).
+regex = "1"
 
 # Belongs here, not in a host: `secrets.rs` is what calls keyring, and every
 # host that builds this crate for iOS needs the same thing. It lived in

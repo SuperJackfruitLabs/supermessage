@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/treaty/url-shape.v1.json",
+  "$id": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/urls/supermessage-linked.v1.json",
+  "shape": "treaty url shape",
+  "version": 1,
+  "description": "Where the Accounts link page returns to the app that opened it with `app=1`: a fixed scheme, never a URL taken from the request (APP_CALLBACK, src/client/link-matrix.page.ts). SuperMessage's web authentication session listens for the scheme and reads the Matrix id the page linked (`linked_mxid`, crates/supermessage-core/src/account_link.rs).",
+  "origins": [
+    {
+      "scheme": "supermessage",
+      "hosts": ["linked"]
+    }
+  ],
+  "path": "",
+  "query": {
+    "mxid": {
+      "required": true,
+      "description": "The Matrix user id Accounts linked, `@localpart:server name`.",
+      "schema": {
+        "type": "string",
+        "pattern": "^@[^:\\s]+:(\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?$"
+      }
+    }
+  }
+}

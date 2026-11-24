@@ -1,0 +1,52 @@
+{
+  "description": "URLs schemas/urls/accounts-matrix-link.v1.json must accept and refuse.",
+  "valid": {
+    "from SuperMessage": "https://accounts.superjackfruit.com/link/matrix#t=syt_YWxpY2U_abcDEF123_0xyz9&s=id.agentpod.dev&app=1",
+    "opened by hand, no app": "https://accounts.superjackfruit.com/link/matrix#t=abc123&s=id.agentpod.dev",
+    "staging, a server name with a port, escaped": "https://staging-accounts.superjackfruit.com/link/matrix#t=abc123&s=staging-id.agentpod.dev%3A8448&app=1",
+    "an Accounts the person set, a token with escaped characters": "https://accounts.example.org/link/matrix#t=a%2Fb%2Bc%3D&s=matrix.example.org&app=1",
+    "a local Accounts": "http://localhost:8787/link/matrix#t=abc123&s=localhost%3A8448&app=1"
+  },
+  "invalid": [
+    {
+      "why": "the token in the query, where the server would see it",
+      "body": "https://accounts.superjackfruit.com/link/matrix?t=abc123&s=id.agentpod.dev"
+    },
+    {
+      "why": "no server name",
+      "body": "https://accounts.superjackfruit.com/link/matrix#t=abc123&app=1"
+    },
+    {
+      "why": "an empty token",
+      "body": "https://accounts.superjackfruit.com/link/matrix#t=&s=id.agentpod.dev"
+    },
+    {
+      "why": "app is not 1",
+      "body": "https://accounts.superjackfruit.com/link/matrix#t=abc123&s=id.agentpod.dev&app=true"
+    },
+    {
+      "why": "a trailing slash on the path",
+      "body": "https://accounts.superjackfruit.com/link/matrix/#t=abc123&s=id.agentpod.dev"
+    },
+    {
+      "why": "plain http to a remote host",
+      "body": "http://accounts.superjackfruit.com/link/matrix#t=abc123&s=id.agentpod.dev"
+    },
+    {
+      "why": "two tokens",
+      "body": "https://accounts.superjackfruit.com/link/matrix#t=abc&t=def&s=id.agentpod.dev"
+    },
+    {
+      "why": "a server name with a path in it",
+      "body": "https://accounts.superjackfruit.com/link/matrix#t=abc123&s=id.agentpod.dev%2Fx"
+    },
+    {
+      "why": "credentials in the URL",
+      "body": "https://user:pass@accounts.superjackfruit.com/link/matrix#t=abc123&s=id.agentpod.dev"
+    },
+    {
+      "why": "a relative URL",
+      "body": "/link/matrix#t=abc123&s=id.agentpod.dev"
+    }
+  ]
+}

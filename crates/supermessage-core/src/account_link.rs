@@ -113,13 +113,26 @@ pub fn link_url(origin: &str, token: &LinkToken) -> String {
 
 /// The Matrix id the page reports linked, from its `supermessage://linked?mxid=…`
 /// callback; `None` for anything else.
+///
+/// The callback is treaty's `supermessage-linked.v1` shape: this scheme and
+/// host, an empty path, no credentials, and exactly one `mxid` that is a Matrix
+/// user id (`treaty_urls` runs every case of it through here).
 pub fn linked_mxid(callback: &str) -> Option<String> {
     let url = Url::parse(callback).ok()?;
-    if url.scheme() != CALLBACK_SCHEME || url.host_str() != Some(CALLBACK_HOST) {
+    if url.scheme() != CALLBACK_SCHEME
+        || url.host_str() != Some(CALLBACK_HOST)
+        || !url.path().is_empty()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
         return None;
     }
-    let mxid = url.query_pairs().find(|(k, _)| k == "mxid")?.1.into_owned();
-    UserId::parse(&mxid).ok().map(|id| id.to_string())
+    let mut ids = url.query_pairs().filter(|(k, _)| k == "mxid");
+    let (_, mxid) = ids.next()?;
+    if ids.next().is_some() {
+        return None;
+    }
+    UserId::parse(mxid.as_ref()).ok().map(|id| id.to_string())
 }
 
 /// Asks this account's homeserver for an OpenID token for this account.
@@ -255,6 +268,21 @@ mod tests {
         );
         assert_eq!(
             linked_mxid("supermessage://other?mxid=%40ana%3Aid.agentpod.dev"),
+            None
+        );
+        // A path, a second id, or credentials: not the callback the page builds.
+        assert_eq!(
+            linked_mxid("supermessage://linked/?mxid=%40ana%3Aid.agentpod.dev"),
+            None
+        );
+        assert_eq!(
+            linked_mxid(
+                "supermessage://linked?mxid=%40ana%3Aid.agentpod.dev&mxid=%40eve%3Aid.agentpod.dev"
+            ),
+            None
+        );
+        assert_eq!(
+            linked_mxid("supermessage://u:p@linked?mxid=%40ana%3Aid.agentpod.dev"),
             None
         );
     }

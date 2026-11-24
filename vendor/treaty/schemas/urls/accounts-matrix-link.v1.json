@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/treaty/url-shape.v1.json",
+  "$id": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/urls/accounts-matrix-link.v1.json",
+  "shape": "treaty url shape",
+  "version": 1,
+  "description": "The Accounts page a person opens to link their Matrix id (`/link/matrix`, src/client/link-matrix.page.ts). SuperMessage builds it (`link_url`, crates/supermessage-core/src/account_link.rs) with an OpenID token the person's homeserver minted. The token rides in the fragment, which a browser never sends to a server; the page moves it to this tab's storage and wipes it from the address bar at once. SuperMessage encodes every value with everything but unreserved characters percent-escaped.",
+  "origins": [
+    {
+      "scheme": "https",
+      "description": "The Accounts origin: a suite one (`https://accounts.superjackfruit.com`) or one the person set."
+    },
+    {
+      "scheme": "http",
+      "hosts": ["localhost", "127.0.0.1", "[::1]"],
+      "description": "An Accounts on the person's own device, for development."
+    }
+  ],
+  "path": "/link/matrix",
+  "fragment": {
+    "t": {
+      "required": true,
+      "description": "The OpenID access token the homeserver minted for this account (`POST /_matrix/client/v3/user/{userId}/openid/request_token`). Never logged.",
+      "schema": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "s": {
+      "required": true,
+      "description": "The homeserver's own name for itself (`matrix_server_name`), which Accounts asks whose token it is.",
+      "schema": {
+        "type": "string",
+        "pattern": "^(\\[[0-9A-Fa-f:.]+\\]|[A-Za-z0-9.-]+)(:[0-9]{1,5})?$"
+      }
+    },
+    "app": {
+      "required": false,
+      "description": "`1` when an app opened the page: once linked, the page returns to the app through supermessage-linked.v1. Any other value, or none, keeps the person on the page.",
+      "schema": {
+        "const": "1"
+      }
+    }
+  }
+}

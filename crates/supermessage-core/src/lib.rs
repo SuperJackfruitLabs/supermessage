@@ -100,3 +100,5 @@ pub mod widget;
 mod treaty_activity;
 #[cfg(test)]
 mod treaty_corpus;
+#[cfg(test)]
+mod treaty_urls;

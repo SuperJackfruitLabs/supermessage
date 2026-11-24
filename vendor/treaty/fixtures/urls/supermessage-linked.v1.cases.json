@@ -1,0 +1,34 @@
+{
+  "description": "URLs schemas/urls/supermessage-linked.v1.json must accept and refuse.",
+  "valid": {
+    "as Accounts builds it (encodeURIComponent)": "supermessage://linked?mxid=%40alice%3Aid.agentpod.dev",
+    "unescaped": "supermessage://linked?mxid=@alice:id.agentpod.dev",
+    "a server name with a port": "supermessage://linked?mxid=%40bob%3Amatrix.example.org%3A8448"
+  },
+  "invalid": [
+    {
+      "why": "another scheme",
+      "body": "https://linked?mxid=%40alice%3Aid.agentpod.dev"
+    },
+    {
+      "why": "another host",
+      "body": "supermessage://link?mxid=%40alice%3Aid.agentpod.dev"
+    },
+    {
+      "why": "no mxid",
+      "body": "supermessage://linked"
+    },
+    {
+      "why": "an mxid without a server",
+      "body": "supermessage://linked?mxid=alice"
+    },
+    {
+      "why": "an mxid without its @",
+      "body": "supermessage://linked?mxid=alice%3Aid.agentpod.dev"
+    },
+    {
+      "why": "a path",
+      "body": "supermessage://linked/done?mxid=%40alice%3Aid.agentpod.dev"
+    }
+  ]
+}
