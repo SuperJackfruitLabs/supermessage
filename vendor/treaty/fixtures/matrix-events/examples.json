@@ -7740,6 +7740,17 @@
             "rel_type": "m.reference",
             "event_id": "$gateEvent"
           }
+        },
+        "built: a gate cancelled when its card was moved or archived: nobody decided it": {
+          "suite_event_type": "dev.superpipeline.gate.outcome.v1",
+          "gate_id": "gate_8f3a",
+          "board_id": "brd_7c1f",
+          "decision": "cancelled",
+          "decided_by": null,
+          "m.relates_to": {
+            "rel_type": "m.reference",
+            "event_id": "$gateEvent"
+          }
         }
       },
       "invalid": [
