@@ -537,3 +537,102 @@ fn every_valid_token_request_is_one_this_client_builds_and_no_invalid_one_ever_i
     }
     assert!(failed.is_empty(), "{}", failed.join("\n"));
 }
+
+// ---- a stream captured from a real hub
+
+/// Why a reader returned nothing for `content`, as far as this client can say.
+fn why_not(event_type: &str, content: &Value) -> String {
+    fn serde_error<T: DeserializeOwned>(content: &Value) -> String {
+        match serde_json::from_value::<T>(content.clone()) {
+            Err(e) => e.to_string(),
+            Ok(_) => "deserialized, then refused by the reader".to_string(),
+        }
+    }
+    match event_type {
+        "dev.agentpod.stream.delta" => serde_error::<StreamDeltaToDeviceEventContent>(content),
+        "dev.agentpod.thought.delta" => serde_error::<ThoughtDeltaToDeviceEventContent>(content),
+        "dev.agentpod.tool.update" => serde_error::<ToolUpdateToDeviceEventContent>(content),
+        TURN_ACTIVITY_EVENT_TYPE => format!(
+            "{:?}",
+            resolve_custom_event(default_registry(), Some(event_type), Some(content), None)
+        ),
+        _ => "the reader returned nothing".to_string(),
+    }
+}
+
+/// A turn captured from a real hub, read by the same readers as treaty's cases.
+///
+/// `TREATY_ACTIVITY_CAPTURE` names a JSON Lines file, one received payload per line:
+/// `{"type": <one of ACTIVITY>, "content": <the payload>}`, where a content-key shape
+/// (`dev.agentpod.turn_error`, the voice keys) carries the value under its key, as treaty's
+/// cases do. A line may say `"schema_valid": true|false`, the verdict of a JSON Schema check
+/// done beside the capture; a payload the schema accepts and this client does not read fails.
+///
+/// ```sh
+/// TREATY_ACTIVITY_CAPTURE=/path/to/capture.jsonl \
+///   cargo test -p supermessage-core --lib a_captured_stream_is_read -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "reads a capture named by TREATY_ACTIVITY_CAPTURE"]
+fn a_captured_stream_is_read() {
+    let path = std::env::var("TREATY_ACTIVITY_CAPTURE")
+        .expect("TREATY_ACTIVITY_CAPTURE names the capture to read");
+    let text = std::fs::read_to_string(&path).expect("the capture can be read");
+
+    // type -> (received, read, schema-valid verdicts seen, schema-valid)
+    let mut counts: std::collections::BTreeMap<String, (usize, usize, usize, usize)> =
+        Default::default();
+    let mut failed = Vec::new();
+    for (n, line) in text
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| !l.trim().is_empty())
+    {
+        let line_no = n + 1;
+        let row: Value = serde_json::from_str(line)
+            .unwrap_or_else(|e| panic!("line {line_no} is not JSON: {e}"));
+        let event_type = row["type"].as_str().unwrap_or_default().to_string();
+        let Some((_, reader)) = READ.iter().find(|(t, _)| *t == event_type) else {
+            failed.push(format!(
+                "line {line_no}: {event_type:?} is no activity shape this client reads"
+            ));
+            continue;
+        };
+        let content = &row["content"];
+        let verdict = row["schema_valid"].as_bool();
+        let entry = counts.entry(event_type.clone()).or_default();
+        entry.0 += 1;
+        if verdict.is_some() {
+            entry.2 += 1;
+        }
+        if verdict == Some(true) {
+            entry.3 += 1;
+        }
+        match reader(content) {
+            Some(_) => entry.1 += 1,
+            None => {
+                let reason = why_not(&event_type, content);
+                let note = format!("line {line_no}: {event_type}: not read: {reason}");
+                println!("{note}");
+                if verdict != Some(false) {
+                    failed.push(note);
+                }
+            }
+        }
+    }
+
+    println!(
+        "{:<32} {:>9} {:>7} {:>13}",
+        "type", "received", "read", "schema-valid"
+    );
+    for (t, (received, read, judged, valid)) in &counts {
+        let valid = if *judged == *received {
+            valid.to_string()
+        } else {
+            format!("{valid} of {judged}")
+        };
+        println!("{t:<32} {received:>9} {read:>7} {valid:>13}");
+    }
+    assert!(!counts.is_empty(), "the capture holds no activity");
+    assert!(failed.is_empty(), "{}", failed.join("\n"));
+}
