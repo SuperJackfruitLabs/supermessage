@@ -1,14 +1,15 @@
 {
   "$schema": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/treaty/product-manifest.v1.json",
   "product": "supermessage",
-  "treaty": "0.0.18",
+  "treaty": "0.0.19",
   "produces": [],
   "consumes": [
     "superexchange.board-room",
     "agentpod.harness-permission",
     "accounts.identity-corpus",
     "agentpod.matrix-activity",
-    "agentpod.live-activity"
+    "agentpod.live-activity",
+    "accounts.matrix-link"
   ],
   "vendored": [
     {
@@ -62,6 +63,22 @@
     {
       "path": "vendor/treaty/schemas/matrix/dev.agentpod.voice_transcript.json",
       "source": "schemas/matrix/dev.agentpod.voice_transcript.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/urls/accounts-matrix-link.v1.json",
+      "source": "schemas/urls/accounts-matrix-link.v1.json"
+    },
+    {
+      "path": "vendor/treaty/fixtures/urls/accounts-matrix-link.v1.cases.json",
+      "source": "fixtures/urls/accounts-matrix-link.v1.cases.json"
+    },
+    {
+      "path": "vendor/treaty/schemas/urls/supermessage-linked.v1.json",
+      "source": "schemas/urls/supermessage-linked.v1.json"
+    },
+    {
+      "path": "vendor/treaty/fixtures/urls/supermessage-linked.v1.cases.json",
+      "source": "fixtures/urls/supermessage-linked.v1.cases.json"
     }
   ]
 }
