@@ -104,7 +104,7 @@ android/             — the native Android app (Gradle, over the Rust core via 
 | JS ↔ Rust bridge | Tauri commands/events + Svelte stores | — |
 | Push (iOS) | AgentPod hub's push gateway → APNs, with a Notification Service Extension | Infrastructure outside this repo, not linked |
 
-**Wired so far:** Tauri 2, matrix-sdk 0.18 (`markdown` + `bundled-sqlite`), Svelte 5 + SvelteKit (SPA), Tailwind v4, Bits UI, virtua. Native mobile hosts use UniFFI. Framework7 was an earlier proposal, superseded by the native iOS and Android implementations. Shared design tokens feed each host.
+**Wired so far:** Tauri 2, matrix-sdk 0.19.1 (`markdown` + `bundled-sqlite`), Svelte 5 + SvelteKit (SPA), Tailwind v4, Bits UI, virtua. Native mobile hosts use UniFFI. Framework7 was an earlier proposal, superseded by the native iOS and Android implementations. Shared design tokens feed each host.
 
 ## Architecture rules (from docs/tech-stack.md — treat as binding)
 
@@ -236,6 +236,32 @@ running copy first.
 
 This harness is what caught the "opening a room shows one message" bug — it
 is worth reaching for before trusting a UI claim made from code reading alone.
+
+## Calls with agents (desktop)
+
+Voice calls with a bridge-mode agent, behind the **Calls** setting in Account (off by
+default, kept per device). The call protocol is [superdial](../superdial) (MatrixRTC
+membership, call keys, LiveKit with end-to-end encryption), an optional dependency of the
+core behind the `calls` feature. Only `src-tauri` turns it on, for desktop targets; the FFI
+crate never does, so iOS and Android build no livekit.
+
+- `core::calls::model`: what the bar shows, the agent-identity rule for `superdial.state`, and
+  the refusal copy ("Calls are not available for this agent yet").
+- `core::calls::controller`: one call's state machine over `CallLink` and `CallAudio`.
+- `core::calls::link`: `superdial::Call` over the session's client; a client to-device handler
+  routes call keys and transcripts to it before `join`.
+- `src-tauri/src/call_audio.rs`: microphone and speaker through cpal (PulseAudio host, which
+  PipeWire serves; ALSA otherwise). `commands_call.rs`: the commands and `sm://call`.
+
+Build needs: superdial is a **path dependency on the sibling checkout**
+(`../superdial/crates/superdial` from the repository root) until it is published, so a build of
+this workspace needs that checkout beside this one. livekit's `webrtc-sys` downloads a prebuilt
+libwebrtc and needs clang; cpal needs ALSA headers (`libasound2-dev` on Debian/Ubuntu).
+
+Development against the rtc-spike stack: build with `--features calls-dev-issuer` (it refuses
+to compile without debug assertions) and run with `SUPERMESSAGE_CALLS_DEV_ISSUER=discover` to
+use its lk-jwt-service as the token issuer. `SUPERMESSAGE_CALL_INPUT` / `SUPERMESSAGE_CALL_OUTPUT`
+name audio devices (PipeWire null sinks in a headless test) instead of the defaults.
 
 ## The iOS app
 
@@ -624,7 +650,7 @@ the README capability table and source for present behavior.
 ## Known risks to keep in mind when writing code
 
 - Native mobile lifecycle, background execution and push need platform-specific validation. The current iOS app uses SwiftUI, so old WKWebView keyboard proposals do not describe its UI.
-- aws-lc-rs crashes on Android 16KB-page devices ([matrix-rust-sdk#6442](https://github.com/matrix-org/matrix-rust-sdk/issues/6442), still open as of Aug 2026). **The `ring` backend cannot be selected purely by features:** matrix-sdk 0.18 depends on `reqwest` with its `rustls` feature, which resolves to `__rustls-aws-lc-rs` and turns on `rustls/aws_lc_rs`. Cargo features are additive, so aws-lc-rs is compiled in no matter what this crate declares. The mitigation is runtime, in `crates/supermessage-core/src/tls.rs`: we also enable `rustls/ring` and install ring as the process-wide provider at the top of `run()`. This is also load-bearing for correctness — with two providers compiled in, rustls has no implicit default and `ClientConfig::builder()` panics unless one is installed. **Anything that constructs TLS must run after `install_ring_provider()`.** Verify on a real 16KB-page device at M2; if it still crashes, the remaining lever is a `[patch.crates-io]` forcing reqwest's `rustls-no-provider` feature.
+- aws-lc-rs crashes on Android 16KB-page devices ([matrix-rust-sdk#6442](https://github.com/matrix-org/matrix-rust-sdk/issues/6442), still open as of Aug 2026). **The `ring` backend cannot be selected purely by features:** matrix-sdk (0.18, and still 0.19.1 through its default `rustls-aws-lc-rs`) depends on `reqwest` with its `rustls` feature, which resolves to `__rustls-aws-lc-rs` and turns on `rustls/aws_lc_rs`. Cargo features are additive, so aws-lc-rs is compiled in no matter what this crate declares. The mitigation is runtime, in `crates/supermessage-core/src/tls.rs`: we also enable `rustls/ring` and install ring as the process-wide provider at the top of `run()`. This is also load-bearing for correctness — with two providers compiled in, rustls has no implicit default and `ClientConfig::builder()` panics unless one is installed. **Anything that constructs TLS must run after `install_ring_provider()`.** Verify on a real 16KB-page device at M2; if it still crashes, the remaining lever is a `[patch.crates-io]` forcing reqwest's `rustls-no-provider` feature.
 - IPC cost of streaming timelines to the webview — use windowed/delta updates.
 
 ## Related repositories (not part of this workspace's code)
