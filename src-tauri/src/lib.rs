@@ -18,7 +18,13 @@ use std::sync::Arc;
 use tauri::{DragDropEvent, Manager, Url, WebviewWindowBuilder, WindowEvent};
 
 mod attention;
+// Calls with agents: the microphone and speaker (cpal), and the commands over the core's
+// call controller. Desktop only, as the dependencies are.
+#[cfg(desktop)]
+mod call_audio;
 mod commands;
+#[cfg(desktop)]
+mod commands_call;
 mod commands_notify;
 mod commands_session;
 mod commands_voice;
@@ -325,6 +331,9 @@ pub fn run() {
             // all three must see the *one* map the session owns.
             app.manage(session.staged_attachments());
             app.manage(session);
+            // Calls: off until the page sends the setting (`calls_set_enabled`).
+            #[cfg(desktop)]
+            commands_call::install(app.handle());
             // Where notifications go: the Desktop Notifications protocol over the session
             // bus on Linux, which can carry answer buttons, the plugin elsewhere. The receiver is what Linux button
             // presses arrive on; it waits to be taken.
@@ -368,6 +377,18 @@ pub fn run() {
             attention::set_attention,
             #[cfg(desktop)]
             tray::window_close_behaviour,
+            #[cfg(desktop)]
+            commands_call::calls_set_enabled,
+            #[cfg(desktop)]
+            commands_call::call_start,
+            #[cfg(desktop)]
+            commands_call::call_hang_up,
+            #[cfg(desktop)]
+            commands_call::call_set_muted,
+            #[cfg(desktop)]
+            commands_call::call_dismiss_notice,
+            #[cfg(desktop)]
+            commands_call::call_state,
             attachment_stage_recording,
             attachment_mark_voice,
             voice_recording_spec,
@@ -483,6 +504,12 @@ pub fn run() {
             }
             // Notifications belong to the running app; none should outlive it.
             if let tauri::RunEvent::Exit = event {
+                // Quitting leaves the call (bounded); a kill is covered by the server's delayed
+                // leave instead.
+                #[cfg(desktop)]
+                if let Some(calls) = tauri::Manager::try_state::<commands_call::CallsState>(app) {
+                    commands_call::hang_up_on_exit(&calls.0, commands_call::EXIT_HANG_UP_BOUND);
+                }
                 if let Some(poster) = tauri::Manager::try_state::<Arc<dyn notify::Poster>>(app) {
                     poster.withdraw_all();
                 }

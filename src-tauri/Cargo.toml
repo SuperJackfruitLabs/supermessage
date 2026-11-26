@@ -23,7 +23,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-supermessage-core = { path = "../crates/supermessage-core", features = ["calls"] }
+supermessage-core = { path = "../crates/supermessage-core" }
 # `tray-icon`: the system tray (src/tray.rs), built from Rust only. It adds no webview
 # permission, so capabilities/default.json is unchanged. `image-png`: `Image::from_bytes`
 # decodes the app's own PNG icon for it.
@@ -138,6 +138,11 @@ tauri-plugin-wdio-webdriver = { version = "1", optional = true }
 # A second launch reveals the running app instead of starting another (the window may be hidden in
 # a tray the desktop does not show). Exact pin, a release more than two weeks old.
 tauri-plugin-single-instance = "=2.5.2"
+# Calls with agents (`commands_call`, `call_audio`): the core's call controller over superdial
+# (livekit/libwebrtc), desktop only, and the microphone and speaker through cpal (Apache-2.0),
+# in Rust rather than the webview. Exact pin, a release more than two weeks old.
+supermessage-core = { path = "../crates/supermessage-core", features = ["calls"] }
+cpal = "=0.18.2"
 
 
 # The D-Bus client the notification plugin and `notify-rust` already resolve,
@@ -148,11 +153,15 @@ tauri-plugin-single-instance = "=2.5.2"
 zbus = "=5.19.0"
 # WebKitGTK's settings and permission-request signal, for the microphone (C2). The copy wry resolves.
 webkit2gtk = "2.0"
+# cpal's PulseAudio host (the pure-Rust `pulseaudio` client, MIT), which cpal picks first when a
+# server answers: PipeWire serves the protocol through pipewire-pulse, as PulseAudio does itself.
+# Without one it falls back to ALSA.
+cpal = { version = "=0.18.2", features = ["pulseaudio"] }
 
 [dev-dependencies]
 # `test` for `tauri::test::mock_app`: commands take `State<Session>`, which only an app can hand out.
 tauri = { version = "2", features = ["test"] }
-supermessage-core = { path = "../crates/supermessage-core", features = ["calls"] }
+supermessage-core = { path = "../crates/supermessage-core" }
 # `testing` for matrix_sdk::test_utils (logged_in_client_with_server,
 # no_retry_test_client_with_server, MatrixMockServer), wiremock to script the
 # homeserver's HTTP responses in auth tests.
@@ -197,3 +206,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ruma_unstable_exhaustive_t
 default = ["wdio"]
 wdio = ["dep:tauri-plugin-wdio-webdriver"]
 mcp = ["dep:tauri-plugin-mcp-bridge"]
+# Development only: the rtc-spike's lk-jwt-service as the LiveKit token issuer, picked at run time
+# by SUPERMESSAGE_CALLS_DEV_ISSUER (`discover` or a URL). Refuses to compile without debug
+# assertions, so it can never be in a release.
+calls-dev-issuer = ["supermessage-core/calls-dev-issuer"]
