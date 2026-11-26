@@ -140,6 +140,21 @@ percent-encoding = "2"
 # every target; on mobile it simply activates nothing, and `lib.rs` gates the
 # registration on `desktop` to match.
 
+# Voice calls with agents (superdial: MatrixRTC membership, call keys, LiveKit with end-to-end
+# encryption). Desktop only: `src-tauri` turns `calls` on and the FFI crate never does, so iOS and
+# Android do not build livekit/libwebrtc. Apache-2.0. A path dependency on the sibling checkout
+# (`../superdial` from the repository root) until superdial is published; optional dependencies
+# are still resolved, so that checkout must exist for any build of this workspace.
+superdial = { path = "../../../superdial/crates/superdial", optional = true }
+
+[features]
+# The call state machine and the superdial link (`core::calls`).
+calls = ["dep:superdial"]
+# Development only: lets `SUPERMESSAGE_CALLS_DEV_ISSUER` choose the rtc-spike's lk-jwt-service as
+# the LiveKit token issuer. Never in a release; the desktop refuses to build it without
+# debug assertions.
+calls-dev-issuer = ["calls", "superdial/dev-lk-jwt"]
+
 [dev-dependencies]
 matrix-sdk = { version = "=0.19.1", features = ["testing"] }
 wiremock = "0.6"

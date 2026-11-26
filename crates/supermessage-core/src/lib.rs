@@ -36,6 +36,8 @@ pub mod attachments;
 pub mod attention_v2;
 pub mod audio;
 pub mod auth;
+#[cfg(feature = "calls")]
+pub mod calls;
 pub mod custom_events;
 pub mod decision_timeout;
 pub mod delivery_v2;

@@ -23,7 +23,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-supermessage-core = { path = "../crates/supermessage-core" }
+supermessage-core = { path = "../crates/supermessage-core", features = ["calls"] }
 # `tray-icon`: the system tray (src/tray.rs), built from Rust only. It adds no webview
 # permission, so capabilities/default.json is unchanged. `image-png`: `Image::from_bytes`
 # decodes the app's own PNG icon for it.
@@ -152,7 +152,7 @@ webkit2gtk = "2.0"
 [dev-dependencies]
 # `test` for `tauri::test::mock_app`: commands take `State<Session>`, which only an app can hand out.
 tauri = { version = "2", features = ["test"] }
-supermessage-core = { path = "../crates/supermessage-core" }
+supermessage-core = { path = "../crates/supermessage-core", features = ["calls"] }
 # `testing` for matrix_sdk::test_utils (logged_in_client_with_server,
 # no_retry_test_client_with_server, MatrixMockServer), wiremock to script the
 # homeserver's HTTP responses in auth tests.
