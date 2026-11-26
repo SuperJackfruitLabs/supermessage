@@ -26,7 +26,7 @@ use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use eyeball_im::VectorDiff;
-use futures_util::{pin_mut, Stream, StreamExt};
+use futures_util::{pin_mut, FutureExt, Stream, StreamExt};
 use matrix_sdk::ruma::{OwnedRoomId, UserId};
 use matrix_sdk::{Room, RoomMemberships, RoomState};
 use matrix_sdk_ui::room_list_service::filters::{
@@ -265,6 +265,7 @@ pub async fn agent_avatar_source(room: &Room) -> CoreResult<Option<(String, Opti
 pub async fn resolve_room_avatar_mxc(room: &Room) -> CoreResult<Option<String>> {
     let hero_avatar_urls: Vec<Option<String>> = room
         .heroes()
+        .await
         .iter()
         .map(|hero| hero.avatar_url.as_ref().map(|url| url.to_string()))
         .collect();
@@ -487,8 +488,13 @@ fn latest_decision_type(room: &Room) -> Option<&'static str> {
 pub fn project_room(item: &RoomListItem, preview: Option<MessagePreview>) -> RoomSummary {
     let id = item.room_id().to_string();
     let name = item.cached_display_name().map(|name| name.to_string());
+    // `heroes()` is async since matrix-sdk 0.19 only so that the unstable MSC4426 profile
+    // lookup can await; without that feature (not enabled here) the future is ready at once,
+    // and this projection is synchronous (see `project_batch`), so it is polled once.
     let hero_avatar_urls: Vec<Option<String>> = item
         .heroes()
+        .now_or_never()
+        .unwrap_or_default()
         .iter()
         .map(|hero| hero.avatar_url.as_ref().map(|url| url.to_string()))
         .collect();

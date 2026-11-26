@@ -34,15 +34,15 @@ serde_json = "1"
 
 # Matrix core. Default features give e2e-encryption + automatic room key
 # forwarding + the SQLite stores; `markdown` for formatted message bodies.
-matrix-sdk = { version = "0.18", features = ["markdown", "bundled-sqlite"] }
-matrix-sdk-ui = "0.18"
+matrix-sdk = { version = "=0.19.1", features = ["markdown", "bundled-sqlite"] }
+matrix-sdk-ui = "=0.19.1"
 # Direct deps on the diff/collection types that already flow through
 # matrix-sdk transitively (eyeball_im::Vector re-exports imbl::Vector); pinned
 # explicitly because core::dto matches on VectorDiff and builds imbl::Vector
-# values directly. imbl 6, not 5: eyeball-im 0.8 resolves imbl 6.x, and a `= "5"`
+# values directly. imbl 7, not 6: eyeball-im 0.9 (matrix-sdk 0.19) resolves imbl 7.x, and a `= "6"`
 # constraint would pull a second, incompatible copy (see cargo tree -i imbl).
-eyeball-im = "0.8"
-imbl = "6"
+eyeball-im = "0.9"
+imbl = "7"
 keyring = "4.1"
 rand = "0.9"
 thiserror = "2"
@@ -156,14 +156,14 @@ supermessage-core = { path = "../crates/supermessage-core" }
 # `testing` for matrix_sdk::test_utils (logged_in_client_with_server,
 # no_retry_test_client_with_server, MatrixMockServer), wiremock to script the
 # homeserver's HTTP responses in auth tests.
-matrix-sdk = { version = "0.18", features = ["testing"] }
+matrix-sdk = { version = "=0.19.1", features = ["testing"] }
 wiremock = "0.6"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # `event_factory` builds real SDK events (EventFactory), fed through a
 # MatrixMockServer-backed sync into a genuine matrix_sdk_ui::Timeline —
 # see tests/timeline_projection.rs's module doc comment for why this, not
 # hand-written DTOs, is what that file exists to exercise.
-matrix-sdk-test = "0.18"
+matrix-sdk-test = "=0.19.1"
 
 # `p2p`: the notification tests run the real `notify::SessionBusBackend` against a fake
 # server on a private socket (D-Bus peer to peer), not only against an in-process fake.

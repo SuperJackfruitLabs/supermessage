@@ -17,15 +17,15 @@ serde_json = "1"
 
 # Matrix core. Default features give e2e-encryption + automatic room key
 # forwarding + the SQLite stores; `markdown` for formatted message bodies.
-matrix-sdk = { version = "0.18", features = ["markdown", "bundled-sqlite"] }
-matrix-sdk-ui = "0.18"
+matrix-sdk = { version = "=0.19.1", features = ["markdown", "bundled-sqlite"] }
+matrix-sdk-ui = "=0.19.1"
 # Direct deps on the diff/collection types that already flow through
 # matrix-sdk transitively (eyeball_im::Vector re-exports imbl::Vector); pinned
 # explicitly because core::dto matches on VectorDiff and builds imbl::Vector
-# values directly. imbl 6, not 5: eyeball-im 0.8 resolves imbl 6.x, and a `= "5"`
+# values directly. imbl 7, not 6: eyeball-im 0.9 (matrix-sdk 0.19) resolves imbl 7.x, and a `= "6"`
 # constraint would pull a second, incompatible copy (see cargo tree -i imbl).
-eyeball-im = "0.8"
-imbl = "6"
+eyeball-im = "0.9"
+imbl = "7"
 keyring = "4.1"
 rand = "0.9"
 thiserror = "2"
@@ -141,10 +141,10 @@ percent-encoding = "2"
 # registration on `desktop` to match.
 
 [dev-dependencies]
-matrix-sdk = { version = "0.18", features = ["testing"] }
+matrix-sdk = { version = "=0.19.1", features = ["testing"] }
 wiremock = "0.6"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util"] }
-matrix-sdk-test = "0.18"
+matrix-sdk-test = "=0.19.1"
 # treaty_urls checks the vendored URL shapes' patterns. Already in the tree (see
 # `cargo tree -i regex`).
 regex = "1"
