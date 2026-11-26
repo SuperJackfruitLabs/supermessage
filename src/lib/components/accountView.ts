@@ -30,6 +30,11 @@ export const KEEP_RUNNING_FOOTER = "You'll still get notifications. Quit from th
 export const KEEP_RUNNING_UNAVAILABLE_FOOTER =
   "This desktop shows no tray icon, so closing the window quits the app.";
 
+/** The Calls section's switch. *(desktop only; off by default)* */
+export const CALLS_LABEL = "Voice calls with agents";
+export const CALLS_FOOTER =
+  "Adds a Call button to an agent's room. What you say is posted there as your message.";
+
 /** The Sign out section's footer (`:148-157`). */
 export const SIGN_OUT_FOOTER = "Signing out removes this account and its messages from this device.";
 

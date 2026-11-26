@@ -43,6 +43,8 @@
       keepRunning: false,
       trayAvailable: true,
       onKeepRunning: noop,
+      callsEnabled: false,
+      onCallsEnabled: noop,
       onOpenRecovery: noop,
       onSignOut: () => Promise.resolve(),
       onOpenLink: noop,
@@ -98,6 +100,19 @@
     ((await settled(() => buttonNamed(root, "Unblock Spammy"))) as HTMLElement).click();
     const alert = await settled(() => root.querySelector("[role=alert]"));
     if (alert.textContent?.trim() !== "Couldn't reach the homeserver.") throw new Error("the refusal is not shown");
+  }}
+/>
+
+<!-- Voice calls with agents on (off by default): the Calls section's switch reads checked. -->
+<Story
+  name="Calls on"
+  args={{ callsEnabled: true }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const toggle = await settled(() => root.querySelector("[role='switch'][aria-labelledby='account-calls-switch']"));
+    if (toggle.getAttribute("aria-checked") !== "true") throw new Error("the Calls switch is not on");
+    const label = root.querySelector("#account-calls-switch")?.textContent?.trim();
+    if (label !== "Voice calls with agents") throw new Error(`label: ${label}`);
   }}
 />
 
