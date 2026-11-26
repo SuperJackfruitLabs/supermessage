@@ -5,6 +5,7 @@
 //! session's client. The host supplies the microphone and speaker ([`controller::CallAudio`]).
 
 pub mod controller;
+pub mod link;
 pub mod model;
 
 pub use model::{
