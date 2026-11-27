@@ -6,7 +6,8 @@
 //! opens the microphone, so a refused call never touches it. Hanging up while still connecting
 //! takes the call away from the starter, which leaves as soon as its join returns.
 //!
-//! A call that is hung up stays in `leaving` until its leave returns, and a new call waits for
+//! A call that is hung up stays in `leaving` until its leave returns (or [`LEAVE_LIMIT`]
+//! passes and it is given up on), and a new call waits for
 //! every earlier one to leave before it makes its link: superdial's leave clears the membership
 //! state key (`_{user}_{device}_m.call`) every call from this device publishes under, so an
 //! overlapping leave would take the new call's membership down.
@@ -43,6 +44,12 @@ pub const AUDIO_FAILED_COPY: &str = "Couldn't open the microphone or speaker";
 pub const BUSY_COPY: &str = "Hang up the current call first";
 /// Told when a start arrives with the setting off.
 pub const DISABLED_COPY: &str = "Calls are turned off";
+
+/// The longest a leave may take before it is given up on. A leave that never returns (media
+/// that will not close, a homeserver that does not answer) would otherwise keep the call in
+/// `leaving`, hide the Call button and park every later start until the app restarts. The
+/// membership left behind expires on the homeserver through superdial's delayed leave.
+pub const LEAVE_LIMIT: std::time::Duration = std::time::Duration::from_secs(45);
 
 /// What the call reports, already narrowed to what the controller uses.
 #[derive(Debug, Clone, PartialEq)]
@@ -344,18 +351,18 @@ impl CallController {
         };
         if !still_wanted {
             // Hung up before the call existed: nothing was published; stop its routing.
-            link.leave().await;
+            leave_within_limit(link.as_ref()).await;
             return None;
         }
         if let Err(failure) = link.join().await {
             tracing::info!(?failure, "call: did not start");
-            link.leave().await;
+            leave_within_limit(link.as_ref()).await;
             self.failed(id, room_id, failure.copy());
             return None;
         }
         if !self.is_current(id) {
             // Hung up while joining: the bar is already gone; take the membership down too.
-            link.leave().await;
+            leave_within_limit(link.as_ref()).await;
             return None;
         }
 
@@ -364,7 +371,7 @@ impl CallController {
             Ok(io) => Arc::from(io),
             Err(e) => {
                 tracing::warn!(error = %e, "call: audio did not open");
-                link.leave().await;
+                leave_within_limit(link.as_ref()).await;
                 self.failed(id, room_id, AUDIO_FAILED_COPY);
                 return None;
             }
@@ -398,7 +405,7 @@ impl CallController {
         if left {
             // Hung up between the devices opening and now.
             drop(audio);
-            link.leave().await;
+            leave_within_limit(link.as_ref()).await;
             return None;
         }
         Some(snapshot)
@@ -501,7 +508,7 @@ impl CallController {
             } = active;
             drop(audio);
             if let Some(link) = link {
-                link.leave().await;
+                leave_within_limit(link.as_ref()).await;
             }
             self.settled(active_id);
             for t in tasks {
@@ -527,7 +534,7 @@ impl CallController {
         let (link, audio) = active.dismantle();
         drop(audio);
         let link = link?;
-        link.leave().await;
+        leave_within_limit(link.as_ref()).await;
         Some(self.settled(id))
     }
 
@@ -545,6 +552,20 @@ impl CallController {
     /// Forgets the notice.
     pub fn dismiss_notice(&self) -> CallSnapshot {
         self.update(|s| s.notice = None).1
+    }
+}
+
+/// Leaves, giving up after [`LEAVE_LIMIT`]. Dropping the leave on time out stops it, so it
+/// cannot land later on top of a newer call's membership.
+async fn leave_within_limit(link: &dyn CallLink) {
+    if tokio::time::timeout(LEAVE_LIMIT, link.leave())
+        .await
+        .is_err()
+    {
+        tracing::warn!(
+            limit_secs = LEAVE_LIMIT.as_secs(),
+            "call: the leave did not return in time; giving up on it"
+        );
     }
 }
 
@@ -1244,6 +1265,35 @@ mod tests {
         let s = within("the second start", second).await;
         assert_eq!(s.call.unwrap().phase, CallPhase::Live);
         assert_eq!(rig.factory.log(), ["join 1", "left 1", "join 2"]);
+    }
+
+    /// A leave that never returns (a homeserver or LiveKit that hangs) is given up on after
+    /// [`LEAVE_LIMIT`]: `leaving` clears, and the next call can start rather than waiting
+    /// until the app restarts.
+    #[tokio::test(start_paused = true)]
+    async fn a_leave_that_never_returns_is_given_up_on() {
+        let rig = enabled(JoinPlan::Ok).await;
+        *rig.factory.hold_leave.lock().unwrap() = true;
+        rig.calls.start(ROOM, AGENT, "Ada").await;
+        let calls = rig.calls.clone();
+        let hanging = tokio::spawn(async move { calls.hang_up().await });
+        let first = rig.factory.link();
+        eventually("leaving", || *first.leaves.lock().unwrap() == 1).await;
+        assert!(rig.calls.snapshot().leaving);
+
+        // Never released. The clock is paused, so the wait costs no real time.
+        let s = tokio::time::timeout(LEAVE_LIMIT * 2, hanging)
+            .await
+            .expect("the hang-up waited on the leave forever")
+            .unwrap();
+        assert!(
+            !s.leaving,
+            "a leave that never returned still shows as leaving"
+        );
+
+        *rig.factory.hold_leave.lock().unwrap() = false;
+        let s = rig.calls.start(ROOM, AGENT, "Ada").await;
+        assert_eq!(s.call.unwrap().phase, CallPhase::Live);
     }
 
     /// A call hung up while it waits for an earlier one to leave gives up at once, without
