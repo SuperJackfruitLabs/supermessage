@@ -1,0 +1,6 @@
+# Calls (superdial → livekit) link LiveKit's prebuilt libwebrtc, which on Windows is built against
+# the static C runtime (/MT). A default /MD build then fails to link (LNK2038), so Windows builds
+# use the static runtime throughout. CI's desktop job sets the same flag (its RUSTFLAGS would
+# otherwise override this file).
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

@@ -462,11 +462,15 @@ jobs:
             args: ""
             rust_targets: x86_64-pc-windows-msvc
             bundle: target/release/bundle
+            # LiveKit's prebuilt libwebrtc (calls) is built against the static C runtime (/MT);
+            # linking it into a /MD build fails with LNK2038. As in .cargo/config.toml.
+            rustflags: -C target-feature=+crt-static
     runs-on: ${{ matrix.runner }}
     env:
       # The installers build as the old release workflow built them; the Rust
-      # job holds the tree to `-D warnings` on Linux.
-      RUSTFLAGS: ""
+      # job holds the tree to `-D warnings` on Linux. Only Windows sets flags (the static C
+      # runtime libwebrtc needs); an empty RUSTFLAGS also overrides .cargo/config.toml.
+      RUSTFLAGS: ${{ matrix.rustflags || '' }}
     steps:
       - uses: actions/checkout@v4
 
