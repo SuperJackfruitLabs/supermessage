@@ -79,6 +79,7 @@ pub mod roster;
 pub mod safety;
 pub mod search;
 pub mod secrets;
+pub mod send_recovery;
 pub mod sent_rooms;
 pub mod session;
 pub mod spaces;

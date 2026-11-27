@@ -48,6 +48,7 @@ use super::secrets::{
     generate_passphrase, SecretStore, KEY_HOMESERVER_URL, KEY_LIVE_ACTIVITY, KEY_PUSHER,
     KEY_STORE_PASSPHRASE,
 };
+use super::send_recovery;
 use super::spaces::{self, SpaceSummary};
 use super::sync::{self, SyncHandle};
 use super::timeline::FocusedTimeline;
@@ -104,6 +105,11 @@ pub struct Session {
     // The sweeper that ends turns past their time limit
     // (`turn_watch::spawn_sweeper`). Written like `ignore_watch`.
     turn_sweep: RwLock<Option<tokio::task::JoinHandle<()>>>,
+    // Keeps a room's later messages going out after one fails
+    // (`send_recovery::spawn_send_watch`). Written like `ignore_watch`, and
+    // stopped before the store is wiped for the same reason: it holds a
+    // `Client`.
+    send_watch: RwLock<Option<tokio::task::JoinHandle<()>>>,
     // Serializes whole session transitions (login, restore, logout) against
     // each other — see this module's doc comment.
     lifecycle: Mutex<()>,
@@ -149,6 +155,7 @@ impl Session {
             ignore_watch: RwLock::new(None),
             turns: Arc::new(TurnBook::default()),
             turn_sweep: RwLock::new(None),
+            send_watch: RwLock::new(None),
             lifecycle: Mutex::new(()),
             process: process.to_string(),
             stores_closed: std::sync::atomic::AtomicBool::new(false),
@@ -304,6 +311,7 @@ impl Session {
         self.focused.clear_and_join().await;
         self.stop_ignore_watch().await;
         self.stop_turn_sweep().await;
+        self.stop_send_watch().await;
         self.stop_room_list().await;
         self.stop_sync().await;
         // Clone the handle (cheap — `Client` is internally reference
@@ -364,6 +372,7 @@ impl Session {
         if let Err(err) = self.start_streams(sink).await {
             self.stop_ignore_watch().await;
             self.stop_turn_sweep().await;
+            self.stop_send_watch().await;
             self.stop_room_list().await;
             self.stop_sync().await;
             *self.client.write().await = None;
@@ -891,6 +900,12 @@ impl Session {
             // The block list, once now and on every change. Infallible for the
             // same reason as the live view: a session that cannot stream it
             // still works, and the host can ask `blocked_users` directly.
+            // A refused message must not hold back the room's later ones,
+            // and a failed one must be retried — including whatever an
+            // earlier session left parked in the store. Infallible like the
+            // others: without it messages still send until one fails.
+            self.stop_send_watch().await;
+            *self.send_watch.write().await = Some(send_recovery::spawn_send_watch(client.clone()));
             self.stop_ignore_watch().await;
             *self.ignore_watch.write().await = Some(safety::spawn_ignore_watch(client, sink));
         }
@@ -909,6 +924,15 @@ impl Session {
     /// Stops the turn sweeper. A safe no-op when none is running.
     async fn stop_turn_sweep(&self) {
         if let Some(task) = self.turn_sweep.write().await.take() {
+            task.abort();
+            let _ = task.await;
+        }
+    }
+
+    /// Stops the send-queue watcher and waits for its task to finish, so the
+    /// `Client` it holds is released. A safe no-op when none is running.
+    async fn stop_send_watch(&self) {
+        if let Some(task) = self.send_watch.write().await.take() {
             task.abort();
             let _ = task.await;
         }
@@ -2489,6 +2513,23 @@ mod tests {
 
     /// Mutation seen failing (run): removing `self.stop_turn_sweep().await` from
     /// `logout` fails this at `session.turn_sweep.read().await.is_none()`.
+    /// Mutation seen failing (run): removing `self.stop_send_watch().await`
+    /// from `logout` fails this at `session.send_watch.read().await.is_none()`.
+    #[tokio::test]
+    async fn logout_stops_the_send_watch() {
+        let session = Session::new(
+            std::env::temp_dir().join("sm-send-watch-logout"),
+            Box::new(MemoryStore::default()),
+        );
+        // Stands in for the watcher `start_streams` would have started.
+        let task = tokio::spawn(std::future::pending::<()>());
+        let watch = task.abort_handle();
+        *session.send_watch.write().await = Some(task);
+        let _ = session.logout().await;
+        assert!(session.send_watch.read().await.is_none());
+        assert!(watch.is_finished(), "logout left the send watch running");
+    }
+
     #[tokio::test]
     async fn logout_stops_the_turn_sweeper() {
         let session = Session::new(
