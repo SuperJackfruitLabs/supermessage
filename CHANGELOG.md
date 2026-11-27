@@ -7,6 +7,10 @@ to v0.1.2 predate this file.
 
 ## Unreleased
 
+- On macOS, pressing Call no longer quits the app. v0.1.4's macOS build was linked without
+  libwebrtc's Objective-C categories, so the call died ("unrecognized selector") as it set up its
+  media. CI now checks the built macOS app for them.
+
 ## v0.1.4 — 2026-11-27
 
 - On desktop, voice calls with an agent. Account → Calls ("Voice calls with agents") is off by

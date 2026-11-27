@@ -524,6 +524,23 @@ jobs:
         shell: bash
         run: pnpm tauri build ${{ matrix.args }}
 
+      # The calls' libwebrtc needs its Objective-C categories linked (-ObjC, src-tauri/build.rs);
+      # without them v0.1.4's first call died with "unrecognized selector".
+      - name: Check libwebrtc's ObjC categories are linked (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          BUNDLE: ${{ matrix.bundle }}
+        run: |
+          set -e
+          found=0
+          for app in "$BUNDLE"/macos/*.app; do
+            [ -d "$app" ] || continue
+            found=1
+            sh scripts/check-macos-objc.sh "$app/Contents/MacOS/$(basename "$app" .app)"
+          done
+          [ "$found" = 1 ]
+
       # One flat directory per platform: the installers, and the macOS app as
       # a tarball (a .app is a directory). These unsigned installers warn on
       # first run (Gatekeeper, SmartScreen) until signing is set up.
