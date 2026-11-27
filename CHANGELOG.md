@@ -7,6 +7,22 @@ to v0.1.2 predate this file.
 
 ## Unreleased
 
+## v0.1.4 — 2026-11-27
+
+- On desktop, voice calls with an agent. Account → Calls ("Voice calls with agents") is off by
+  default and kept per device. With it on, a room whose agent answers calls has a Call button
+  beside Info, and a call bar above the room pane shows the agent's name, the time in the call,
+  the agent's own state (Connecting…, Listening, Thinking…, Speaking), Mute and Hang up.
+  - The call uses MatrixRTC membership and LiveKit, end to end encrypted, through
+    [superdial](https://github.com/SuperJackfruitLabs/superdial) v0.0.1.
+  - A room whose agent cannot take calls reads "Calls are not available for this agent yet".
+  - A new call waits until a hung-up one has left, and a leave that never returns is given up
+    after 45 s.
+  - iOS and Android build no calls.
+- In a room where one message fails to send, the messages after it still go out. A message is
+  dropped only when the homeserver refused it outright; one held back by a network error or a
+  rate limit is retried.
+- matrix-sdk 0.19.1.
 - Linking a Super Jackfruit account follows treaty's URL shapes for the Accounts link page and its
   `supermessage://linked` callback (`accounts.matrix-link`, treaty 0.0.19): every vendored case
   runs through the address this client builds and the callback it reads. The callback is now
