@@ -90,6 +90,10 @@
   import { safetyStore } from "$lib/stores/safety.svelte";
   import { unblock } from "$lib/safety";
   import { accountStore } from "$lib/stores/account.svelte";
+  import { callsStore } from "$lib/stores/calls.svelte";
+  import CallBar from "$lib/components/CallBar.svelte";
+  import { CALL_BUTTON_LABEL, callButtonShown, noticeFor } from "$lib/components/callView";
+  import { onCall } from "$lib/ipc";
   import { escapeClosesPanel } from "$lib/components/roomInfoView";
 
   let checking = $state(true);
@@ -816,12 +820,14 @@
   let unlistenIgnored: (() => void) | null = null;
   let unlistenOpen: (() => void) | null = null;
   let unlistenNavigate: (() => void) | null = null;
+  let unlistenCall: (() => void) | null = null;
   let destroyed = false;
   onDestroy(() => {
     destroyed = true;
     unlistenIgnored?.();
     unlistenOpen?.();
     unlistenNavigate?.();
+    unlistenCall?.();
   });
 
   /** A notification was clicked: the window is forward; show its room (the collapsed layout too). */
@@ -836,6 +842,16 @@
   onMount(() => windowFocus.start());
   // The device's "keep running in the tray" choice reaches Rust before anyone can close the window.
   onMount(() => void closeBehaviour.install());
+  // Calls (off by default): Rust hears the device's choice, and every change comes back whole.
+  onMount(() => {
+    onCall((snapshot) => callsStore.apply(snapshot))
+      .then((unlisten) => {
+        if (destroyed) unlisten();
+        else unlistenCall = unlisten;
+      })
+      .catch((err: unknown) => console.error("could not listen for calls", err));
+    void callsStore.install();
+  });
 
   onMount(async () => {
     onIgnoredUsers((ids) => safetyStore.apply(ids))
@@ -1244,8 +1260,18 @@
         style={sectionInsets}
         inert={panelIsModal}
       >
+        <!-- The call bar, whichever room is open: one call at a time, and Hang up always in reach. -->
+        {#if callsStore.snapshot.call !== null}
+          <CallBar
+            call={callsStore.snapshot.call}
+            onMute={(muted) => void callsStore.setMuted(muted)}
+            onHangUp={() => void callsStore.hangUp()}
+          />
+        {/if}
         {#if roomsStore.selectedId}
           {@const headerAvatar = headerAvatarCache.get(roomsStore.selectedId)}
+          {@const callAgent = castStore.castFor(roomsStore.selectedId)?.counterpart ?? null}
+          {@const callNotice = noticeFor(callsStore.snapshot, roomsStore.selectedId)}
           <!--
             The only header this room pane has: the selected room's parsed
             identity (avatar, name, role chip — spec §5.1/§6.2, already
@@ -1384,6 +1410,16 @@
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-3">
+              {#if callAgent !== null && callButtonShown(callsStore.snapshot.enabled, callAgent, (roomsStore.selectedAffordance ?? "compose") === "compose", callsStore.snapshot.call, callsStore.snapshot.leaving)}
+                <button
+                  type="button"
+                  data-testid="call-button"
+                  onclick={() => void callsStore.start(roomsStore.selectedId!, callAgent)}
+                  class="shrink-0 rounded-control px-2 py-1 text-ui font-medium text-content-muted transition-colors hover:bg-surface/60 hover:text-content"
+                >
+                  {CALL_BUTTON_LABEL}
+                </button>
+              {/if}
               <!--
                 Both grounds inverted with the header (see its comment):
                 on a sunken bar, `bg-surface-sunken` for hover and pressed
@@ -1413,6 +1449,24 @@
               </button>
             </div>
           </div>
+          {#if callNotice !== null}
+            <!-- Why a call did not start, or that it ended: this room's, until dismissed. -->
+            <div
+              role="alert"
+              data-testid="call-notice"
+              class="flex shrink-0 items-center gap-3 border-b border-border bg-surface-raised px-4 py-2"
+            >
+              <span class="min-w-0 flex-1 text-ui text-content">{callNotice}</span>
+              <button
+                type="button"
+                aria-label="Dismiss"
+                onclick={() => void callsStore.dismiss()}
+                class="shrink-0 rounded-control px-2 py-1 text-ui text-content-muted transition-colors hover:bg-surface-sunken hover:text-content"
+              >
+                ✕
+              </button>
+            </div>
+          {/if}
           {#key roomsStore.selectedId}
             <Timeline roomId={roomsStore.selectedId} onOpenRecovery={() => void openRecovery()}>
               {#snippet overlay()}
@@ -1548,6 +1602,8 @@
     keepRunning={closeBehaviour.keepRunning}
     trayAvailable={closeBehaviour.available}
     onKeepRunning={(on) => closeBehaviour.set(on)}
+    callsEnabled={callsStore.enabled}
+    onCallsEnabled={(on) => void callsStore.set(on)}
     onOpenRecovery={() => {
       accountOpen = false;
       void openRecovery();

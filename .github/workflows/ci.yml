@@ -357,7 +357,18 @@ jobs:
             patchelf \
             build-essential \
             file \
-            wget
+            wget \
+            libasound2-dev
+
+      - name: Install clang 21 (calls)
+        # Calls build livekit's webrtc-sys, whose prebuilt libwebrtc carries Chromium's hermetic
+        # libc++: its C++ glue compiles only with clang 21 or later, and cpal needs ALSA.
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-21 libclang-21-dev lld-21
+          { echo CC=clang-21; echo CXX=clang++-21; echo LIBCLANG_PATH=/usr/lib/llvm-21/lib; } >> "$GITHUB_ENV"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -416,7 +427,11 @@ jobs:
   desktop:
     name: Desktop (${{ matrix.label }})
     needs: changes
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Main always builds the installers. A pull request builds them too when it carries the
+    # `desktop-build` label (add it, then push), for changes that touch native dependencies.
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'desktop-build'))
     strategy:
       fail-fast: false
       matrix:
@@ -447,11 +462,15 @@ jobs:
             args: ""
             rust_targets: x86_64-pc-windows-msvc
             bundle: target/release/bundle
+            # LiveKit's prebuilt libwebrtc (calls) is built against the static C runtime (/MT);
+            # linking it into a /MD build fails with LNK2038. As in .cargo/config.toml.
+            rustflags: -C target-feature=+crt-static
     runs-on: ${{ matrix.runner }}
     env:
       # The installers build as the old release workflow built them; the Rust
-      # job holds the tree to `-D warnings` on Linux.
-      RUSTFLAGS: ""
+      # job holds the tree to `-D warnings` on Linux. Only Windows sets flags (the static C
+      # runtime libwebrtc needs); an empty RUSTFLAGS also overrides .cargo/config.toml.
+      RUSTFLAGS: ${{ matrix.rustflags || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -468,7 +487,19 @@ jobs:
             patchelf \
             build-essential \
             file \
-            wget
+            wget \
+            libasound2-dev
+
+      - name: Install clang 21 (calls)
+        # Calls build livekit's webrtc-sys, whose prebuilt libwebrtc carries Chromium's hermetic
+        # libc++: its C++ glue compiles only with clang 21 or later, and cpal needs ALSA.
+        if: matrix.runner == 'ubuntu-22.04'
+        run: |
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-21 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-21 libclang-21-dev lld-21
+          { echo CC=clang-21; echo CXX=clang++-21; echo LIBCLANG_PATH=/usr/lib/llvm-21/lib; } >> "$GITHUB_ENV"
 
       - uses: dtolnay/rust-toolchain@stable
         with:

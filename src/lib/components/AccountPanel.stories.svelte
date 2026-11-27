@@ -43,6 +43,8 @@
       keepRunning: false,
       trayAvailable: true,
       onKeepRunning: noop,
+      callsEnabled: false,
+      onCallsEnabled: noop,
       onOpenRecovery: noop,
       onSignOut: () => Promise.resolve(),
       onOpenLink: noop,
@@ -98,6 +100,24 @@
     ((await settled(() => buttonNamed(root, "Unblock Spammy"))) as HTMLElement).click();
     const alert = await settled(() => root.querySelector("[role=alert]"));
     if (alert.textContent?.trim() !== "Couldn't reach the homeserver.") throw new Error("the refusal is not shown");
+    // The sections above (Calls among them) put Blocked users below the fold at 720px: scroll the
+    // panel to it, or the frame is the top of the panel and the refusal is never in it.
+    (alert.closest("section") as HTMLElement).scrollIntoView({ block: "nearest", behavior: "instant" });
+    const box = alert.getBoundingClientRect();
+    if (box.top < 0 || box.bottom > window.innerHeight) throw new Error("the refusal is outside the frame");
+  }}
+/>
+
+<!-- Voice calls with agents on (off by default): the Calls section's switch reads checked. -->
+<Story
+  name="Calls on"
+  args={{ callsEnabled: true }}
+  play={async ({ canvasElement }) => {
+    const root = canvasElement as HTMLElement;
+    const toggle = await settled(() => root.querySelector("[role='switch'][aria-labelledby='account-calls-switch']"));
+    if (toggle.getAttribute("aria-checked") !== "true") throw new Error("the Calls switch is not on");
+    const label = root.querySelector("#account-calls-switch")?.textContent?.trim();
+    if (label !== "Voice calls with agents") throw new Error(`label: ${label}`);
   }}
 />
 

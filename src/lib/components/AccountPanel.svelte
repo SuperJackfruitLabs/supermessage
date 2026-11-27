@@ -15,6 +15,8 @@
     ACCOUNT_LINKS,
     APPEARANCE_FOOTER,
     BLOCKED_FOOTER,
+    CALLS_FOOTER,
+    CALLS_LABEL,
     KEEP_RUNNING_FOOTER,
     KEEP_RUNNING_LABEL,
     KEEP_RUNNING_UNAVAILABLE_FOOTER,
@@ -41,6 +43,9 @@
     /** Whether this desktop has a tray to come back by; without one the switch is disabled. */
     trayAvailable: boolean;
     onKeepRunning: (on: boolean) => void;
+    /** Voice calls with agents (this device's setting, off by default). */
+    callsEnabled: boolean;
+    onCallsEnabled: (on: boolean) => void;
     onOpenRecovery: () => void;
     onSignOut: () => Promise<void>;
     onOpenLink: (url: string) => void;
@@ -70,6 +75,8 @@
     keepRunning,
     trayAvailable,
     onKeepRunning,
+    callsEnabled,
+    onCallsEnabled,
     onOpenRecovery,
     onSignOut,
     onOpenLink,
@@ -318,6 +325,33 @@
       <p class="px-1 text-meta text-content-faint">
         {trayAvailable ? KEEP_RUNNING_FOOTER : KEEP_RUNNING_UNAVAILABLE_FOOTER}
       </p>
+    </section>
+
+    <section class="flex flex-col gap-2" aria-labelledby="account-calls">
+      <h3 id="account-calls" class="text-meta font-medium text-content-muted">Calls</h3>
+      <div class="flex items-start justify-between gap-3 px-1">
+        <span id="account-calls-switch" class="min-w-0 flex-1 text-ui text-content">
+          {CALLS_LABEL}
+        </span>
+        <button
+          type="button"
+          role="switch"
+          aria-labelledby="account-calls-switch"
+          aria-checked={callsEnabled}
+          onclick={() => onCallsEnabled(!callsEnabled)}
+          class="relative mt-0.5 h-6 w-10 shrink-0 rounded-pill border border-border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent {callsEnabled
+            ? 'bg-accent'
+            : 'bg-surface-sunken'}"
+        >
+          <span
+            aria-hidden="true"
+            class="absolute left-0.5 top-0.5 size-4 rounded-full bg-content-faint transition-transform {callsEnabled
+              ? 'translate-x-4 !bg-surface'
+              : ''}"
+          ></span>
+        </button>
+      </div>
+      <p class="px-1 text-meta text-content-faint">{CALLS_FOOTER}</p>
     </section>
 
     {#if blockedSectionShown(blocked)}

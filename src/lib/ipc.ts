@@ -2878,3 +2878,76 @@ const IGNORED_USERS_EVENT = "sm://ignored-users";
 export function onIgnoredUsers(handler: (userIds: string[]) => void): Promise<UnlistenFn> {
   return listen<string[]>(IGNORED_USERS_EVENT, (event) => handler(event.payload));
 }
+
+// ---- Calls with agents (desktop; `src-tauri/src/commands_call.rs`) ----------------------
+
+/** Mirrors `core::calls::model::AgentCallState`: the agent's `superdial.state`. */
+export type AgentCallState = "connecting" | "listening" | "thinking" | "speaking";
+
+/** Mirrors `core::calls::model::CallPhase`. */
+export type CallPhase = "connecting" | "live";
+
+/** Mirrors `core::calls::model::CallView`: the call that is running. */
+export interface CallView {
+  roomId: string;
+  agentUserId: string;
+  agentName: string;
+  phase: CallPhase;
+  agentState: AgentCallState | null;
+  /** Unix ms when we joined; the bar's clock counts from here. */
+  startedAtMs: number | null;
+  muted: boolean;
+}
+
+/** Mirrors `core::calls::model::CallNotice`: a refusal, a failure or an ending, for one room. */
+export interface CallNotice {
+  roomId: string;
+  text: string;
+}
+
+/** Mirrors `core::calls::model::CallSnapshot`, sent whole on every change. */
+export interface CallSnapshot {
+  enabled: boolean;
+  call: CallView | null;
+  notice: CallNotice | null;
+  /** A hung-up call has not finished leaving; no call starts until it has. */
+  leaving: boolean;
+  /** Rises with every change; the store keeps the highest it has seen. */
+  seq: number;
+}
+
+const CALL_EVENT = "sm://call";
+
+/** Tells Rust the "Calls" setting. Off hangs up and refuses new calls. */
+export async function callsSetEnabled(enabled: boolean): Promise<CallSnapshot> {
+  return invoke<CallSnapshot>("calls_set_enabled", { enabled });
+}
+
+/** Calls the room's agent; resolves once the call is live or did not start. */
+export async function callStart(
+  roomId: string,
+  agentUserId: string,
+  agentName: string,
+): Promise<CallSnapshot> {
+  return invoke<CallSnapshot>("call_start", { roomId, agentUserId, agentName });
+}
+
+export async function callHangUp(): Promise<CallSnapshot> {
+  return invoke<CallSnapshot>("call_hang_up");
+}
+
+export async function callSetMuted(muted: boolean): Promise<CallSnapshot> {
+  return invoke<CallSnapshot>("call_set_muted", { muted });
+}
+
+export async function callDismissNotice(): Promise<CallSnapshot> {
+  return invoke<CallSnapshot>("call_dismiss_notice");
+}
+
+export async function callState(): Promise<CallSnapshot> {
+  return invoke<CallSnapshot>("call_state");
+}
+
+export async function onCall(handler: (snapshot: CallSnapshot) => void): Promise<UnlistenFn> {
+  return listen<CallSnapshot>(CALL_EVENT, (event) => handler(event.payload));
+}

@@ -396,3 +396,32 @@ describe("session commands", () => {
     expect(handler).toHaveBeenCalledWith(["@a:x"]);
   });
 });
+
+describe("calls", () => {
+  it("passes call commands' arguments camelCase", async () => {
+    const { callStart, callSetMuted, callsSetEnabled, callHangUp } = await import("./ipc");
+    const snapshot = { enabled: true, call: null, notice: null, leaving: false, seq: 1 };
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue(snapshot);
+    await expect(callStart("!r:s", "@agent_x:s", "Ada")).resolves.toEqual(snapshot);
+    expect(invokeMock).toHaveBeenCalledWith("call_start", {
+      roomId: "!r:s",
+      agentUserId: "@agent_x:s",
+      agentName: "Ada",
+    });
+    await callSetMuted(true);
+    expect(invokeMock).toHaveBeenCalledWith("call_set_muted", { muted: true });
+    await callsSetEnabled(false);
+    expect(invokeMock).toHaveBeenCalledWith("calls_set_enabled", { enabled: false });
+    await callHangUp();
+    expect(invokeMock).toHaveBeenCalledWith("call_hang_up");
+  });
+
+  it("listens on sm://call", async () => {
+    const { onCall } = await import("./ipc");
+    vi.mocked(listen).mockReset();
+    vi.mocked(listen).mockResolvedValue(() => {});
+    await onCall(() => {});
+    expect(listen).toHaveBeenCalledWith("sm://call", expect.any(Function));
+  });
+});

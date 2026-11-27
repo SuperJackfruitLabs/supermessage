@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use crate::host::{TauriFilePicker, TauriSink};
 use supermessage_core::attachments::{self, StagedAttachment, StagedAttachments};
@@ -94,6 +94,11 @@ pub async fn recover_with_key(
 
 #[tauri::command]
 pub async fn logout(app: AppHandle, session: State<'_, Session>) -> Result<(), CoreError> {
+    // A call goes before the account it runs on.
+    #[cfg(desktop)]
+    if let Some(calls) = app.try_state::<crate::commands_call::CallsState>() {
+        calls.0.hang_up().await;
+    }
     // Unsent recordings (voice, C2) go with the account.
     crate::commands_voice::sweep_recordings(&app);
     session.logout().await
