@@ -437,7 +437,15 @@ void describe('the workflow keeps its contract', () => {
     for (const path of PRODUCT_INPUTS) assert.ok(job('changes').includes(`              - '${path}'\n`), path);
   });
 
-  void test('the desktop build is untouched: push to main only', () => {
-    assert.ok(job('desktop').includes("    needs: changes\n    if: github.event_name == 'push' && github.ref == 'refs/heads/main'\n"));
+  void test('the desktop build runs on push to main, or on a pull request labelled desktop-build', () => {
+    const body = job('desktop');
+    assert.ok(body.includes('    needs: changes\n'));
+    assert.ok(
+      body.includes(
+        '    if: >-\n' +
+          "      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||\n" +
+          "      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'desktop-build'))\n",
+      ),
+    );
   });
 });
