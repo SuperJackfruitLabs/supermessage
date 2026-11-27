@@ -145,6 +145,8 @@ struct State {
     next_id: u64,
     /// Calls taken out of the state whose leave has not returned yet.
     leaving: HashSet<u64>,
+    /// The last snapshot's `seq`.
+    seq: u64,
 }
 
 impl State {
@@ -154,7 +156,14 @@ impl State {
             call: self.active.as_ref().map(|a| a.view.clone()),
             notice: self.notice.clone(),
             leaving: !self.leaving.is_empty(),
+            seq: self.seq,
         }
+    }
+
+    /// A change: the next `seq`, and the snapshot that carries it.
+    fn changed(&mut self) -> CallSnapshot {
+        self.seq += 1;
+        self.snapshot()
     }
 
     fn active_mut(&mut self, id: u64) -> Option<&mut Active> {
@@ -220,6 +229,7 @@ impl CallController {
                     notice: None,
                     next_id: 1,
                     leaving: HashSet::new(),
+                    seq: 0,
                 }),
                 turn: Notify::new(),
             }),
@@ -230,7 +240,7 @@ impl CallController {
     fn update<T>(&self, f: impl FnOnce(&mut State) -> T) -> (T, CallSnapshot) {
         let mut state = self.inner.state.lock().expect("call state lock");
         let out = f(&mut state);
-        let snapshot = state.snapshot();
+        let snapshot = state.changed();
         self.inner.observer.changed(&snapshot);
         (out, snapshot)
     }
@@ -416,18 +426,16 @@ impl CallController {
 
     /// Call `id` has finished leaving: the snapshot says so, and a start waiting may go on.
     fn settled(&self, id: u64) -> CallSnapshot {
-        let (removed, snapshot) = {
+        let snapshot = {
             let mut state = self.inner.state.lock().expect("call state lock");
-            let removed = state.leaving.remove(&id);
-            let snapshot = state.snapshot();
-            if removed {
-                self.inner.observer.changed(&snapshot);
+            if !state.leaving.remove(&id) {
+                return state.snapshot();
             }
-            (removed, snapshot)
+            let snapshot = state.changed();
+            self.inner.observer.changed(&snapshot);
+            snapshot
         };
-        if removed {
-            self.inner.turn.notify_waiters();
-        }
+        self.inner.turn.notify_waiters();
         snapshot
     }
 
@@ -1275,6 +1283,51 @@ mod tests {
             "the second never made a link"
         );
         assert_eq!(rig.factory.log(), ["join 1", "left 1", "join 2"]);
+    }
+
+    /// `start` answers with the Live snapshot, and the agent's state arrives on the observer
+    /// after it; the host can only order them by `seq`.
+    #[tokio::test]
+    async fn every_change_has_a_higher_seq_than_the_one_before() {
+        let rig = enabled(JoinPlan::Ok).await;
+        let live = rig.calls.start(ROOM, AGENT, "Ada").await;
+        rig.factory.send(LinkEvent::Attributes {
+            identity: AGENT_ID.into(),
+            attributes: attrs("listening"),
+        });
+        let calls = rig.calls.clone();
+        eventually("listening", || {
+            calls.snapshot().call.unwrap().agent_state == Some(AgentCallState::Listening)
+        })
+        .await;
+        rig.calls.set_muted(true);
+        rig.calls.hang_up().await;
+        let seen = rig.seen.0.lock().unwrap().clone();
+        assert!(
+            seen.len() >= 5,
+            "enable, connecting, live, listening, mute, hang-up"
+        );
+        for pair in seen.windows(2) {
+            assert!(
+                pair[1].seq > pair[0].seq,
+                "{} then {}",
+                pair[0].seq,
+                pair[1].seq
+            );
+        }
+        let listening = seen
+            .iter()
+            .find(|s| {
+                s.call
+                    .as_ref()
+                    .is_some_and(|c| c.agent_state == Some(AgentCallState::Listening))
+            })
+            .expect("the agent's state was told");
+        assert!(listening.seq > live.seq, "the state came after the answer");
+        // Asking is not a change.
+        let last = seen.last().unwrap().seq;
+        assert_eq!(rig.calls.snapshot().seq, last);
+        assert_eq!(rig.calls.snapshot().seq, last);
     }
 
     #[tokio::test]

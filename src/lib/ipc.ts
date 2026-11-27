@@ -2912,6 +2912,8 @@ export interface CallSnapshot {
   notice: CallNotice | null;
   /** A hung-up call has not finished leaving; no call starts until it has. */
   leaving: boolean;
+  /** Rises with every change; the store keeps the highest it has seen. */
+  seq: number;
 }
 
 const CALL_EVENT = "sm://call";

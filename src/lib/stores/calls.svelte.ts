@@ -2,6 +2,9 @@
 // `localStorage`, like "Keep running in the tray": it belongs to the device, not the account.
 // It is handed to Rust at start and on every change; Rust refuses calls while it is off. The
 // rest is Rust's `CallSnapshot`, replaced whole by each command's answer and each `sm://call`.
+// Tauri does not order a command's answer against events, so the one with the higher `seq`
+// wins: `call_start` answers with the Live snapshot, and the agent's state, emitted after it,
+// can arrive first.
 
 import {
   callDismissNotice,
@@ -51,11 +54,16 @@ export function createCallsStore(overrides: Partial<CallsDeps> = {}) {
   }
 
   let enabled = $state(read());
-  let snapshot = $state<CallSnapshot>({ enabled: false, call: null, notice: null, leaving: false });
+  let snapshot = $state<CallSnapshot>({ enabled: false, call: null, notice: null, leaving: false, seq: 0 });
+
+  /** Takes `next` unless it is older than what is shown. */
+  function take(next: CallSnapshot): void {
+    if (next.seq >= snapshot.seq) snapshot = next;
+  }
 
   async function run(op: () => Promise<CallSnapshot>, what: string): Promise<void> {
     try {
-      snapshot = await op();
+      take(await op());
     } catch (e) {
       // Storybook or a plain browser: no host to ask.
       console.error(`calls: ${what} failed`, e);
@@ -86,7 +94,7 @@ export function createCallsStore(overrides: Partial<CallsDeps> = {}) {
     },
     /** From `sm://call`. */
     apply(next: CallSnapshot): void {
-      snapshot = next;
+      take(next);
     },
     start(roomId: string, agent: Counterpart): Promise<void> {
       return run(() => deps.start(roomId, agent.userId, agent.name), "start");

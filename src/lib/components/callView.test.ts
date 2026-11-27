@@ -61,6 +61,7 @@ describe("callView", () => {
       call: null,
       notice: { roomId: "!r:s", text: "Calls are not available for this agent yet" },
       leaving: false,
+      seq: 1,
     };
     expect(noticeFor(snapshot, "!r:s")).toBe("Calls are not available for this agent yet");
     expect(noticeFor(snapshot, "!other:s")).toBeNull();

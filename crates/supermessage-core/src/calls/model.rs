@@ -92,6 +92,10 @@ pub struct CallSnapshot {
     /// Call button stays hidden, and a start waits), because its leave would clear the
     /// membership a new call publishes under the same key.
     pub leaving: bool,
+    /// Rises by one with every change. A command's answer and an `sm://call` event may arrive
+    /// in either order, so a host keeps the snapshot with the highest `seq` and drops an older
+    /// one that arrives after it.
+    pub seq: u64,
 }
 
 /// Why a call did not start.
@@ -223,6 +227,7 @@ mod tests {
             }),
             notice: None,
             leaving: false,
+            seq: 7,
         };
         let v = serde_json::to_value(&snapshot).unwrap();
         assert_eq!(v["call"]["agentState"], "thinking");
@@ -231,5 +236,6 @@ mod tests {
         assert_eq!(v["call"]["agentUserId"], "@agent_x:s");
         assert_eq!(v["notice"], serde_json::Value::Null);
         assert_eq!(v["leaving"], false);
+        assert_eq!(v["seq"], 7);
     }
 }
