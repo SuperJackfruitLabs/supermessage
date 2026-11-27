@@ -100,6 +100,11 @@
     ((await settled(() => buttonNamed(root, "Unblock Spammy"))) as HTMLElement).click();
     const alert = await settled(() => root.querySelector("[role=alert]"));
     if (alert.textContent?.trim() !== "Couldn't reach the homeserver.") throw new Error("the refusal is not shown");
+    // The sections above (Calls among them) put Blocked users below the fold at 720px: scroll the
+    // panel to it, or the frame is the top of the panel and the refusal is never in it.
+    (alert.closest("section") as HTMLElement).scrollIntoView({ block: "nearest", behavior: "instant" });
+    const box = alert.getBoundingClientRect();
+    if (box.top < 0 || box.bottom > window.innerHeight) throw new Error("the refusal is outside the frame");
   }}
 />
 
