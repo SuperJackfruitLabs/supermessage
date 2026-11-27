@@ -240,7 +240,7 @@ is worth reaching for before trusting a UI claim made from code reading alone.
 ## Calls with agents (desktop)
 
 Voice calls with a bridge-mode agent, behind the **Calls** setting in Account (off by
-default, kept per device). The call protocol is [superdial](../superdial) (MatrixRTC
+default, kept per device). The call protocol is [superdial](https://github.com/SuperJackfruitLabs/superdial) (MatrixRTC
 membership, call keys, LiveKit with end-to-end encryption), an optional dependency of the
 core behind the `calls` feature. Only `src-tauri` turns it on, for desktop targets; the FFI
 crate never does, so iOS and Android build no livekit.
@@ -253,10 +253,11 @@ crate never does, so iOS and Android build no livekit.
 - `src-tauri/src/call_audio.rs`: microphone and speaker through cpal (PulseAudio host, which
   PipeWire serves; ALSA otherwise). `commands_call.rs`: the commands and `sm://call`.
 
-Build needs: superdial is a **path dependency on the sibling checkout**
-(`../superdial/crates/superdial` from the repository root) until it is published, so a build of
-this workspace needs that checkout beside this one. livekit's `webrtc-sys` downloads a prebuilt
-libwebrtc and needs clang; cpal needs ALSA headers (`libasound2-dev` on Debian/Ubuntu).
+Build needs: superdial is a git dependency on a release tag of
+[SuperJackfruitLabs/superdial](https://github.com/SuperJackfruitLabs/superdial). livekit's
+`webrtc-sys` downloads a prebuilt libwebrtc whose C++ glue needs **clang 21 or later** on Linux
+(`CC=clang-21 CXX=clang++-21`, as CI sets them); cpal needs ALSA headers (`libasound2-dev` on
+Debian/Ubuntu).
 
 Development against the rtc-spike stack: build with `--features calls-dev-issuer` (it refuses
 to compile without debug assertions) and run with `SUPERMESSAGE_CALLS_DEV_ISSUER=discover` to

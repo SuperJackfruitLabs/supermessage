@@ -142,10 +142,8 @@ percent-encoding = "2"
 
 # Voice calls with agents (superdial: MatrixRTC membership, call keys, LiveKit with end-to-end
 # encryption). Desktop only: `src-tauri` turns `calls` on and the FFI crate never does, so iOS and
-# Android do not build livekit/libwebrtc. Apache-2.0. A path dependency on the sibling checkout
-# (`../superdial` from the repository root) until superdial is published; optional dependencies
-# are still resolved, so that checkout must exist for any build of this workspace.
-superdial = { path = "../../../superdial/crates/superdial", optional = true }
+# Android do not build livekit/libwebrtc. Apache-2.0, pinned to a release tag.
+superdial = { git = "https://github.com/SuperJackfruitLabs/superdial", tag = "v0.0.1", optional = true }
 
 [features]
 # The call state machine and the superdial link (`core::calls`).
