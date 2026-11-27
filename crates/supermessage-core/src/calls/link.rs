@@ -192,6 +192,23 @@ async fn pump(
 ) {
     while let Some(ev) = events.recv().await {
         let out = match ev {
+            // An arrival carries the attributes the participant already had, which LiveKit
+            // never reports as a change: the agent's `superdial.state` set before we saw it
+            // connect. superdial follows it with the same attributes as a change; the controller
+            // drops a state it already shows.
+            CallEvent::Media(MediaEvent::ParticipantConnected {
+                identity,
+                attributes,
+            }) => {
+                tracing::info!(%identity, "call: participant connected");
+                if attributes.is_empty() {
+                    continue;
+                }
+                LinkEvent::Attributes {
+                    identity,
+                    attributes,
+                }
+            }
             CallEvent::Media(MediaEvent::AttributesChanged {
                 identity,
                 attributes,
@@ -281,6 +298,7 @@ mod tests {
     use super::*;
     use matrix_sdk::test_utils::mocks::MatrixMockServer;
     use serde_json::json;
+    use std::collections::HashMap;
     use wiremock::{
         matchers::{method, path, path_regex},
         Mock, ResponseTemplate,
@@ -379,6 +397,40 @@ mod tests {
         assert!(link.to_device.lock().unwrap().is_none(), "handler removed");
         assert!(link.tasks.lock().unwrap().is_empty());
         link.leave().await;
+    }
+
+    /// E1 (2026-11-27): the agent set `superdial.state` before this client saw it connect, and
+    /// LiveKit sends no change for state a participant already had, so the call bar showed
+    /// nothing until the agent's next state. The state it arrives with is the state shown.
+    #[tokio::test]
+    async fn an_arrival_with_a_state_is_reported_as_its_attributes() {
+        let attributes: HashMap<String, String> =
+            HashMap::from([("superdial.state".to_owned(), "listening".to_owned())]);
+        let (calls, events) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        calls
+            .send(CallEvent::Media(MediaEvent::ParticipantConnected {
+                identity: "@agent_x:example.org:SUPERDIAL".into(),
+                attributes: attributes.clone(),
+            }))
+            .unwrap();
+        calls
+            .send(CallEvent::Media(MediaEvent::ParticipantConnected {
+                identity: "@u:example.org:DEV".into(),
+                attributes: HashMap::new(),
+            }))
+            .unwrap();
+        drop(calls);
+        pump(events, tx).await;
+        assert_eq!(
+            rx.recv().await,
+            Some(LinkEvent::Attributes {
+                identity: "@agent_x:example.org:SUPERDIAL".into(),
+                attributes,
+            })
+        );
+        // An arrival with no attributes says nothing to the controller.
+        assert_eq!(rx.recv().await, None);
     }
 
     #[test]
