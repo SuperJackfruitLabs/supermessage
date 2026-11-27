@@ -2910,6 +2910,8 @@ export interface CallSnapshot {
   enabled: boolean;
   call: CallView | null;
   notice: CallNotice | null;
+  /** A hung-up call has not finished leaving; no call starts until it has. */
+  leaving: boolean;
 }
 
 const CALL_EVENT = "sm://call";

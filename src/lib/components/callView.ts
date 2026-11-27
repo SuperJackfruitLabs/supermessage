@@ -45,16 +45,17 @@ export function elapsedLabel(startedAtMs: number | null, nowMs: number): string 
 
 /**
  * The Call button: the setting on, a room the core says is one agent's (`RoomCast.counterpart`,
- * the room's single agent as its header names it), a room this account is in, and no call
- * running anywhere (one call at a time).
+ * the room's single agent as its header names it), a room this account is in, no call running
+ * anywhere (one call at a time), and none hung up and still leaving (`CallSnapshot.leaving`).
  */
 export function callButtonShown(
   enabled: boolean,
   counterpart: Counterpart | null,
   joined: boolean,
   call: CallView | null,
+  leaving: boolean,
 ): boolean {
-  return enabled && counterpart !== null && joined && call === null;
+  return enabled && counterpart !== null && joined && call === null && !leaving;
 }
 
 /** The notice to show in `roomId`, if it is that room's. */

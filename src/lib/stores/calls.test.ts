@@ -16,7 +16,7 @@ function fakeStorage(initial: Record<string, string> = {}): Storage {
   };
 }
 
-const off: CallSnapshot = { enabled: false, call: null, notice: null };
+const off: CallSnapshot = { enabled: false, call: null, notice: null, leaving: false };
 
 function harness(storage: Storage | null) {
   const sent: boolean[] = [];
@@ -41,6 +41,7 @@ function harness(storage: Storage | null) {
           muted: false,
         },
         notice: null,
+        leaving: false,
       };
     },
     hangUp: async () => ({ ...off, enabled: true }),
@@ -98,7 +99,12 @@ describe("calls store", () => {
 
   it("an event's snapshot replaces the state", () => {
     const { store } = harness(fakeStorage());
-    store.apply({ enabled: true, call: null, notice: { roomId: "!r:s", text: "The call ended" } });
+    store.apply({
+      enabled: true,
+      call: null,
+      notice: { roomId: "!r:s", text: "The call ended" },
+      leaving: false,
+    });
     expect(store.snapshot.notice?.text).toBe("The call ended");
   });
 });

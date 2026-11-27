@@ -51,7 +51,7 @@ export function createCallsStore(overrides: Partial<CallsDeps> = {}) {
   }
 
   let enabled = $state(read());
-  let snapshot = $state<CallSnapshot>({ enabled: false, call: null, notice: null });
+  let snapshot = $state<CallSnapshot>({ enabled: false, call: null, notice: null, leaving: false });
 
   async function run(op: () => Promise<CallSnapshot>, what: string): Promise<void> {
     try {

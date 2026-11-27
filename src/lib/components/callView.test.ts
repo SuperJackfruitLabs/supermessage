@@ -43,11 +43,16 @@ describe("callView", () => {
 
   it("shows the Call button only with the setting on, an agent counterpart, a joined room and no call", () => {
     const agent = { userId: "@agent_x:s", name: "Ada" };
-    expect(callButtonShown(true, agent, true, null)).toBe(true);
-    expect(callButtonShown(false, agent, true, null)).toBe(false);
-    expect(callButtonShown(true, null, true, null)).toBe(false);
-    expect(callButtonShown(true, agent, false, null)).toBe(false);
-    expect(callButtonShown(true, agent, true, call())).toBe(false);
+    expect(callButtonShown(true, agent, true, null, false)).toBe(true);
+    expect(callButtonShown(false, agent, true, null, false)).toBe(false);
+    expect(callButtonShown(true, null, true, null, false)).toBe(false);
+    expect(callButtonShown(true, agent, false, null, false)).toBe(false);
+    expect(callButtonShown(true, agent, true, call(), false)).toBe(false);
+  });
+
+  it("hides the Call button while a hung-up call is still leaving", () => {
+    const agent = { userId: "@agent_x:s", name: "Ada" };
+    expect(callButtonShown(true, agent, true, null, true)).toBe(false);
   });
 
   it("shows a notice only in the room it is about", () => {
@@ -55,6 +60,7 @@ describe("callView", () => {
       enabled: true,
       call: null,
       notice: { roomId: "!r:s", text: "Calls are not available for this agent yet" },
+      leaving: false,
     };
     expect(noticeFor(snapshot, "!r:s")).toBe("Calls are not available for this agent yet");
     expect(noticeFor(snapshot, "!other:s")).toBeNull();

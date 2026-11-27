@@ -1410,7 +1410,7 @@
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-3">
-              {#if callAgent !== null && callButtonShown(callsStore.snapshot.enabled, callAgent, (roomsStore.selectedAffordance ?? "compose") === "compose", callsStore.snapshot.call)}
+              {#if callAgent !== null && callButtonShown(callsStore.snapshot.enabled, callAgent, (roomsStore.selectedAffordance ?? "compose") === "compose", callsStore.snapshot.call, callsStore.snapshot.leaving)}
                 <button
                   type="button"
                   data-testid="call-button"

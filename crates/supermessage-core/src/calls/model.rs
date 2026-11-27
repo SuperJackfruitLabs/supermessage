@@ -88,6 +88,10 @@ pub struct CallSnapshot {
     pub enabled: bool,
     pub call: Option<CallView>,
     pub notice: Option<CallNotice>,
+    /// A call that was hung up has not finished leaving. No call starts until it has (the
+    /// Call button stays hidden, and a start waits), because its leave would clear the
+    /// membership a new call publishes under the same key.
+    pub leaving: bool,
 }
 
 /// Why a call did not start.
@@ -218,6 +222,7 @@ mod tests {
                 muted: false,
             }),
             notice: None,
+            leaving: false,
         };
         let v = serde_json::to_value(&snapshot).unwrap();
         assert_eq!(v["call"]["agentState"], "thinking");
@@ -225,5 +230,6 @@ mod tests {
         assert_eq!(v["call"]["startedAtMs"], 1_764_200_000_000u64);
         assert_eq!(v["call"]["agentUserId"], "@agent_x:s");
         assert_eq!(v["notice"], serde_json::Value::Null);
+        assert_eq!(v["leaving"], false);
     }
 }

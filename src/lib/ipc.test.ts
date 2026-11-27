@@ -400,7 +400,7 @@ describe("session commands", () => {
 describe("calls", () => {
   it("passes call commands' arguments camelCase", async () => {
     const { callStart, callSetMuted, callsSetEnabled, callHangUp } = await import("./ipc");
-    const snapshot = { enabled: true, call: null, notice: null };
+    const snapshot = { enabled: true, call: null, notice: null, leaving: false };
     invokeMock.mockReset();
     invokeMock.mockResolvedValue(snapshot);
     await expect(callStart("!r:s", "@agent_x:s", "Ada")).resolves.toEqual(snapshot);

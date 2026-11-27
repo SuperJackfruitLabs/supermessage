@@ -5,9 +5,14 @@
 //! One call at a time. [`CallController::start`] shows Connecting at once, joins, and only then
 //! opens the microphone, so a refused call never touches it. Hanging up while still connecting
 //! takes the call away from the starter, which leaves as soon as its join returns.
+//!
+//! A call that is hung up stays in `leaving` until its leave returns, and a new call waits for
+//! every earlier one to leave before it makes its link: superdial's leave clears the membership
+//! state key (`_{user}_{device}_m.call`) every call from this device publishes under, so an
+//! overlapping leave would take the new call's membership down.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex, Weak,
@@ -17,7 +22,10 @@ use std::{
 
 use async_trait::async_trait;
 use superdial::TranscriptContent;
-use tokio::{sync::mpsc, task::JoinHandle};
+use tokio::{
+    sync::{mpsc, Notify},
+    task::JoinHandle,
+};
 
 use super::model::{
     is_agent_identity, AgentCallState, CallNotice, CallPhase, CallSnapshot, CallView, JoinFailure,
@@ -135,6 +143,8 @@ struct State {
     active: Option<Active>,
     notice: Option<CallNotice>,
     next_id: u64,
+    /// Calls taken out of the state whose leave has not returned yet.
+    leaving: HashSet<u64>,
 }
 
 impl State {
@@ -143,6 +153,7 @@ impl State {
             enabled: self.enabled,
             call: self.active.as_ref().map(|a| a.view.clone()),
             notice: self.notice.clone(),
+            leaving: !self.leaving.is_empty(),
         }
     }
 
@@ -150,13 +161,30 @@ impl State {
         self.active.as_mut().filter(|a| a.id == id)
     }
 
-    /// Takes the call out if it is still call `id`.
+    /// Takes the call out if it is still call `id`, as leaving.
     fn take(&mut self, id: u64) -> Option<Active> {
         if self.active.as_ref().is_some_and(|a| a.id == id) {
-            self.active.take()
+            self.take_any()
         } else {
             None
         }
+    }
+
+    /// Takes whatever call runs out, as leaving: whoever leaves it ends that with
+    /// [`CallController::settled`].
+    fn take_any(&mut self) -> Option<Active> {
+        let taken = self.active.take();
+        if let Some(a) = &taken {
+            self.leaving.insert(a.id);
+        }
+        taken
+    }
+
+    /// Whether call `id` may go on to make its link: it was hung up (and so gives up), or no
+    /// call is leaving. A call is put in `leaving` only as it stops being the active one, so
+    /// the running call never waits on itself.
+    fn may_go_on(&self, id: u64) -> bool {
+        self.active.as_ref().is_none_or(|a| a.id != id) || self.leaving.is_empty()
     }
 }
 
@@ -165,6 +193,8 @@ struct Inner {
     audio: Arc<dyn CallAudio>,
     observer: Arc<dyn CallObserver>,
     state: Mutex<State>,
+    /// Told when a call finishes leaving or is hung up, for a start waiting in `wait_turn`.
+    turn: Notify,
 }
 
 /// Calls, as the desktop runs them. Cheap to clone; clones share one state.
@@ -189,7 +219,9 @@ impl CallController {
                     active: None,
                     notice: None,
                     next_id: 1,
+                    leaving: HashSet::new(),
                 }),
+                turn: Notify::new(),
             }),
         }
     }
@@ -215,11 +247,12 @@ impl CallController {
                 None
             } else {
                 s.notice = None;
-                s.active.take()
+                s.take_any()
             }
         });
         if let Some(active) = taken {
-            close(active).await;
+            self.inner.turn.notify_waiters();
+            return self.close(active).await.unwrap_or(snapshot);
         }
         snapshot
     }
@@ -263,10 +296,28 @@ impl CallController {
             Some(id)
         });
         let Some(id) = id else { return snapshot };
+        match self.connect(id, room_id, agent_user_id).await {
+            Some(live) => live,
+            // Did not go live. If it was hung up meanwhile, it has left by now (or never
+            // published anything), and the next call may go on.
+            None => self.settled(id),
+        }
+    }
 
+    /// Joins call `id` and opens the devices: the Live snapshot, or `None` when it did not get
+    /// there, having left whatever it joined.
+    async fn connect(&self, id: u64, room_id: &str, agent_user_id: &str) -> Option<CallSnapshot> {
+        self.wait_turn(id).await;
+        if !self.is_current(id) {
+            // Hung up while waiting: nothing made, nothing to leave.
+            return None;
+        }
         let (link, events) = match self.inner.factory.create(room_id, agent_user_id).await {
             Ok(made) => made,
-            Err(failure) => return self.failed(id, room_id, failure.copy()),
+            Err(failure) => {
+                self.failed(id, room_id, failure.copy());
+                return None;
+            }
         };
         let still_wanted = match self
             .inner
@@ -284,17 +335,18 @@ impl CallController {
         if !still_wanted {
             // Hung up before the call existed: nothing was published; stop its routing.
             link.leave().await;
-            return self.snapshot();
+            return None;
         }
         if let Err(failure) = link.join().await {
             tracing::info!(?failure, "call: did not start");
             link.leave().await;
-            return self.failed(id, room_id, failure.copy());
+            self.failed(id, room_id, failure.copy());
+            return None;
         }
         if !self.is_current(id) {
             // Hung up while joining: the bar is already gone; take the membership down too.
             link.leave().await;
-            return self.snapshot();
+            return None;
         }
 
         let (mic_tx, mic_rx) = mpsc::unbounded_channel();
@@ -303,7 +355,8 @@ impl CallController {
             Err(e) => {
                 tracing::warn!(error = %e, "call: audio did not open");
                 link.leave().await;
-                return self.failed(id, room_id, AUDIO_FAILED_COPY);
+                self.failed(id, room_id, AUDIO_FAILED_COPY);
+                return None;
             }
         };
 
@@ -336,7 +389,44 @@ impl CallController {
             // Hung up between the devices opening and now.
             drop(audio);
             link.leave().await;
-            return self.snapshot();
+            return None;
+        }
+        Some(snapshot)
+    }
+
+    /// Waits until call `id` may make its link (see [`State::may_go_on`]).
+    async fn wait_turn(&self, id: u64) {
+        loop {
+            let told = self.inner.turn.notified();
+            tokio::pin!(told);
+            // Registered before the check, so a change between the two is not missed.
+            told.as_mut().enable();
+            if self
+                .inner
+                .state
+                .lock()
+                .expect("call state lock")
+                .may_go_on(id)
+            {
+                return;
+            }
+            told.await;
+        }
+    }
+
+    /// Call `id` has finished leaving: the snapshot says so, and a start waiting may go on.
+    fn settled(&self, id: u64) -> CallSnapshot {
+        let (removed, snapshot) = {
+            let mut state = self.inner.state.lock().expect("call state lock");
+            let removed = state.leaving.remove(&id);
+            let snapshot = state.snapshot();
+            if removed {
+                self.inner.observer.changed(&snapshot);
+            }
+            (removed, snapshot)
+        };
+        if removed {
+            self.inner.turn.notify_waiters();
         }
         snapshot
     }
@@ -352,13 +442,14 @@ impl CallController {
     }
 
     /// Call `id` did not start: it goes, and the room gets the reason.
-    fn failed(&self, id: u64, room_id: &str, text: &str) -> CallSnapshot {
+    /// Called once whatever it joined has been left, so it does not count as leaving.
+    fn failed(&self, id: u64, room_id: &str, text: &str) {
         self.update(|s| {
-            if s.take(id).is_some() {
+            if s.active.as_ref().is_some_and(|a| a.id == id) {
+                s.active = None;
                 s.notice = Some(notice(room_id, text));
             }
-        })
-        .1
+        });
     }
 
     /// The agent's state changed, as its participant says.
@@ -394,12 +485,17 @@ impl CallController {
             // handle (not a clone) is dropped first, so the devices close now rather than once
             // a leave on a slow homeserver returns.
             let Active {
-                link, audio, tasks, ..
+                id: active_id,
+                link,
+                audio,
+                tasks,
+                ..
             } = active;
             drop(audio);
             if let Some(link) = link {
                 link.leave().await;
             }
+            self.settled(active_id);
             for t in tasks {
                 t.abort();
             }
@@ -408,11 +504,23 @@ impl CallController {
 
     /// Hangs up the call, whatever phase it is in.
     pub async fn hang_up(&self) -> CallSnapshot {
-        let (taken, snapshot) = self.update(|s| s.active.take());
+        let (taken, snapshot) = self.update(|s| s.take_any());
         if let Some(active) = taken {
-            close(active).await;
+            self.inner.turn.notify_waiters();
+            return self.close(active).await.unwrap_or(snapshot);
         }
         snapshot
+    }
+
+    /// Closes a call taken out of the state: tasks stop, devices close, then we leave. A call
+    /// still connecting is its starter's to leave; then this is `None`.
+    async fn close(&self, active: Active) -> Option<CallSnapshot> {
+        let id = active.id;
+        let (link, audio) = active.dismantle();
+        drop(audio);
+        let link = link?;
+        link.leave().await;
+        Some(self.settled(id))
     }
 
     /// Mute sends silence rather than nothing: the agent ends an utterance on quiet frames.
@@ -519,15 +627,6 @@ async fn follow_call(
     calls.ended(id).await;
 }
 
-/// Closes a call taken out of the state: tasks stop, devices close, then we leave.
-async fn close(active: Active) {
-    let (link, audio) = active.dismantle();
-    drop(audio);
-    if let Some(link) = link {
-        link.leave().await;
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -550,6 +649,10 @@ mod tests {
         /// When set, `leave` waits for `leave_release` (a stalled homeserver).
         hold_leave: bool,
         leave_release: Notify,
+        /// Which link this is (1 for the first made), for `log`.
+        n: usize,
+        /// Joins and leaves of every link, in the order they happened.
+        log: Arc<Mutex<Vec<String>>>,
         joins: Mutex<u32>,
         leaves: Mutex<u32>,
         captured: Mutex<Vec<Vec<i16>>>,
@@ -559,6 +662,7 @@ mod tests {
     #[async_trait]
     impl CallLink for FakeLink {
         async fn join(&self) -> Result<(), JoinFailure> {
+            self.log.lock().unwrap().push(format!("join {}", self.n));
             *self.joins.lock().unwrap() += 1;
             match self.plan {
                 JoinPlan::Ok => Ok(()),
@@ -582,12 +686,14 @@ mod tests {
             if self.hold_leave {
                 self.leave_release.notified().await;
             }
+            self.log.lock().unwrap().push(format!("left {}", self.n));
         }
     }
 
     struct FakeFactory {
         plan: Mutex<JoinPlan>,
         hold_leave: Mutex<bool>,
+        log: Arc<Mutex<Vec<String>>>,
         created: Mutex<Vec<(String, String)>>,
         links: Mutex<Vec<Arc<FakeLink>>>,
         events: Mutex<Option<mpsc::UnboundedSender<LinkEvent>>>,
@@ -598,10 +704,14 @@ mod tests {
             Arc::new(Self {
                 plan: Mutex::new(plan),
                 hold_leave: Mutex::new(false),
+                log: Arc::default(),
                 created: Mutex::new(vec![]),
                 links: Mutex::new(vec![]),
                 events: Mutex::new(None),
             })
+        }
+        fn log(&self) -> Vec<String> {
+            self.log.lock().unwrap().clone()
         }
         fn link(&self) -> Arc<FakeLink> {
             self.links.lock().unwrap().last().cloned().expect("a link")
@@ -633,6 +743,8 @@ mod tests {
                 release: Notify::new(),
                 hold_leave: *self.hold_leave.lock().unwrap(),
                 leave_release: Notify::new(),
+                n: self.links.lock().unwrap().len() + 1,
+                log: self.log.clone(),
                 joins: Mutex::new(0),
                 leaves: Mutex::new(0),
                 captured: Mutex::new(vec![]),
@@ -745,6 +857,14 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
         panic!("timed out waiting for: {what}");
+    }
+
+    /// Awaits a spawned start or hang-up, failing (rather than hanging) after two seconds.
+    async fn within<T>(what: &str, task: JoinHandle<T>) -> T {
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap_or_else(|_| panic!("timed out waiting for: {what}"))
+            .unwrap()
     }
 
     fn attrs(state: &str) -> HashMap<String, String> {
@@ -1048,6 +1168,113 @@ mod tests {
         let open_now = *rig.audio.open_now.lock().unwrap();
         assert_eq!(open_now, 0, "devices closed before the leave");
         link.leave_release.notify_one();
+    }
+
+    /// Hung up while connecting, then Call again: superdial's leave clears the membership key
+    /// both calls share (`_{user}_{device}_m.call`), so the second call must not join until
+    /// the first has left.
+    #[tokio::test]
+    async fn a_new_call_waits_until_the_abandoned_one_has_left() {
+        let rig = enabled(JoinPlan::Block).await;
+        let calls = rig.calls.clone();
+        let first = tokio::spawn(async move { calls.start(ROOM, AGENT, "Ada").await });
+        let factory = rig.factory.clone();
+        eventually("joining", || factory.log() == ["join 1"]).await;
+        let s = rig.calls.hang_up().await;
+        assert!(s.call.is_none(), "the bar goes at once");
+        assert!(s.leaving, "the abandoned call is still leaving");
+
+        *rig.factory.plan.lock().unwrap() = JoinPlan::Ok;
+        let calls = rig.calls.clone();
+        let second = tokio::spawn(async move { calls.start(ROOM, AGENT, "Ada").await });
+        let calls = rig.calls.clone();
+        eventually("second connecting", || calls.snapshot().call.is_some()).await;
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert_eq!(
+            rig.factory.created.lock().unwrap().len(),
+            1,
+            "the second call waits"
+        );
+        let s = rig.calls.snapshot();
+        assert_eq!(s.call.unwrap().phase, CallPhase::Connecting);
+        assert!(s.leaving);
+
+        rig.factory.links.lock().unwrap()[0].release.notify_one();
+        // The first start's answer already shows the second call connecting.
+        within("the first start", first).await;
+        let s = within("the second start", second).await;
+        assert_eq!(s.call.unwrap().phase, CallPhase::Live);
+        assert!(!s.leaving);
+        assert_eq!(rig.factory.log(), ["join 1", "left 1", "join 2"]);
+    }
+
+    #[tokio::test]
+    async fn a_new_call_waits_for_the_last_ones_leave_to_return() {
+        let rig = enabled(JoinPlan::Ok).await;
+        *rig.factory.hold_leave.lock().unwrap() = true;
+        rig.calls.start(ROOM, AGENT, "Ada").await;
+        let calls = rig.calls.clone();
+        let hanging = tokio::spawn(async move { calls.hang_up().await });
+        let first = rig.factory.link();
+        eventually("leaving", || *first.leaves.lock().unwrap() == 1).await;
+        let s = rig.calls.snapshot();
+        assert!(s.call.is_none());
+        assert!(s.leaving, "the leave has not returned");
+
+        *rig.factory.hold_leave.lock().unwrap() = false;
+        let calls = rig.calls.clone();
+        let second = tokio::spawn(async move { calls.start(ROOM, AGENT, "Ada").await });
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert_eq!(
+            rig.factory.log(),
+            ["join 1"],
+            "nothing joins while the leave runs"
+        );
+
+        first.leave_release.notify_one();
+        assert!(!within("the hang-up", hanging).await.leaving);
+        let s = within("the second start", second).await;
+        assert_eq!(s.call.unwrap().phase, CallPhase::Live);
+        assert_eq!(rig.factory.log(), ["join 1", "left 1", "join 2"]);
+    }
+
+    /// A call hung up while it waits for an earlier one to leave gives up at once, without
+    /// making a link; the next still waits for the first.
+    #[tokio::test]
+    async fn a_call_hung_up_while_waiting_gives_up_at_once() {
+        let rig = enabled(JoinPlan::Block).await;
+        let calls = rig.calls.clone();
+        let first = tokio::spawn(async move { calls.start(ROOM, AGENT, "Ada").await });
+        let factory = rig.factory.clone();
+        eventually("joining", || factory.log() == ["join 1"]).await;
+        rig.calls.hang_up().await;
+        *rig.factory.plan.lock().unwrap() = JoinPlan::Ok;
+        let calls = rig.calls.clone();
+        let second = tokio::spawn(async move { calls.start(ROOM, AGENT, "Ada").await });
+        let calls = rig.calls.clone();
+        eventually("second connecting", || calls.snapshot().call.is_some()).await;
+        rig.calls.hang_up().await;
+        let s = within("the second call to give up", second).await;
+        assert!(s.call.is_none());
+        let calls = rig.calls.clone();
+        let third = tokio::spawn(async move { calls.start(ROOM, AGENT, "Ada").await });
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert_eq!(
+            rig.factory.log(),
+            ["join 1"],
+            "the third waits for the first"
+        );
+        rig.factory.links.lock().unwrap()[0].release.notify_one();
+        within("the first start", first).await;
+        let s = within("the third start", third).await;
+        assert_eq!(s.call.unwrap().phase, CallPhase::Live);
+        assert!(!s.leaving);
+        assert_eq!(
+            rig.factory.created.lock().unwrap().len(),
+            2,
+            "the second never made a link"
+        );
+        assert_eq!(rig.factory.log(), ["join 1", "left 1", "join 2"]);
     }
 
     #[tokio::test]
