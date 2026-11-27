@@ -897,15 +897,15 @@ impl Session {
                 Arc::clone(&self.turns),
                 Arc::clone(&sink),
             ));
-            // The block list, once now and on every change. Infallible for the
-            // same reason as the live view: a session that cannot stream it
-            // still works, and the host can ask `blocked_users` directly.
             // A refused message must not hold back the room's later ones,
             // and a failed one must be retried — including whatever an
             // earlier session left parked in the store. Infallible like the
             // others: without it messages still send until one fails.
             self.stop_send_watch().await;
             *self.send_watch.write().await = Some(send_recovery::spawn_send_watch(client.clone()));
+            // The block list, once now and on every change. Infallible for the
+            // same reason as the live view: a session that cannot stream it
+            // still works, and the host can ask `blocked_users` directly.
             self.stop_ignore_watch().await;
             *self.ignore_watch.write().await = Some(safety::spawn_ignore_watch(client, sink));
         }
@@ -2511,8 +2511,6 @@ mod tests {
         assert_eq!(session.turn("!r:x"), None);
     }
 
-    /// Mutation seen failing (run): removing `self.stop_turn_sweep().await` from
-    /// `logout` fails this at `session.turn_sweep.read().await.is_none()`.
     /// Mutation seen failing (run): removing `self.stop_send_watch().await`
     /// from `logout` fails this at `session.send_watch.read().await.is_none()`.
     #[tokio::test]
@@ -2530,6 +2528,8 @@ mod tests {
         assert!(watch.is_finished(), "logout left the send watch running");
     }
 
+    /// Mutation seen failing (run): removing `self.stop_turn_sweep().await` from
+    /// `logout` fails this at `session.turn_sweep.read().await.is_none()`.
     #[tokio::test]
     async fn logout_stops_the_turn_sweeper() {
         let session = Session::new(
