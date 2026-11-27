@@ -9,7 +9,7 @@ homeserver and keep talking to people who use Element, Cinny, or another client.
 What makes it different is who else we can bring into the room.
 
 :::caution[Early preview]
-Version 0.1.3 is on
+Version 0.1.4 is on
 [GitHub Releases](https://github.com/SuperJackfruitLabs/supermessage/releases/latest): unsigned
 desktop previews plus debug-signed Android APKs for `arm64-v8a`, `armeabi-v7a`, `x86` and
 `x86_64`. iOS is TestFlight by invitation only. There is no app-store release. This page describes
