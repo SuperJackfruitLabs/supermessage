@@ -1,31 +1,40 @@
 //! Keeps a room's later messages going out after one of them fails.
 //!
 //! matrix-sdk 0.19's send queue sends a room's requests strictly in order. A
-//! request that fails with an *unrecoverable* error (an HTTP 4xx other than
-//! 429, a response it cannot parse, an encryption-policy refusal, a missing
-//! attachment) is marked "wedged" and blocks every later request in that room
-//! until it is retried (`SendHandle::unwedge`) or removed
-//! (`SendHandle::abort`). The wedge is kept in the store, so it survives a
-//! restart. And *any* failure, recoverable or not, turns that room's queue
-//! off, and nothing in the SDK turns it back on.
+//! request that fails with an *unrecoverable* error is marked "wedged" and
+//! blocks every later request in that room until it is retried
+//! (`SendHandle::unwedge`) or removed (`SendHandle::abort`). "Unrecoverable"
+//! is everything but a transient HTTP error: an HTTP 4xx other than 429, an
+//! answer it cannot read, an encryption-policy refusal, a store or
+//! crypto-store error, the cross-process store lock timing out, a missing
+//! attachment. The wedge is kept in the store, so it survives a restart. And
+//! *any* failure turns that room's queue off, and nothing in the SDK turns it
+//! back on.
 //!
 //! No host offers a Retry or Delete action on a failed message yet, so left
-//! alone one refused message silences the room for good. Operator's ruling
-//! (2026-11-27): until those actions exist, the core drops a refused request
-//! and lets the room carry on, and turns a room's queue back on after a
-//! recoverable failure with a bounded backoff.
+//! alone one parked message silences the room for good. Operator's ruling
+//! (2026-11-27): until those actions exist, the core retries what may yet
+//! succeed, drops only what the homeserver has definitely refused, and lets
+//! the room carry on.
 //!
-//! - **Unrecoverable failure:** every wedged request in the room is aborted
-//!   and the room's queue is turned back on at once. Logged with the room id
-//!   and the error's kind, never the message.
-//! - **At start:** requests wedged in an earlier session are aborted the same
-//!   way, before anything new fails. (Reading the local echoes also starts
-//!   the queue of every room with unsent requests, which is what
+//! - **Refused:** the homeserver answered with a 4xx other than 401, 408 or
+//!   429, or the attachment is gone or of a type that cannot be sent
+//!   ([`Verdict`]). That request is aborted and the room's queue turned back
+//!   on at once. Logged with the room id and the error's kind, never the
+//!   message. The reader is not told: `CoreEvent` has no notice that the
+//!   hosts show, and adding one is per-platform work.
+//! - **Any other failure, parked or not:** nothing is deleted. After
+//!   [`Backoff`] every parked request in the room is retried (`unwedge`; a
+//!   redaction, which has no unwedge, is queued again and the parked copy
+//!   removed) and the room's queue turned back on: one retry per failure, the
+//!   wait doubling with each failure in a row up to its cap, starting over
+//!   once something in the room is sent. A retry that is refused is then
+//!   dropped as above.
+//! - **At start:** requests parked in an earlier session are retried once,
+//!   at once — the reason may have gone — and dropped only if that retry is
+//!   refused. (Reading the local echoes also starts the queue of every room
+//!   with unsent requests, which is what
 //!   `SendQueue::respawn_tasks_for_rooms_with_unsent_requests` would do.)
-//! - **Recoverable failure:** the request stays queued (the SDK keeps it),
-//!   and the room's queue is turned back on after [`Backoff`]: one re-enable
-//!   per failure, the delay doubling with each failure in a row, up to its
-//!   cap, and starting over once something in the room is sent.
 //!
 //! A queue the client has turned off as a whole (`Client::pause`, when iOS
 //! suspends the app) is left off: `Client::resume` turns every room back on.
@@ -36,7 +45,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
-use matrix_sdk::ruma::{OwnedRoomId, RoomId};
+use matrix_sdk::ruma::{OwnedRoomId, OwnedTransactionId, RoomId};
 use matrix_sdk::send_queue::{LocalEcho, LocalEchoContent, RoomSendQueueUpdate, SendQueueUpdate};
 use matrix_sdk::{Client, QueueWedgeError};
 use tokio::sync::broadcast::{self, error::RecvError};
@@ -83,13 +92,52 @@ pub fn spawn_with(client: Client, backoff: Backoff) -> JoinHandle<()> {
 struct Watch {
     client: Client,
     backoff: Backoff,
-    /// Recoverable failures in a row, per room.
+    /// Failures in a row, per room.
     failures: HashMap<OwnedRoomId, u32>,
-    /// Rooms with a re-enable already waiting; a second failure while one
-    /// waits does not add another.
+    /// Rooms with a retry already waiting; a second failure while one waits
+    /// does not add another.
     waiting: HashSet<OwnedRoomId>,
     /// The waits themselves. Dropped with the task, which cancels them.
     timers: JoinSet<OwnedRoomId>,
+}
+
+/// What to do with a request that failed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Verdict {
+    /// The homeserver said no, or it can never be sent: remove it.
+    Drop,
+    /// It may yet succeed: keep it and try again.
+    Retry,
+}
+
+/// Whether a failed request is dropped or retried. `error` is the live
+/// failure, when there is one (a request parked in an earlier session has
+/// only its `wedge`).
+///
+/// Dropped only on a definite refusal: a homeserver answer with a 4xx status
+/// other than 401 (a token being refreshed), 408 (a proxy's timeout) or 429
+/// (rate limited), or an attachment that is gone or of a type that cannot be
+/// sent. Everything else — a store or crypto-store error, the cross-process
+/// lock, an answer that cannot be read, an encryption-policy refusal the
+/// reader can fix by verifying — is retried.
+fn verdict(error: Option<&matrix_sdk::Error>, wedge: Option<&QueueWedgeError>) -> Verdict {
+    let refused = error
+        .and_then(|error| error.as_client_api_error())
+        .is_some_and(|api| refused_status(api.status_code.as_u16()));
+    let unsendable = matches!(
+        wedge,
+        Some(QueueWedgeError::MissingMediaContent | QueueWedgeError::InvalidMimeType { .. })
+    );
+    if refused || unsendable {
+        Verdict::Drop
+    } else {
+        Verdict::Retry
+    }
+}
+
+/// A homeserver status that means "no", not "not now".
+fn refused_status(status: u16) -> bool {
+    (400..500).contains(&status) && !matches!(status, 401 | 408 | 429)
 }
 
 impl Watch {
@@ -104,23 +152,25 @@ impl Watch {
     }
 
     async fn run(mut self, mut updates: broadcast::Receiver<SendQueueUpdate>) {
-        // Whatever an earlier session left wedged in the store.
-        self.sweep().await;
+        // Whatever an earlier session left parked in the store: retried once,
+        // now.
+        self.sweep(false).await;
         loop {
             tokio::select! {
                 update = updates.recv() => match update {
                     Ok(SendQueueUpdate { room_id, update }) => self.on_update(room_id, update).await,
                     Err(RecvError::Lagged(missed)) => {
-                        // A missed error is a room left stuck; look at them all.
+                        // A missed failure is a room left stuck; look at them
+                        // all, through the backoff.
                         tracing::debug!(missed, "send queue updates lagged; sweeping every room");
-                        self.sweep().await;
+                        self.sweep(true).await;
                     }
                     Err(RecvError::Closed) => break,
                 },
                 Some(done) = self.timers.join_next(), if !self.timers.is_empty() => {
                     if let Ok(room_id) = done {
                         self.waiting.remove(&room_id);
-                        self.enable(&room_id);
+                        self.resume(&room_id).await;
                     }
                 }
             }
@@ -130,18 +180,10 @@ impl Watch {
     async fn on_update(&mut self, room_id: OwnedRoomId, update: RoomSendQueueUpdate) {
         match update {
             RoomSendQueueUpdate::SendError {
+                transaction_id,
                 error,
                 is_recoverable: false,
-                ..
-            } => {
-                tracing::warn!(
-                    room_id = %room_id,
-                    kind = %error_kind(&error),
-                    "a message was refused; dropping it so later ones can be sent"
-                );
-                self.drop_wedged(&room_id).await;
-                self.enable(&room_id);
-            }
+            } => self.on_parked(room_id, transaction_id, &error).await,
             RoomSendQueueUpdate::SendError {
                 error,
                 is_recoverable: true,
@@ -161,9 +203,47 @@ impl Watch {
         }
     }
 
-    /// Drops every wedged request in every room with unsent requests, and
-    /// schedules a retry for any such room whose queue is off.
-    async fn sweep(&mut self) {
+    /// The SDK parked `transaction_id`: drop it if it was refused, else retry
+    /// it after the backoff.
+    async fn on_parked(
+        &mut self,
+        room_id: OwnedRoomId,
+        transaction_id: OwnedTransactionId,
+        error: &matrix_sdk::Error,
+    ) {
+        let echoes = self.echoes(&room_id).await;
+        let echo = echoes
+            .iter()
+            .find(|echo| echo.transaction_id == transaction_id);
+        match verdict(Some(error), echo.and_then(wedge_of)) {
+            Verdict::Drop => {
+                tracing::warn!(
+                    room_id = %room_id,
+                    transaction_id = %transaction_id,
+                    kind = %error_kind(error),
+                    "a message was refused; dropping it so later ones can be sent"
+                );
+                if let Some(echo) = echo {
+                    abort(&room_id, echo).await;
+                }
+                self.enable(&room_id);
+            }
+            Verdict::Retry => {
+                tracing::info!(
+                    room_id = %room_id,
+                    transaction_id = %transaction_id,
+                    kind = %error_kind(error),
+                    "a message was parked; the room will try it again"
+                );
+                self.retry_later(room_id);
+            }
+        }
+    }
+
+    /// Every room with unsent requests: a room with a parked request, or
+    /// whose queue is off, is resumed — through the backoff when `later`,
+    /// else now.
+    async fn sweep(&mut self, later: bool) {
         let rooms = match self.client.send_queue().local_echoes().await {
             Ok(rooms) => rooms,
             Err(err) => {
@@ -172,36 +252,64 @@ impl Watch {
             }
         };
         for (room_id, echoes) in rooms {
-            if abort_wedged(&room_id, &echoes).await > 0 {
-                self.enable(&room_id);
-            }
+            let parked = echoes.iter().any(|echo| wedge_of(echo).is_some());
             let off = self
                 .client
                 .get_room(&room_id)
                 .is_some_and(|room| !room.send_queue().is_enabled());
-            if off && !echoes.is_empty() {
+            if !(parked || off) {
+                continue;
+            }
+            if later {
                 self.retry_later(room_id);
+            } else {
+                self.resume(&room_id).await;
             }
         }
     }
 
-    /// Drops every wedged request in `room_id`.
-    async fn drop_wedged(&self, room_id: &RoomId) {
+    /// Retries every parked request in `room_id`, drops any that can never be
+    /// sent, and turns the room's queue back on.
+    async fn resume(&self, room_id: &RoomId) {
         let Some(room) = self.client.get_room(room_id) else {
             return;
         };
-        match room.send_queue().subscribe().await {
-            Ok((echoes, _)) => {
-                abort_wedged(room_id, &echoes).await;
+        for echo in self.echoes(room_id).await {
+            let Some(wedge) = wedge_of(&echo) else {
+                continue;
+            };
+            match verdict(None, Some(wedge)) {
+                Verdict::Drop => {
+                    tracing::warn!(
+                        room_id = %room_id,
+                        transaction_id = %echo.transaction_id,
+                        kind = wedge_kind(wedge),
+                        "a message can never be sent; dropping it so later ones can be"
+                    );
+                    abort(room_id, &echo).await;
+                }
+                Verdict::Retry => retry(&room, &echo).await,
             }
+        }
+        self.enable(room_id);
+    }
+
+    /// The room's unsent requests; none when they cannot be read.
+    async fn echoes(&self, room_id: &RoomId) -> Vec<LocalEcho> {
+        let Some(room) = self.client.get_room(room_id) else {
+            return Vec::new();
+        };
+        match room.send_queue().subscribe().await {
+            Ok((echoes, _)) => echoes,
             Err(err) => {
                 tracing::warn!(room_id = %room_id, error = %err, "could not read the room's unsent messages");
+                Vec::new()
             }
         }
     }
 
-    /// Turns `room_id`'s queue back on after the backoff, unless a re-enable
-    /// is already waiting.
+    /// Resumes `room_id` after the backoff, unless a resume is already
+    /// waiting.
     fn retry_later(&mut self, room_id: OwnedRoomId) {
         if self.waiting.contains(&room_id) {
             return;
@@ -228,44 +336,74 @@ impl Watch {
     }
 }
 
-/// Aborts each wedged request among `echoes`; returns how many it aborted.
-async fn abort_wedged(room_id: &RoomId, echoes: &[LocalEcho]) -> usize {
-    let mut aborted = 0;
-    for echo in echoes {
-        let result = match &echo.content {
-            LocalEchoContent::Event {
-                send_handle,
-                send_error: Some(wedge),
-                ..
-            } => Some((send_handle.abort().await, wedge)),
-            LocalEchoContent::Redaction {
-                send_handle,
-                send_error: Some(wedge),
-                ..
-            } => Some((send_handle.abort().await, wedge)),
-            _ => None,
-        };
-        match result {
-            Some((Ok(true), wedge)) => {
-                aborted += 1;
-                tracing::warn!(
-                    room_id = %room_id,
-                    transaction_id = %echo.transaction_id,
-                    kind = wedge_kind(wedge),
-                    "dropped a refused message"
-                );
-            }
-            Some((Ok(false), _)) | None => {}
-            Some((Err(err), wedge)) => tracing::warn!(
-                room_id = %room_id,
-                transaction_id = %echo.transaction_id,
-                kind = wedge_kind(wedge),
-                error = %err,
-                "could not drop a refused message"
-            ),
-        }
+/// The wedge on a parked request; `None` when it is not parked.
+fn wedge_of(echo: &LocalEcho) -> Option<&QueueWedgeError> {
+    match &echo.content {
+        LocalEchoContent::Event { send_error, .. }
+        | LocalEchoContent::Redaction { send_error, .. } => send_error.as_ref(),
+        LocalEchoContent::React { .. } => None,
     }
-    aborted
+}
+
+/// Removes a parked request.
+async fn abort(room_id: &RoomId, echo: &LocalEcho) {
+    let result = match &echo.content {
+        LocalEchoContent::Event { send_handle, .. } => send_handle.abort().await,
+        LocalEchoContent::Redaction { send_handle, .. } => send_handle.abort().await,
+        LocalEchoContent::React { .. } => return,
+    };
+    if let Err(err) = result {
+        tracing::warn!(
+            room_id = %room_id,
+            transaction_id = %echo.transaction_id,
+            error = %err,
+            "could not drop a refused message"
+        );
+    }
+}
+
+/// Sends a parked request again, keeping its place.
+///
+/// A redaction's handle has no `unwedge`, so the same redaction is queued
+/// again and only then is the parked copy removed: redacting twice is
+/// harmless, losing the reader's delete is not.
+async fn retry(room: &matrix_sdk::Room, echo: &LocalEcho) {
+    let result = match &echo.content {
+        LocalEchoContent::Event { send_handle, .. } => {
+            send_handle.unwedge().await.map_err(|e| e.to_string())
+        }
+        LocalEchoContent::Redaction {
+            redacts,
+            reason,
+            send_handle,
+            ..
+        } => match room
+            .send_queue()
+            .redact(redacts.clone(), reason.as_deref())
+            .await
+        {
+            Ok(_) => send_handle
+                .abort()
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        },
+        LocalEchoContent::React { .. } => return,
+    };
+    match result {
+        Ok(()) => tracing::info!(
+            room_id = %room.room_id(),
+            transaction_id = %echo.transaction_id,
+            "retrying a parked message"
+        ),
+        Err(err) => tracing::warn!(
+            room_id = %room.room_id(),
+            transaction_id = %echo.transaction_id,
+            error = %err,
+            "could not retry a parked message"
+        ),
+    }
 }
 
 /// What kind of wedge, without its message: `GenericApiError` carries the
@@ -294,6 +432,10 @@ fn error_kind(error: &matrix_sdk::Error) -> String {
     match error {
         matrix_sdk::Error::Http(_) => "http".into(),
         matrix_sdk::Error::ConcurrentRequestFailed => "concurrent_request_failed".into(),
+        matrix_sdk::Error::CrossProcessLockError(_) => "cross_process_lock".into(),
+        matrix_sdk::Error::CryptoStoreError(_) => "crypto_store".into(),
+        matrix_sdk::Error::StateStore(_) => "state_store".into(),
+        matrix_sdk::Error::SendQueueWedgeError(wedge) => wedge_kind(wedge).into(),
         _ => "other".into(),
     }
 }
@@ -366,6 +508,52 @@ mod tests {
             .count()
     }
 
+    /// Only the homeserver saying no, or an attachment that can never be
+    /// sent, drops a message. A store, crypto-store or lock error — none of
+    /// them HTTP — is retried, whatever the wedge says, as is a parked
+    /// request with no live error to judge (one from an earlier session).
+    #[test]
+    fn only_a_definite_refusal_drops_a_message() {
+        let generic = QueueWedgeError::GenericApiError { msg: "x".into() };
+        for error in [
+            matrix_sdk::Error::BadCryptoStoreState,
+            matrix_sdk::Error::NoOlmMachine,
+            matrix_sdk::Error::Io(std::io::Error::other("the store is locked")),
+            matrix_sdk::Error::ConcurrentRequestFailed,
+        ] {
+            assert_eq!(
+                verdict(Some(&error), Some(&generic)),
+                Verdict::Retry,
+                "{error:?}"
+            );
+            assert_eq!(verdict(Some(&error), None), Verdict::Retry, "{error:?}");
+        }
+        for wedge in [
+            generic.clone(),
+            QueueWedgeError::CrossVerificationRequired,
+            QueueWedgeError::IdentityViolations { users: vec![] },
+            QueueWedgeError::InsecureDevices {
+                user_device_map: Default::default(),
+            },
+        ] {
+            assert_eq!(verdict(None, Some(&wedge)), Verdict::Retry, "{wedge:?}");
+        }
+        for wedge in [
+            QueueWedgeError::MissingMediaContent,
+            QueueWedgeError::InvalidMimeType {
+                mime_type: "x/y".into(),
+            },
+        ] {
+            assert_eq!(verdict(None, Some(&wedge)), Verdict::Drop, "{wedge:?}");
+        }
+        for status in [400, 403, 404, 413, 499] {
+            assert!(refused_status(status), "{status}");
+        }
+        for status in [200, 401, 408, 429, 500, 502, 520] {
+            assert!(!refused_status(status), "{status}");
+        }
+    }
+
     /// One re-enable per failure, each wait double the last, never past the
     /// cap — so a room that keeps failing settles at one try a minute.
     #[test]
@@ -381,9 +569,9 @@ mod tests {
     /// still goes out.
     ///
     /// Fails without the watcher: "two" waits behind "one" forever.
-    /// Mutation seen failing (run): removing `self.drop_wedged(&room_id)` from
-    /// the unrecoverable branch of `on_update` fails this ("never saw "two"
-    /// sent"), and only this.
+    /// Mutation seen failing (run): not aborting the echo in `on_parked`'s
+    /// `Verdict::Drop` arm fails this ("never saw "two" sent") and the
+    /// refused-again test below.
     #[tokio::test]
     async fn a_refused_message_does_not_hold_back_the_next_one() {
         let server = MatrixMockServer::new().await;
@@ -427,15 +615,17 @@ mod tests {
     }
 
     /// A request already parked when the session starts — the wedge is kept
-    /// in the store, so it survives a restart — is dropped at start, and the
-    /// message queued behind it goes out.
+    /// in the store, so it survives a restart — is retried once at start
+    /// (the server sees it twice), dropped when that retry is refused too,
+    /// and the message queued behind it goes out.
     ///
     /// Fails without the watcher's first sweep: nothing new fails, so no
     /// error arrives to act on, and "two" waits behind "one" forever.
-    /// Mutation seen failing (run): removing the `self.sweep()` at the top of
-    /// `run` fails this, and only this.
+    /// Mutations seen failing (run): removing `self.sweep(false)` at the top
+    /// of `run`; aborting instead of retrying in `resume` (the server sees
+    /// "one" once).
     #[tokio::test]
-    async fn a_request_parked_before_the_session_started_is_cleared() {
+    async fn a_request_parked_before_the_session_started_is_retried_and_dropped_if_refused_again() {
         let server = MatrixMockServer::new().await;
         let client = server.client_builder().build().await;
         server.mock_room_state_encryption().plain().mount().await;
@@ -449,7 +639,8 @@ mod tests {
                 "errcode": "M_FORBIDDEN",
                 "error": "You are not allowed to send here",
             })))
-            .named("one is forbidden")
+            .expect(2)
+            .named("one is forbidden, at first and on its one retry")
             .mount()
             .await;
         server
@@ -488,6 +679,129 @@ mod tests {
         );
 
         watch.abort();
+    }
+
+    /// A request parked by a refusal before the session started is retried
+    /// once at start rather than dropped: it may have been parked for a reason
+    /// that has since gone. Here the server accepts it the second time.
+    ///
+    /// Mutations seen failing (run): removing `self.sweep(false)`; aborting
+    /// instead of retrying in `resume`; `verdict` always dropping.
+    #[tokio::test]
+    async fn a_request_parked_before_the_session_started_is_retried_and_sent() {
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        server.mock_room_state_encryption().plain().mount().await;
+        let room_id = room_id!("!parked-then-sent:example.org");
+        let room = server.sync_joined_room(&client, room_id).await;
+
+        server
+            .mock_room_send()
+            .respond_with(ResponseTemplate::new(403).set_body_json(json!({
+                "errcode": "M_FORBIDDEN",
+                "error": "You are not allowed to send here",
+            })))
+            .mock_once()
+            .named("one is forbidden the first time")
+            .mount()
+            .await;
+        server
+            .mock_room_send()
+            .ok(event_id!("$one"))
+            .expect(1)
+            .named("one is accepted on its retry")
+            .mount()
+            .await;
+
+        let queue = room.send_queue();
+        let (_, mut updates) = queue.subscribe().await.unwrap();
+        queue.send(text("one")).await.unwrap();
+        wait_for(&mut updates, 10, "\"one\" parked", |update| match update {
+            RoomSendQueueUpdate::SendError { is_recoverable, .. } => {
+                assert!(!is_recoverable, "a 403 should park the request");
+                Some(())
+            }
+            _ => None,
+        })
+        .await;
+        assert_eq!(wedged_echoes(&room).await, 1);
+
+        let watch = spawn_with(client.clone(), TEST_BACKOFF);
+        let event_id = wait_for(&mut updates, 10, "\"one\" sent", sent).await;
+        assert_eq!(event_id, event_id!("$one"));
+
+        watch.abort();
+    }
+
+    /// The SDK parks a request on `response`, an answer that is not a refusal;
+    /// the watcher must retry it, never drop it. The server then accepts it.
+    async fn parked_but_not_refused_is_retried(room_id: &RoomId, response: ResponseTemplate) {
+        let server = MatrixMockServer::new().await;
+        let client = server.client_builder().build().await;
+        server.mock_room_state_encryption().plain().mount().await;
+        let room = server.sync_joined_room(&client, room_id).await;
+
+        server
+            .mock_room_send()
+            .respond_with(response)
+            .mock_once()
+            .named("the first answer")
+            .mount()
+            .await;
+        server
+            .mock_room_send()
+            .ok(event_id!("$one"))
+            .expect(1)
+            .named("one is accepted on its retry")
+            .mount()
+            .await;
+
+        let watch = spawn_with(client.clone(), TEST_BACKOFF);
+        let queue = room.send_queue();
+        let (_, mut updates) = queue.subscribe().await.unwrap();
+        queue.send(text("one")).await.unwrap();
+        wait_for(&mut updates, 10, "\"one\" parked", |update| match update {
+            RoomSendQueueUpdate::SendError { is_recoverable, .. } => {
+                assert!(!is_recoverable, "this answer should park the request");
+                Some(())
+            }
+            _ => None,
+        })
+        .await;
+        let event_id = wait_for(&mut updates, 10, "\"one\" sent", sent).await;
+        assert_eq!(event_id, event_id!("$one"));
+
+        watch.abort();
+    }
+
+    /// A 408 (a proxy's timeout) parks the request, but the homeserver never
+    /// refused it: it is retried.
+    ///
+    /// Mutation seen failing (run): dropping 408 from `refused_status`'s
+    /// exceptions fails this and `only_a_definite_refusal_drops_a_message`.
+    #[tokio::test]
+    async fn a_408_is_retried_not_dropped() {
+        parked_but_not_refused_is_retried(
+            room_id!("!timeout:example.org"),
+            ResponseTemplate::new(408).set_body_string("Request Timeout"),
+        )
+        .await;
+    }
+
+    /// An answer the SDK cannot read (a 200 without an event id) parks the
+    /// request; it is not a refusal, so it is retried. Stands in for the other
+    /// errors that are not the homeserver saying no: a store or crypto-store
+    /// error, the cross-process lock.
+    ///
+    /// Mutations seen failing (run): `verdict` always dropping; aborting
+    /// instead of retrying in `resume`.
+    #[tokio::test]
+    async fn an_unreadable_answer_is_retried_not_dropped() {
+        parked_but_not_refused_is_retried(
+            room_id!("!unreadable:example.org"),
+            ResponseTemplate::new(200).set_body_json(json!({})),
+        )
+        .await;
     }
 
     /// A recoverable failure (the server answering 500 until the SDK's own
