@@ -390,9 +390,12 @@ impl CallController {
             taken
         });
         if let Some(active) = taken {
-            // Not `close`: it would abort this very task before the leave.
-            let (link, audio) = (active.link.clone(), active.audio.clone());
-            let tasks = active.tasks;
+            // Not `close`: it would abort this very task before the leave. The call's own audio
+            // handle (not a clone) is dropped first, so the devices close now rather than once
+            // a leave on a slow homeserver returns.
+            let Active {
+                link, audio, tasks, ..
+            } = active;
             drop(audio);
             if let Some(link) = link {
                 link.leave().await;
@@ -544,6 +547,9 @@ mod tests {
     struct FakeLink {
         plan: JoinPlan,
         release: Notify,
+        /// When set, `leave` waits for `leave_release` (a stalled homeserver).
+        hold_leave: bool,
+        leave_release: Notify,
         joins: Mutex<u32>,
         leaves: Mutex<u32>,
         captured: Mutex<Vec<Vec<i16>>>,
@@ -573,11 +579,15 @@ mod tests {
         }
         async fn leave(&self) {
             *self.leaves.lock().unwrap() += 1;
+            if self.hold_leave {
+                self.leave_release.notified().await;
+            }
         }
     }
 
     struct FakeFactory {
         plan: Mutex<JoinPlan>,
+        hold_leave: Mutex<bool>,
         created: Mutex<Vec<(String, String)>>,
         links: Mutex<Vec<Arc<FakeLink>>>,
         events: Mutex<Option<mpsc::UnboundedSender<LinkEvent>>>,
@@ -587,6 +597,7 @@ mod tests {
         fn new(plan: JoinPlan) -> Arc<Self> {
             Arc::new(Self {
                 plan: Mutex::new(plan),
+                hold_leave: Mutex::new(false),
                 created: Mutex::new(vec![]),
                 links: Mutex::new(vec![]),
                 events: Mutex::new(None),
@@ -620,6 +631,8 @@ mod tests {
             let link = Arc::new(FakeLink {
                 plan: *self.plan.lock().unwrap(),
                 release: Notify::new(),
+                hold_leave: *self.hold_leave.lock().unwrap(),
+                leave_release: Notify::new(),
                 joins: Mutex::new(0),
                 leaves: Mutex::new(0),
                 captured: Mutex::new(vec![]),
@@ -1017,6 +1030,24 @@ mod tests {
         eventually("left", || *link.leaves.lock().unwrap() == 1).await;
         let open_now = rig.audio.open_now.clone();
         eventually("closed", || *open_now.lock().unwrap() == 0).await;
+    }
+
+    #[tokio::test]
+    async fn disconnect_closes_the_devices_before_leaving() {
+        let rig = enabled(JoinPlan::Ok).await;
+        *rig.factory.hold_leave.lock().unwrap() = true;
+        rig.calls.start(ROOM, AGENT, "Ada").await;
+        assert_eq!(*rig.audio.open_now.lock().unwrap(), 1);
+        rig.factory.send(LinkEvent::Disconnected {
+            reason: "ServerShutdown".into(),
+        });
+        let link = rig.factory.link();
+        eventually("leaving", || *link.leaves.lock().unwrap() == 1).await;
+        // The leave is stalled (a homeserver that does not answer): the microphone is
+        // already closed, not held open until the leave returns.
+        let open_now = *rig.audio.open_now.lock().unwrap();
+        assert_eq!(open_now, 0, "devices closed before the leave");
+        link.leave_release.notify_one();
     }
 
     #[tokio::test]
