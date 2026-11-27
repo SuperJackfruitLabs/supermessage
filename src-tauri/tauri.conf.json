@@ -36,10 +36,10 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["gstreamer1.0-plugins-base", "gstreamer1.0-plugins-good"]
+        "depends": ["gstreamer1.0-plugins-base", "gstreamer1.0-plugins-good", "libasound2"]
       },
       "rpm": {
-        "depends": ["gstreamer1-plugins-base", "gstreamer1-plugins-good"]
+        "depends": ["gstreamer1-plugins-base", "gstreamer1-plugins-good", "alsa-lib"]
       }
     }
   }
