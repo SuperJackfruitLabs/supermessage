@@ -7,6 +7,11 @@ to v0.1.2 predate this file.
 
 ## Unreleased
 
+- On macOS, v0.1.5 asked for the microphone at every call. Its app was not signed as a bundle,
+  which most likely kept macOS from holding the grant. The app is now ad-hoc signed as
+  `dev.supermessage.app`, and CI checks each macOS build's signature. A new version may still ask
+  once. The microphone prompt now names calls as well as voice messages.
+
 ## v0.1.5 — 2026-11-28
 
 - On macOS, pressing Call quit v0.1.4. Its build left out the methods libwebrtc adds in

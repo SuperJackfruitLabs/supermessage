@@ -542,9 +542,45 @@ jobs:
           done
           [ "$found" = 1 ]
 
+      # macOS keeps a privacy grant such as the microphone against the app's code
+      # identity. v0.1.5 carried only the linker's signature on the arm64 binary
+      # (identifier `supermessage`, no Info.plist bound, none on x86_64), so the
+      # grant never held and every call asked again. tauri.conf.json's
+      # `signingIdentity: "-"` ad-hoc signs the whole bundle; this checks it did.
+      # `hardenedRuntime: false` for now: under the hardened runtime the microphone
+      # needs the `com.apple.security.device.audio-input` entitlement, which
+      # notarising will need anyway; turning both on together is a follow-up.
+      - name: Check the app is ad-hoc signed as a bundle (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          BUNDLE: ${{ matrix.bundle }}
+        run: |
+          set -e
+          found=0
+          for app in "$BUNDLE"/macos/*.app; do
+            [ -d "$app" ] || continue
+            found=1
+            codesign --verify --deep --strict --verbose=2 "$app"
+            want=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")
+            for arch in arm64 x86_64; do
+              info=$(codesign -d --verbose=4 --arch "$arch" "$app" 2>&1) ||
+                { printf '%s\n' "$info"; echo "::error::$arch has no readable signature"; exit 1; }
+              printf '%s\n' "$info" | grep -E '^(Identifier|Format|CodeDirectory|Signature|Info.plist)'
+              printf '%s\n' "$info" | grep -qFx "Identifier=$want" ||
+                { echo "::error::$arch is not signed as $want"; exit 1; }
+              printf '%s\n' "$info" | grep -q '^Info.plist entries=' ||
+                { echo "::error::$arch's signature does not bind Info.plist"; exit 1; }
+              printf '%s\n' "$info" | grep -q 'linker-signed' &&
+                { echo "::error::$arch carries only the linker's signature"; exit 1; }
+            done
+          done
+          [ "$found" = 1 ]
+
       # One flat directory per platform: the installers, and the macOS app as
-      # a tarball (a .app is a directory). These unsigned installers warn on
-      # first run (Gatekeeper, SmartScreen) until signing is set up.
+      # a tarball (a .app is a directory). The macOS app is ad-hoc signed and
+      # not notarised, Windows is unsigned: both warn on first run (Gatekeeper,
+      # SmartScreen) until signing is set up.
       - name: Collect the installers
         shell: bash
         env:

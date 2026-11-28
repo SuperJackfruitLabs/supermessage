@@ -18,7 +18,7 @@ are pending, is recorded in the status table of the
 | Minimum | Not stated in the build | Not stated in the build | The glibc of Ubuntu 22.04 | iOS 18.0 | Android 12 (API 31) |
 | Architectures | Apple silicon and Intel, in one universal app | x64 | x86_64 | arm64 | arm64-v8a, armeabi-v7a, x86_64, x86 |
 | Packages | `.dmg`, `.app.tar.gz` | Setup `.exe`, `.msi` | `.deb`, `.rpm`, `.AppImage` | TestFlight, by invitation | One `.apk` per architecture |
-| Signing | Unsigned, not notarised | Unsigned | Unsigned | App Store distribution | Debug-signed, for sideloading |
+| Signing | Ad-hoc signed, not notarised | Unsigned | Unsigned | App Store distribution | Debug-signed, for sideloading |
 | Where | GitHub Releases | GitHub Releases | GitHub Releases | TestFlight | GitHub Releases |
 | Interface | Svelte in Tauri | Svelte in Tauri | Svelte in Tauri | SwiftUI | Compose |
 

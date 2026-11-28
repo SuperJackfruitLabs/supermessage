@@ -54,7 +54,9 @@ you want the microphone.
 
 These are previews, and they are signed like previews.
 
-- **macOS** warns the first time a downloaded copy opens, because the app is not notarised.
+- **macOS** warns the first time a downloaded copy opens, because the app is not notarised. It
+  asks for the microphone once per version: an ad-hoc signature changes with every build, so a
+  new version may ask again.
 - **Windows** SmartScreen warns the first time the installer runs, because it is unsigned.
 - **Android** asks you to allow installs from the app you downloaded the APK with. The APK is
   debug-signed, for sideloading only.
