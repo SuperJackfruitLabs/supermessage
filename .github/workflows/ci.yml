@@ -525,7 +525,7 @@ jobs:
         run: pnpm tauri build ${{ matrix.args }}
 
       # The calls' libwebrtc needs its Objective-C categories linked (-ObjC, src-tauri/build.rs);
-      # without them v0.1.4 linked none of the methods LiveKit calls as a call sets up its media.
+      # without them v0.1.4 linked none of libwebrtc's category methods that LiveKit calls.
       - name: Check libwebrtc's ObjC categories are linked (macOS)
         if: runner.os == 'macOS'
         shell: bash

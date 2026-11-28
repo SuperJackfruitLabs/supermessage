@@ -7,9 +7,11 @@ to v0.1.2 predate this file.
 
 ## Unreleased
 
-- On macOS, v0.1.4 quit when you pressed Call. Its build left out libwebrtc's Objective-C
-  categories, methods LiveKit calls as a call sets up its media. The macOS app now links them, and
-  CI checks the built app for them.
+## v0.1.5 — 2026-11-28
+
+- On macOS, pressing Call quit v0.1.4. Its build left out the methods libwebrtc adds in
+  Objective-C categories, which LiveKit calls as a call sets up its media. The macOS app now links
+  them, and CI checks each macOS build for them.
 
 ## v0.1.4 — 2026-11-27
 
