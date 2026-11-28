@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Supermessage records voice messages you choose to send.</string>
+  <string>SuperMessage uses the microphone for voice messages you choose to send and for calls you start.</string>
 </dict>
 </plist>
