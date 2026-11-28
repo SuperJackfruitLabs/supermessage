@@ -7,6 +7,10 @@ to v0.1.2 predate this file.
 
 ## Unreleased
 
+- On macOS, v0.1.4 quit when you pressed Call. Its build left out libwebrtc's Objective-C
+  categories, methods LiveKit calls as a call sets up its media. The macOS app now links them, and
+  CI checks the built app for them.
+
 ## v0.1.4 — 2026-11-27
 
 - On desktop, voice calls with an agent. Account → Calls ("Voice calls with agents") is off by
