@@ -106,7 +106,7 @@ handling requires a compatible bridge on the receiving side.
 
 ## Installing
 
-Choose an asset from the [v0.1.5 release](https://github.com/SuperJackfruitLabs/supermessage/releases/tag/v0.1.5) (2026-11-28):
+Choose an asset from the [v0.1.6 release](https://github.com/SuperJackfruitLabs/supermessage/releases/tag/v0.1.6) (2026-11-28):
 
 | Platform | Download |
 | --- | --- |
